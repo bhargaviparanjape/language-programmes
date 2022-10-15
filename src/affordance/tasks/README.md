@@ -1,6 +1,6 @@
+## Affordance Cascades
+
 This directory contains exploration for automatic decompositions of tasks which tried to answer the following research questions:
-
-
 
 For each tasks, we compute:
 * Best human decomposition performance over N runs: Known decomps or ones that we come up with. A further variant of this is (a) Decompositing into individual GPT-3 calls with few-shot prompting (decompositional prompting) and (b) Making and integrating external affordance calls when needed.
