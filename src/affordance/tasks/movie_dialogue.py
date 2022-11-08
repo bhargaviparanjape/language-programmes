@@ -7,6 +7,7 @@ import numpy as np
 from tqdm import tqdm
 import json, pdb
 import re
+import time
 
 d = datasets.load_dataset('bigbench', 'movie_dialog_same_or_different', cache_dir=cache_dir)
 inputs =  d['validation']['inputs'][:500]
@@ -81,11 +82,138 @@ same
         perf_array.append(exact_match(labels, preds))
     print("No decomposition Performance:")
     print("Mean", np.mean(perf_array))
-    print("Std. Dev", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
 
 
-movie_dialogue()
+# movie_dialogue()
 
+
+def human_decomposition():
+    def predict(chunk):
+        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, quote='---', n=1)
+        prompts = ["""The following are conversations between two or more people, but the transcript doesn't mark who said what. Your task is to figure out if two dialogues were spoken by the same or different person. To do this task, break down the conversation into dialogues and annotate each dialogue with a speaker. To do so, you can use speaker names like Alice, Bob, Charlie, Dean, etc.
+Look, it's Dr. Tom. Hey, Dr. Tom! Who's Dr. Tom? My chiropractor! ----- In the preceding conversation, were the sentences "Look, it's Dr. Tom." and "Hey, Dr. Tom!" said by the same or different individuals?
+Dialogues:
+Look, it's Dr. Tom. 
+Hey, Dr. Tom! 
+Who's Dr. Tom?
+Speakers
+Alice: Look, it's Dr. Tom. 
+Alice: Hey, Dr. Tom! 
+Bob: Who's Dr. Tom?
+
+Who spoke the selected sentences? Alice, Alice
+Were the sentences spoken by the same or different persons? same
+----
+Told you I'm fine! How many do you see? What?! Fuck off. Save yourself. You don't feel cold? It's a spring day... ----- In the preceding conversation, were the sentences "Save yourself." and "You don't feel cold?" said by the same or different individuals?
+Dialogues:
+Told you I'm fine!
+How many do you see?
+What?! 
+Fuck off. 
+Save yourself
+You don't feel cold? 
+It's a spring day... 
+Speakers
+Alice: Told you I'm fine!
+Bob: How many do you see?
+Alice: What?! 
+Alice: Fuck off. 
+Alice: Save yourself
+Bob: You don't feel cold? 
+Alice:  It's a spring day...
+
+Who spoke the selected sentences? Alice, Bob 
+Were the sentences spoken by the same or different persons? different
+----
+We've broken out, oh, the blessed freedom of it all! Eh, have you got a nail file, these handcuffs are killing me. I was framed. I was innocent. Will you stop it! Sorry to disturb you, miss... ----- In the preceding conversation, were the sentences "I was innocent." and "Will you stop it!" said by the same or different individuals?
+Dialogues:
+We've broken out, oh, the blessed freedom of it all!. 
+Eh, have you got a nail file, these handcuffs are killing me. 
+I was framed. 
+I was innocent
+Will you stop it!
+Sorry to disturb you, miss... 
+Speakers:
+Bob: We've broken out, oh, the blessed freedom of it all!
+Alice: Eh, have you got a nail file, these handcuffs are killing me. 
+Bob: I was framed. 
+Bob: I was innocent. 
+Alice: Will you stop it!
+Bob: Sorry to disturb you, miss...
+
+Who spoke the selected sentences? Bob, Alice
+Were the sentences spoken by the same or different persons? different
+----
+You made it up. Uh-huh. You said you wanted fireworks. ----- In the preceding conversation, were the sentences "Uh-huh." and "You said you wanted fireworks." said by the same or different individuals?
+Dialogues:
+You made it up. 
+Uh-huh. 
+You said you wanted fireworks. 
+Speakers
+Alice: You made it up. 
+Bob: Uh-huh. 
+Bob: You said you wanted fireworks.
+
+Who spoke the selected sentences? Bob, Bob
+Were the sentences spoken by the same or different persons? same
+----
+There you are. Who was that boy? An old friend. ----- In the preceding conversation, were the sentences "Who was that boy?" and "An old friend." said by the same or different individuals?
+Dialogues:
+There you are. 
+Who was that boy? 
+An old friend. 
+Speakers
+Alice: There you are. 
+Bob: Who was that boy? 
+Alice: An old friend.
+
+Who spoke the selected sentences? Bob, Alice
+Were the sentences spoken by the same or different persons? different
+----
+I encouraged you to come here. My fault as much as yours. I was...crazy...desperate. I took it out on you. I didn't mean it. I know what she sees in you. You're kind and you're brave. If I ever get out of you, I'll be glad to call you my friend. ----- In the preceding conversation, were the sentences "You're kind and you're brave." and "If I ever get out of you, I'll be glad to call you my friend." said by the same or different individuals?
+Dialogues:
+I encouraged you to come here. 
+My fault as much as yours. 
+I was...crazy...desperate. 
+I took it out on you. 
+I didn't mean it. 
+I know what she sees in you. 
+You're kind and you're brave. 
+If I ever get out of you, I'll be glad to call you my friend. 
+Speakers
+Alice: I encouraged you to come here. 
+Alice: My fault as much as yours. 
+Bob: I was...crazy...desperate. 
+Bob: I took it out on you. 
+Bob: I didn't mean it. 
+Alice: I know what she sees in you. 
+Alice: You're kind and you're brave. 
+Alice: If I ever get out of you, I'll be glad to call you my friend.
+
+Who spoke the selected sentences? Alice, Alice
+Were they spoken by the same or different persons? same
+----
+%s""" % x for x in chunk]
+        return gpt3(prompts)
+
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 20)):
+            # Preprocess x to remove chunks 
+            x = [inp.replace("The following is a conversation between two people, but the transcript doesn't mark who said what: ", "").replace("Answer:", "") for inp in x]
+            answers.extend(predict(x))
+        preds = [x.strip().lower().split()[-1] for x in answers]
+        perf_array.append(exact_match(labels, preds))
+        time.sleep(30)
+    print("Human decomposition Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
+human_decomposition()
 
 def automatic_decomposition():
     decomp_prompt = "The task is to figure out if two dialogues in a movie script snippet were spoken by the same or different person. I want to break this task into individual steps."
@@ -124,16 +252,15 @@ How did you arrived at this answer step-wise. Finally, output the words "same" o
         fn = get_list_reversal_fn(decomposition, batch_size=20)
         this_preds = fn(subset)
     #     pp = np.array([1 if 'contains an anachronism' in x.lower() else 0 for x in this_preds])
-        pdb.set_trace()
-        # pp = np.array([1 if ref.lower() in x.lower() else 0 for x, ref in zip(this_preds, labs)])
-        pp = [pred.strip().lower().endswith('same') or pred.strip().lower().endswith('different') for pred in this_preds]
+        pp = [x.strip() for x in this_preds]
+        # perf_array.append(exact_match(labels, preds))
         preds.append(this_preds)
         pps.append(pp)
-        # accs.append(exact_match(labs, pp))
-        accs.append(pp.mean())
+        accs.append(exact_match(labs, pp))
+        time.sleep(30)
     print(accs)
     print("Automatic decomposition Performance:")
     print("Mean", np.mean(accs))
-    print("Std. Dev", np.mean(accs))
+    print("Std. Dev", np.std(accs))
 
-automatic_decomposition()
+# automatic_decomposition()

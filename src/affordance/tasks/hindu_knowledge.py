@@ -1,69 +1,46 @@
 from re import L
 from turtle import pd
-from utils import gpt3, propose_decomposition, propose_instruction, chunks, get_subset, OpenAIModel, cache_dir, substring_match, search, get_few_shot_prompt
+from utils import gpt3, propose_decomposition, propose_instruction, chunks, get_subset, OpenAIModel, cache_dir, search, substring_match
 
 import datasets
 import numpy as np
 from tqdm import tqdm
 import json, pdb
 import re
+import time
+import ast
 from utils import get_few_shot_prompt
 from transformers import GPT2Tokenizer
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 
-# Startegies for unknown questions
-# predictions about future times from present day
-# Things that ARE HARD TO count or find an exact cnt for
-# Things that ARE HARD TO measure or find an exact measure for
-# Things that ARE HARD TO DATE or find an exact date for
-# Facts that are not in public record because personal details are often unknown
 
-
-# load data
-d = datasets.load_dataset('bigbench', 'known_unknowns', cache_dir=cache_dir)
+d = datasets.load_dataset('bigbench', 'hindu_knowledge', cache_dir=cache_dir)
 inputs = d['train']['inputs'] + d['validation']['inputs']
-labels = d['train']['targets']  + d['validation']['targets']
+# inputs = [x.split('\n')[0] for x in inputs]
+labels = d['train']['targets'] + d['validation']['targets']
+
 labels = [l[0] for l in labels]
 
-# Instructions that Flipped learning comes up with (not known)
-task_description = """Answer the question by choosing one of the two options provided. If the answer can't be found, the final answer should be the string "Unknown"."""
+task_description = "Hindu Knowledge: Answer these multiple-choice questions about Hindu mythology."
 
-io_pairs = [("""Q: Who is a famous whistler?
-  choice: Unknown
-  choice: Ronnie Ronalde""",
-"A: Ronnie Ronalde"),
-("""Q: Where was Mark Twain born?
-  choice: Unknown
-  choice: Florida, Missouri""",
-"A: Florida, Missouri"),
-("""Q: What type of hat did Charlie Chaplin wear?
-  choice: Unknown
-  choice: Bowler hat""",
-"A: Bowler hat"),
-("""Q: How many people in Cheyenne, Wyoming were eating during the last solar eclipse?
-  choice: Unknown
-  choice: 156""",
-"A: Unknown"),
-("""Q: How many legs do ants have?
-  choice: Unknown
-  choice: 6""",
-"A: 6"),
-("""Q: How many hours of sleep a night is considered healthy for an adult?
-  choice: Unknown
-  choice: Between 7 and 9 hours""",
-"A: Between 7 and 9 hours"),
-("""Q: How much food does the cat Tinyman Zhengel eat every day?
-  choice: Unknown
-  choice: 250 calories""",
-"A: Unknown"),
-("""Q: Who was the first person to whistle?
-  choice: Unknown
-  choice: T.J. Cummings""",
-"A: Unknown"),
-("""Q: What will be the name of the great-great-granddaughter of Diana Ross?
-  choice: Unknown
-  choice: Hazel Ross""",
-"A: Unknown")]
+io_pairs=[("""Q: In Hinduism, which musical instrument is most associated with the god Krishna?
+  choice: Sitar
+  choice: Veena
+  choice: Flute
+  choice: Tabla (drum)""",
+"""A: Flute"""),
+("""Q: In Hinduism, the era known as Dvapara Yuga is preceded by which era?
+  choice: Krita Yuga
+  choice: Treta Yuga
+  choice: Kali Yuga
+  choice: Satya Yuga""",
+"""A: Treta Yuga"""),
+("""Q: In the Hindu epic Ramayana, which character killed Lavanasura?
+  choice: Lakshmana
+  choice: Shatrughna
+  choice: Bharata
+  choice: Rama""",
+"""A: Shatrughna""")]
 
 def exact_match(labels, predictions):
     correct = 0
@@ -83,88 +60,36 @@ def token_match(labels, predictions):
         count += 1
     return (1.0*correct)/count
 
-def few_shot(N=10, temperature=0.3):
-    few_shot_prompt = get_few_shot_prompt(inputs, [[d] for d in labels], n=N)
-    print(len(tokenizer(few_shot_prompt)['input_ids']))
 
+def hindu_knowledge():
     def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=200, temperature=temperature, quote='---', n=1)
-        prompts = ["""%s\
-%s""" % (few_shot_prompt, x) for x in chunk]
-        return gpt3(prompts)
-
-    perf_array = []
-    runs = 20
-    for run in range(runs): 
-        print("Run %d"%run)
-        answers = []
-        for x in tqdm(chunks(inputs, 20)):
-            answers.extend(predict(x))
-        preds = [x.strip() for x in answers]
-        perf_array.append(exact_match(labels, preds))
-    print("No decomposition Performance:")
-    print("Mean", np.mean(perf_array))
-    print("Std. Dev", np.std(perf_array))
-
-
-def known_unknown():
-    def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=200, quote='---', n=1)
-        prompts = ["""Q: Who is a famous whistler?
-  choice: Unknown
-  choice: Ronnie Ronalde
+        gpt3 = OpenAIModel(model="text-davinci-001",  max_length=200, quote='---', n=1)
+        prompts = ["""Q: In Hinduism, which musical instrument is most associated with the god Krishna?
+  choice: Sitar
+  choice: Veena
+  choice: Flute
+  choice: Tabla (drum)
 A:
-Ronnie Ronalde
+Flute
 ----
-Q: Where was Mark Twain born?
-  choice: Unknown
-  choice: Florida, Missouri
+Q: In Hinduism, the era known as Dvapara Yuga is preceded by which era?
+  choice: Krita Yuga
+  choice: Treta Yuga
+  choice: Kali Yuga
+  choice: Satya Yuga
 A:
-Florida, Missouri
+Treta Yuga
 ----
-Q: What type of hat did Charlie Chaplin wear?
-  choice: Unknown
-  choice: Bowler hat
+Q: In the Hindu epic Ramayana, which character killed Lavanasura?
+  choice: Lakshmana
+  choice: Shatrughna
+  choice: Bharata
+  choice: Rama
 A:
-Bowler hat
+Shatrughna
 ----
-Q: How many people in Cheyenne, Wyoming were eating during the last solar eclipse?
-  choice: Unknown
-  choice: 156
-A:
-Unknown
-----
-Q: How many legs do ants have?
-  choice: Unknown
-  choice: 6
-A:
-6
-----
-Q: How many hours of sleep a night is considered healthy for an adult?
-  choice: Unknown
-  choice: Between 7 and 9 hours
-A:
-Between 7 and 9 hours
-----
-Q: How much food does the cat Tinyman Zhengel eat every day?
-  choice: Unknown
-  choice: 250 calories
-A:
-Unknown
-----
-Q: Who was the first person to whistle?
-  choice: Unknown
-  choice: T.J. Cummings
-A:
-Unknown
-----
-Q: What will be the name of the great-great-granddaughter of Diana Ross?
-  choice: Unknown
-  choice: Hazel Ross
-A:
-Unknown
-----
-%s""" % x for x in chunk]
+%s
+""" % x for x in chunk]
         return gpt3(prompts)
 
     perf_array = []
@@ -180,99 +105,7 @@ Unknown
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-
-def automatic_decomposition():
-    decomp_prompt = "The task is to answer the question or figure out if the answer is unknown. I want to break this task into individual steps."
-    io_pairs = """Input: Who is a famous whistler?
-  choice: Unknown
-  choice: Ronnie Ronalde
-Output: Ronnie Ronalde
-----
-Input: Where was Mark Twain born?
-  choice: Unknown
-  choice: Florida, Missouri
-Output: Florida, Missouri
-----
-Input: What type of hat did Charlie Chaplin wear?
-  choice: Unknown
-  choice: Bowler hat
-Output: Bowler hat
-----
-Input: How many people in Cheyenne, Wyoming were eating during the last solar eclipse?
-  choice: Unknown
-  choice: 156
-Output: Unknown
-----
-Input: How many legs do ants have?
-  choice: Unknown
-  choice: 6
-Output: 6
-----
-Input: How many hours of sleep a night is considered healthy for an adult?
-  choice: Unknown
-  choice: Between 7 and 9 hours
-Output: Between 7 and 9 hours
-----
-Input: How much food does the cat Tinyman Zhengel eat every day?
-  choice: Unknown
-  choice: 250 calories
-Output: Unknown
-----
-Input: Who was the first person to whistle?
-  choice: Unknown
-  choice: T.J. Cummings
-Output: Unknown
-----
-Input: What will be the name of the great-great-granddaughter of Diana Ross?
-  choice: Unknown
-  choice: Hazel Ross
-Output: Unknown"""
-    decompositions = propose_decomposition(decomp_prompt, io_pairs, 10)
-
-    for decomp in decompositions:
-        print(decomp)
-        print("----")
-
-    def get_list_reversal_fn(decomposition, batch_size=10):
-        decomposition = '1.'+ decomposition
-        last_n = int(re.findall(r'(\d+)\.', decomposition)[-1])
-    #     decomposition += '\n%s. Output YES if there is an anachronism, and NO otherwise' % (last_n + 1)
-        def decomposition_fn(sentences):
-            gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, quote='---', n=1)
-            out = []
-            for chunk in chunks(sentences, batch_size):
-                prompts = ['''The task is to answer the question or figure out if the answer is unknown. Using the following steps will help.
-Steps:
-%s
-----
-%s
-How did you arrived at this answer step-wise. Either provide the answer or say "Unknown".''' % (decomposition, x) for x in chunk]
-                out.extend(gpt3(prompts))
-            return out
-        return decomposition_fn
-
-
-    labs, subset = get_subset(inputs, labels=labels, n=len(inputs))
-    preds = []
-    pps = []
-    accs = []
-    for z, decomposition in enumerate(decompositions):
-        print('Decomposition', z)
-        fn = get_list_reversal_fn(decomposition, batch_size=20)
-        this_preds = fn(subset)
-    #     pp = np.array([1 if 'contains an anachronism' in x.lower() else 0 for x in this_preds])
-        pdb.set_trace()
-        # pp = np.array([1 if ref.lower() in x.lower() else 0 for x, ref in zip(this_preds, labs)])
-        pp = [pred.strip().lower().endswith('unknown') or pred.strip().lower().endswith('known') for pred in this_preds]
-        preds.append(this_preds)
-        pps.append(pp)
-        # accs.append(exact_match(labs, pp))
-        accs.append(pp.mean())
-    print(accs)
-    print("Automatic decomposition Performance:")
-    print("Mean", np.mean(accs))
-    print("Std. Dev", np.std(accs))
-
+# hindu_knowledge()
 
 few_shot_cot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use search functions like Google search in one or more of your substeps, if there in insufficient information. Other functions like arithmetic and logical operations can also be used.  
 Description: Choose the option that best answers the question. If the question does not have a known answer, choose "Unknown". 
@@ -280,12 +113,13 @@ Input: How many hairs were on Neil Armstrong's head when he landed on the moon?
   choice: Unknown
   choice: Five million
 Q1: [search] How many hairs were on Neil Armstrong's head when he landed on the moon? 
-#1: Apollo 11 (July 16–24, 1969) was the American spaceflight that first landed humans on the Moon. Commander Neil Armstrong and lunar module pilot Buzz Aldri...
+#1: 
+Apollo 11 (July 16–24, 1969) was the American spaceflight that first landed humans on the Moon. Commander Neil Armstrong and lunar module pilot Buzz Aldri...
 Neil Alden Armstrong (August 5, 1930 – August 25, 2012) was an American astronaut and aeronautical engineer who became the first person to walk on the Moon ...
 Q2: Does the information help answer the question? There could be no definitive answer because the question is too specific, about personal details not in public record, because the answer is not yet known, or the question is opinion-based.
 #2: No. The question is too specific
 Q3: What is the final answer?
-#3: Unknown
+Unknown
 Q4: [EOC]
 Unknown
 ----
@@ -299,8 +133,8 @@ Q2: [search] When was President George H. W. Bush president?
 #2: George H. W. Bush's tenure as the 41st president of the United States began with his inauguration on January 20, 1989, and ended on January 20, 1993.
 Q3: [search] When was the Gulf War fought?
 #3: The Gulf War[b] was a 1990–1991 armed campaign waged by a 35-country military coalition in response to the Iraqi invasion of Kuwait.
-Q4: Could these entities have co-existed based on thier time periods alone?
-#4: Yes. Their time periods intersect.
+#4: Could these entities have co-existed based on thier time periods alone?
+Yes. Their time periods intersect.
 Q5: Is this an anachronism?
 #5: No
 Q6: [EOC]
@@ -317,7 +151,7 @@ Q2: [search] When did television show "Twin Peaks" air?
 Q3: [search] When did Kurt Cobain live?
 #3: Kurt Donald Cobain (February 20, 1967 – c. April 5, 1994) was an American musician, best known as the lead vocalist, guitarist and primary songwriter of the ...
 Q4: Could these entities have co-existed based on this information?
-#4: No. Musician  Kurt Cobain could not have starred in Twin Peaks.
+No. Musician  Kurt Cobain could not have starred in Twin Peaks.
 Q5: Is this an anachronism?
 #5: Yes
 Q6: [EOC]
@@ -341,11 +175,12 @@ Input: Where was Mark Twain born?
   choice: Unknown
   choice: Florida, Missouri
 Q1: [search] Where was Mark Twain born?
-#1: Mark Twain. Samuel Langhorne Clemens was born in Florida, Missouri, and later moved with his family to Hannibal, Missouri, where he grew up.
+#1: 
+Mark Twain. Samuel Langhorne Clemens was born in Florida, Missouri, and later moved with his family to Hannibal, Missouri, where he grew up.
 Q2: Does the information help answer the question? There could be no definitive answer because the question is too specific, about personal details not in public record, because the answer is not yet known, or the question is opinion-based.
 #2: Yes. The answer is Florida, Missouri
 Q3: What is the final answer?
-#3: Florida, Missouri
+Florida, Missouri
 Q4: [EOC]
 Florida, Missouri
 ----
@@ -378,13 +213,13 @@ def few_shot_cot(temperature=0.3):
         return gpt3(prompts)
 
     perf_array = []
-    runs = 20
+    runs = 5
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
         for x in tqdm(chunks(inputs, 20)):
             x = [ex.replace("\nA:", "") for ex in x]
-            answers.extend(predict("""Answer the question by choosing one of the two options provided. If the answer can't be found, the final answer should be the string "Unknown".""", x))
+            answers.extend(predict("Answer these multiple-choice questions about Hindu mythology. The final answer should be one of the provided choices.", x))
         preds = [x.strip() for x in answers]
         perf_array.append(substring_match(labels, preds))
     print("Few-shot COT performance:")
@@ -397,7 +232,7 @@ def auto_cot(temperature=0.3):
     for io_pair in io_pairs[:5]:
         gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=0.7, quote='---', n=1)
         prompt = """%s\n"""% task_description + io_pair[0] + \
-            """\nThe final answer is either the answer phrase or the word "Unknown".\nA: Let's think step-by-step.\n""" 
+            """\nThe final answer should be one of the provided choices.\nA: Let's think step-by-step.\n""" 
         auto_cot_prompt += prompt
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
@@ -407,28 +242,25 @@ def auto_cot(temperature=0.3):
     def predict(chunk):
         gpt3 = OpenAIModel(model="text-davinci-002",  max_length=500, temperature=temperature, quote='---', n=1)
         prompts=[auto_cot_prompt + """%s\n"""%task_description + \
-            """%s\nThe final answer is either the answer phrase or the word "Unknown".\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+            """%s\nThe final answer should be one of the provided choices.\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
         return gpt3(prompts)
 
     perf_array = []
-    runs = 20
+    runs = 5
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
         for x in tqdm(chunks(inputs, 20)):
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
-        # pdb.set_trace()
         preds = [x.strip() for x in answers]
         perf_array.append(substring_match(labels, preds))
     print("Auto-CoT Performance:")
-    print("Perf Array", perf_array)
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
 
-
-def affordance(temperature=0.3):
+def affordance(temperature = 0.3):
     def predict(description, chunk):
         gpt3 = OpenAIModel(model="text-davinci-002",  max_length=2048, temperature=temperature, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
@@ -450,9 +282,6 @@ def affordance(temperature=0.3):
             else:
                 if skip:
                     skip=False
-                    # If the GPT-3 answer needs to be added as well, remove #[0-9]+ from the answer
-                    # pdb.set_trace()
-                    new_lines.append(line)
                     continue
                 new_lines.append(line)
         return "\n".join(new_lines)
@@ -470,10 +299,12 @@ def affordance(temperature=0.3):
         new_answers = []
         for x in tqdm(chunks(inputs, 20)):
             x = [ex.replace("\nA:", "") for ex in x]
-            answers = predict("Answer the question by choosing one of the two options provided. If the answer can't be found, the final answer should be the string 'Unknown'", x)
-            #affordance_inputs = [json.loads(a.strip().split("\n")[1].replace("#1: ", "")) for a in answers]
-            #affordance_outputs = [string_index(inp, 2) for inp in affordance_inputs]
+            answers = predict("Answer these multiple-choice questions about Hindu mythology. The final answer should be one of the provided choices.", x)
             affordance_outputs = [search_query("Q1:" + a) for a in answers]
+            # Find the last search term and resume execution after that.
+            # last_questions = [re.findall("Q[0-9]+: \[search\]", a)[-1] for a in affordance_outputs]
+            # query_nos = [re.search('[0-9]+', question.split()[0]).group(0) for question in last_questions]
+            # next_questions = [re.search(r"Q%s: "%str(int(q) + 1), a) for q, a in zip(query_nos,affordance_outputs)]
             new_x = []
             for ex, a in zip(x, affordance_outputs):
                 last_question = re.findall("Q[0-9]+: \[search\]", a)
@@ -494,18 +325,18 @@ def affordance(temperature=0.3):
                     else:
                         new_x.append(ex + "\n" + a[:q.span(0)[1]])
                 else:
-                    # No next question beyond the last search questions. So continue to generate.
+                    # No next question beyond the last search questions
                     new_x.append(ex + "\n" + a)
-            new_answers.extend(predict_with_affordance("Answer the question by choosing one of the two options provided. If the answer can't be found, the final answer should be the string 'Unknown'", new_x))
+            # pdb.set_trace()
+            new_answers.extend(predict_with_affordance("Answer these multiple-choice questions about Hindu mythology. The final answer should be one of the provided choices.", new_x))
         preds = [x.strip() for x in new_answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
-    print("Few-shot COT performance:")
+    print("Affordance performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
 
-# few_shot(N=5, temperature=0.3)
-affordance(temperature=0.4)
+# auto_cot(temperature=0.3)
 # few_shot_cot(temperature=0.3)
-# auto_cot(temperature=0.7)
+affordance(temperature=0.3)
