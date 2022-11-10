@@ -130,14 +130,15 @@ def auto_cot(temperature=0.3):
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        label_dict = {"A":0}
+        label_dict = ["ABCDE".index(l) for l in labels]
+        pdb.set_trace()
         new_labels = [re.split('[ABCDE]\)', inp[re.search("A\)", inp).span(0)[0]:])[1:][label_dict[i]] for i, inp in enumerate(inputs)]
         for x in tqdm(chunks(inputs, 20)):
             # x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
             pdb.set_trace()
         preds = [x.strip() for x in answers]
-        perf_array.append(substring_match(labels, preds))
+        perf_array.append(substring_match(new_labels, preds))
     print("Auto-CoT Performance:")
     print("Perf Array", perf_array)
     print("Mean", np.mean(perf_array))
