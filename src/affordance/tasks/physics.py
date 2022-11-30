@@ -10,6 +10,7 @@ import re
 from utils import get_few_shot_prompt
 from transformers import GPT2Tokenizer
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+from prompt_library import random_tasks, similar_tasks, llm_similar_tasks, similar_auto_breakdowns
 
 
 d = datasets.load_dataset('bigbench', 'physics', cache_dir=cache_dir)
@@ -18,6 +19,8 @@ inputs = d['train']['inputs'] + d['validation']['inputs']
 labels = d['train']['targets'] + d['validation']['targets']
 labels = [l[0] for l in labels]
 print(len(inputs))
+
+task_description = "Identify the physics formula that would be most useful for finding the answer to each of the following word problems."
 
 io_pairs = [("""Q: In an experiment, a positively charged oil droplet weighing 6.5 * 10 ^ -15 N is held stationary by a vertical electric field. If the electric field strength is 5.3 * 10 ^ 3 N/C, what is the charge on the oil droplet?
   choice: dt = dx / v
@@ -270,6 +273,43 @@ def auto_cot(temperature=0.3):
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
+
+def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
+
+    if strategy == "random":
+        few_shot_cot_prompt = random_tasks(N=6)
+    elif strategy == "similar":
+        few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
+    elif strategy == "similar_auto_decomp":
+        few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
+    elif strategy == "llm_similar":
+        few_shot_cot_prompt = llm_similar_tasks(task_description, io_pairs, N=6)
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=2048, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return gpt3(prompts)
+
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 20)):
+            x = [ex.replace("Identify the physics formula that would be most useful for finding the answer to each of the following word problems.", "") for ex in x]
+            x = [ex.replace("\nA:", "") for ex in x]
+            answers.extend(predict(task_description, x))
+        preds = [x.strip() for x in answers]
+        perf_array.append(substring_match(labels, preds))
+        print(perf_array)
+    print("Few-shot COT performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
+
+# auto_decomp(10, 0.3)
+# affordance(temperature=0.3)
+dynamic_few_shot_cot(temperature=0.3, strategy="random")
 # few_shot_cot()
 # few_shot(N=5, temperature=0.3)
-auto_cot()
+# auto_cot()

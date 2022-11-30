@@ -3,13 +3,12 @@ from  utils import gpt3, propose_decomposition, propose_instruction, chunks, get
 import datasets
 import numpy as np
 from tqdm import tqdm
-
-
 import datasets
 import numpy as np
 from tqdm import tqdm
 import json, pdb
 import re
+from sequential_interpreter import TopDownVisitorBeta
 
 # Get data
 d = datasets.load_dataset('bigbench', 'anachronisms')
@@ -157,12 +156,12 @@ Q1: [search] How many hairs were on Neil Armstrong's head when he landed on the 
 #1: 
 Apollo 11 (July 16–24, 1969) was the American spaceflight that first landed humans on the Moon. Commander Neil Armstrong and lunar module pilot Buzz Aldri...
 Neil Alden Armstrong (August 5, 1930 – August 25, 2012) was an American astronaut and aeronautical engineer who became the first person to walk on the Moon ...
-Q2: Does the information help answer the question? There could be no definitive answer because the question is too specific, about personal details not in public record, because the answer is not yet known, or the question is opinion-based.
+Q2: [subquestion] Does the information help answer the question? There could be no definitive answer because the question is too specific, about personal details not in public record, because the answer is not yet known, or the question is opinion-based.
 #2: No. The question is too specific
-Q3: What is the final answer?
+Q3: [compare] What is the final answer?
 Unknown
-Q4: [EOC]
-Unknown
+Q4: [EOQ]
+Ans: Unknown
 ----
 Description: An anachronism is a mistake in chronology, or a person, thing, or event that is out of its proper time. Figure out whether a sentence contains anachronisms or not, and answer 'Yes' or 'No'."
 Input: President George H. W. Bush called his generals to the Oval Office at the outset of the Gulf War.
@@ -174,12 +173,12 @@ Q2: [search] When was President George H. W. Bush president?
 #2: George H. W. Bush's tenure as the 41st president of the United States began with his inauguration on January 20, 1989, and ended on January 20, 1993.
 Q3: [search] When was the Gulf War fought?
 #3: The Gulf War[b] was a 1990–1991 armed campaign waged by a 35-country military coalition in response to the Iraqi invasion of Kuwait.
-#4: Could these entities have co-existed and interacted based on this information?
+#4: [subquestion] Could these entities have co-existed and interacted based on this information?
 Yes. Their time periods intersect.
-Q5: Is this an anachronism?
+Q5: [generate answer] Is this an anachronism?
 #5: No
-Q6: [EOC]
-No
+Q6: [EOQ]
+Ans: No
 ----
 Description: An anachronism is a mistake in chronology, or a person, thing, or event that is out of its proper time. Figure out whether a sentence contains anachronisms or not, and answer 'Yes' or 'No'."
 Input: Kurt Cobain starred in the 1980 television show "Twin Peaks".
@@ -191,12 +190,12 @@ Q2: [search] When did television show "Twin Peaks" air?
 #2: Twin Peaks is an American mystery serial drama television series created by Mark Frost and David Lynch. It premiered on ABC on April 8, 1990, and originally ran for two seasons until its cancellation in 1991.
 Q3: [search] When did Kurt Cobain live?
 #3: Kurt Donald Cobain (February 20, 1967 – c. April 5, 1994) was an American musician, best known as the lead vocalist, guitarist and primary songwriter of the ...
-Q4: Could these entities have co-existed and interacted based on this information?
+Q4: [subquestion] Could these entities have co-existed and interacted based on this information?
 No. Musician  Kurt Cobain could not have starred in Twin Peaks.
-Q5: Is this an anachronism?
+Q5: [generate answer] Is this an anachronism?
 #5: Yes
-Q6: [EOC]
-Yes
+Q6: [EOQ]
+Ans: Yes
 ----
 Description: Answer questions about Hindu mythology by choosing the option that best answers the question.
 Input: In the Mahabharata, Karna is cursed to forget the incantations needed to use which weapon?
@@ -210,8 +209,8 @@ Q2: [search] In the Hindu epic Ramayana, who is the main villain?
 #2: As a result, he cursed Karna, saying that HIS MARTIAL SKILLS, including the use of BRAHMASTRA, would abandon him when he needed them most. Indra, the King of Gods, stung Karna in the form of a bee to get him cursed by Parshuram. Karna walked through the woods in despair, feeling dejected by the curse. A skilled & devoted warrior...
 Q3: [compare] Which option is the answer in #3 most similar to?
 #3: Brahmastra
-Q4: [EOC]
-Brahmastra
+Q4: [EOQ]
+Ans: Brahmastra
 ----
 Description: Choose the option that best answers the question. If the question does not have a known answer, choose "Unknown". 
 Input: Where was Mark Twain born?
@@ -220,16 +219,16 @@ Input: Where was Mark Twain born?
 Q1: [search] Where was Mark Twain born?
 #1: 
 Mark Twain. Samuel Langhorne Clemens was born in Florida, Missouri, and later moved with his family to Hannibal, Missouri, where he grew up.
-Q2: Does the information help answer the question? There could be no definitive answer because the question is too specific, about personal details not in public record, because the answer is not yet known, or the question is opinion-based.
+Q2: [subquestion] Does the information help answer the question? There could be no definitive answer because the question is too specific, about personal details not in public record, because the answer is not yet known, or the question is opinion-based.
 #2: Yes. The answer is Florida, Missouri
-Q3: What is the final answer?
+Q3: [generate answer] What is the final answer?
 Florida, Missouri
-Q4: [EOC]
-Florida, Missouri
+Q4: [EOQ]
+Ans: Florida, Missouri
 ----
 Desciption: %s 
 Input: %s
-"""
+Q1:"""
 
 def few_shot_cot():
     def predict(description, chunk):
@@ -341,5 +340,31 @@ def affordance():
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-# affordance()
-auto_cot(temperature=0.3)
+
+def nl_program(temperature=0.3):
+    interpreter = TopDownVisitorBeta()
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        new_labels = ["Ans: " + label for label in labels]
+        for x in tqdm(chunks(inputs, 20)):
+            x = [ex.replace("\nDoes the preceding sentence contain non-contemporaneous (anachronistic) elements?", "") for ex in x]
+            prompts, answer = predict(task_description, x)
+            new_answer  = interpreter.batch_visit(prompts, answer)
+            answers.extend(new_answer)
+        preds = [x.strip() for x in answers]
+        perf_array.append(substring_match(new_labels, preds))
+        print(perf_array)
+    print("FS-CoT Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
+nl_program(temperature=0.3)

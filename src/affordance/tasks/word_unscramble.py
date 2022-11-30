@@ -7,7 +7,7 @@ import numpy as np
 from tqdm import tqdm
 import json, pdb
 import re
-
+from prompt_library import random_tasks, similar_tasks, llm_similar_tasks
 
 io_pairs = [("Q: The word untamqu is a scrambled version of the English word", 
 "A: quantum"),
@@ -19,6 +19,8 @@ io_pairs = [("Q: The word untamqu is a scrambled version of the English word",
 "A: imagine"),
 ("Q: The word eacperlfi is a scrambled version of the English word", 
 "A: fireplace")]
+
+task_description = "Unscramble the given word into a word in English."
 
 
 d = datasets.load_dataset('bigbench', 'word_unscrambling', cache_dir=cache_dir)
@@ -213,8 +215,6 @@ def auto_cot():
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-# auto_cot()
-
 
 def affordance():
 
@@ -261,4 +261,39 @@ Q2: [string permutation] What are the possible permutations of the letters in #1
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-affordance()
+# affordance()
+# auto_cot()
+
+def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
+
+    if strategy == "random":
+        few_shot_cot_prompt = random_tasks(N=6)
+    elif strategy == "similar":
+        few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
+    elif strategy == "llm_similar":
+        few_shot_cot_prompt = llm_similar_tasks(task_description, io_pairs, N=6)
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=2048, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return gpt3(prompts)
+
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 20)):
+            x = [ex.replace("\nA:", "") for ex in x]
+            answers.extend(predict(task_description, x))
+        preds = [x.strip() for x in answers]
+        perf_array.append(substring_match(labels, preds))
+        print(perf_array)
+    print("Few-shot COT performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
+# repeat_copy_logic(temperature=0.3)
+# auto_cot(temperature=0.3)
+# few_shot_cot(temperature=0.3)
+dynamic_few_shot_cot(temperature=0.3, strategy="similar")

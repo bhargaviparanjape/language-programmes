@@ -1,7 +1,7 @@
 from re import L
 from turtle import pd
 from utils import gpt3, propose_decomposition, propose_instruction, chunks, get_subset, OpenAIModel, cache_dir, substring_match, execute_code, edit_code, generate_code
-
+from sequential_interpreter import TopDownVisitorBeta
 import datasets
 import numpy as np
 from tqdm import tqdm
@@ -14,6 +14,8 @@ inputs = d['train']['inputs'] + d['validation']['inputs']
 labels = d['train']['targets'] + d['validation']['targets']
 labels = [l[0] for l in labels]
 # print(len(inputs))
+
+task_description = "(Auto Debugging) Debug the following code snippets by finding the answer or the error message."
 
 io_pairs = [("""if x < 5:
 	pass
@@ -119,17 +121,17 @@ if x < 5:
 	pass
 ```
 What error does this program surface?
-Q1: [execute] Execute the following python code snippet.
+Q1: [code execute] Execute the following python code snippet.
 if x < 5:
 	pass
 #1:
 Traceback (most recent call last):
   File "<stdin>", line 1, in <module>
 NameError: name 'x' is not defined
-Q2: What is the final error message?
+Q2: [get error message] What is the final error message?
 #2: NameError: name 'x' is not defined
-Q3: [EOC]
-NameError: name 'x' is not defined
+Q3: [EOQ]
+Ans: NameError: name 'x' is not defined
 ----
 Desciption: Auto Debugging: Debug the following code snippets by finding the answer or the error message.
 Input:
@@ -142,12 +144,12 @@ x = set([1, 1, 2, 3])
 #1:
 x = set([1, 1, 2, 3])
 print(x)
-Q2: [execute] Execute the following python code snippet.
+Q2: [code execute] Execute the following python code snippet.
 x = set([1, 1, 2, 3])
 print(x)
 #2: {1, 2, 3}
-Q3: [EOC]
-{1, 2, 3}
+Q3: [EOQ]
+Ans: {1, 2, 3}
 ----
 Description: Code Description: Which of the following choices best describes the functionality of the given python code snippet. 
 Input:
@@ -194,13 +196,14 @@ try:
     print "sum is: ",sum
 except:
     print "enter integer values only"
-Q5: Which of the generated code snippets are most like the original one?
+Q5: [compare] Which of the generated code snippets are most like the original one?
 #5: prints sum of two input numbers only if they are integers otherwise raises error
-Q6: [EOC]
+Q6: [EOQ]
+Ans: prints sum of two input numbers only if they are integers otherwise raises error
 ----
 Desciption: %s
 Input: %s
-Q1: """
+Q1:"""
 
 
 def auto_cot(temperature=0.3):
@@ -335,6 +338,35 @@ def affordance(temperature=0.5):
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
+
+
+def nl_program(temperature=0.3):
+
+    interpreter = TopDownVisitorBeta()
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 20)):
+            x = [ex.replace("\nEdited:", "") for ex in x]
+            prompts, answer = predict(task_description, x)
+            new_answer  = interpreter.batch_visit(prompts, answer)
+            answers.extend(new_answer)
+            pdb.set_trace()
+        preds = [x.strip() for x in answers]
+        perf_array.append(substring_match(labels, preds))
+    print("FS-CoT Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
 # affordance()
 # auto_cot()
-few_shot_cot()
+# few_shot_cot()
+nl_program(temperature=0.3)
