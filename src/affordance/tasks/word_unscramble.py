@@ -293,7 +293,243 @@ def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
+few_shot_notebook_prompt = """In [1]:
+import os
+import sys
+import numpy as np
+import re
+from sympy.solvers import solve
+from sympy import Symbol, Eq
+import math
+from sympy import simplify
+import numpy as np
+import cvxpy as cp
+import statistics
+from serpapi import GoogleSearch
+from utils import string_compare
+
+In [1]:
+input_text = "Take the letters at position 3 of the words in 'Ibrahim Francois Pei Shu Ngo' and concatenate them using a space."
+def get_sentence(text):
+    text_start = re.search("words in '", text).span(0)[1]
+    text_end = re.search("' and'", text).span(0)[0]
+    return text[text_start:text_end]
+get_sentence(input_text)
+
+Out [1]:
+"Ibrahim Francois Pei Shu Ngo"
+
+In [2]: 
+input_text = "Ibrahim Francois Pei Shu Ngo"
+def get_tokens(text):
+    tokens = text.split()
+    return tokens
+get_tokens(input_text)
+
+Out [2]:
+["Ibrahim", "Francois", "Pei", "Shu", "Ngo"]
+
+In [3]:
+input_tokens = ["Ibrahim", "Francois", "Pei", "Shu", "Ngo"]
+def get_nth_char_in_list(token_list, n):
+    char_list = [token[n-1] for token in token_list]
+    return char_list
+get_nth_char_in_list(input_tokens, 3)
+
+Out [3]:
+["r", "a", "i", "o", "u"]
+
+In [4]: 
+char_list = ["r", "a", "i", "o", "u"]
+def merge_chars(char_list):
+    return " ".join(char_list)
+merge_chars(char_list)
+
+Out [4]:
+r a i u o
+
+In [5]:
+final_answer = r a i u o
+print("Ans: ",final_answer)
+
+Out [5]:
+r a i u o
+
+In [1]:
+input_text = "Take the letters at position 3 of the words in 'Savita Saeed Ramos Sato Yadav' and concatenate them using a space."
+def get_sentence(text):
+    text_start = re.search("words in '", text).span(0)[1]
+    text_end = re.search("' and'", text).span(0)[0]
+    return text[text_start:text_end]
+get_sentence(input_text)
+
+Out [1]:
+"Savita Saeed Ramos Sato Yadav"
+
+In [2]: 
+input_text = "Savita Saeed Ramos Sato Yadav"
+def get_tokens(text):
+    tokens = text.split()
+    return tokens
+get_tokens(input_text)
+
+Out [2]:
+["Savita", "Saeed", "Ramos",  "Sato",  "Yadav"]
+
+In [3]:
+input_tokens = ["Savita", "Saeed", "Ramos",  "Sato",  "Yadav"]
+def get_nth_char_in_list(token_list, n):
+    char_list = [token[n-1] for token in token_list]
+    return char_list
+get_nth_char_in_list(input_tokens, 3)
+
+Out [3]:
+["v", "e", "m", "t", "d"]
+
+In [4]: 
+char_list = ["v", "e", "m", "t", "d"]
+def merge_chars(char_list):
+    return " ".join(char_list)
+merge_chars(char_list)
+
+Out [4]:
+v e m t d
+
+In [5]:
+final_answer = v e m t d
+print("Ans: ",final_answer)
+
+Out [5]:
+Ans: v e m t d
+
+In [1]:
+input_text = "Translate English into Pig Latin. (English) Sami made his way across the bar and hugged Layla."
+
+Out [1]:
+def get_sentence(text):
+    text_start = re.search("English into Pig Latin. \(English\) ", text).span(0)[1]
+    text_end = re.search("\.", text).span(0)[1]
+    return text[text_start:text_end]
+get_sentence(input_text)
+
+Out [1]:
+"Sami made his way across the bar and hugged Layla"
+
+In [2]:
+input_text = "Sami made his way across the bar and hugged Layla"
+def get_tokens(text):
+    tokens = text.split()
+    return tokens
+get_tokens(input_text)
+
+Out [2]:
+["Sami", "made", "his", "way", "across", "the", "bar", "and", "hugged", "Layla"]
+
+In [3]:                                  
+input_tokens = ["Sami", "made", "his", "way", "across", "the", "bar", "and", "hugged", "Layla"]
+def get_pig_latin(token_list):
+    vowels = ["a", "e", "i", "o", "u", "y"]
+    pig_latin_tokens = []
+    for token in token_list:
+        if token[0] in vowels:
+            pig_latin_tokens.append(token + "yay")
+        else:
+            pig_latin_tokens.append(token[1:] + token[0] + "ay")
+    return pig_latin_tokens
+get_pig_latin(input_tokens)
+
+Out [3]:
+['Amisay', 'ademay', 'ishay', 'ayway', 'acrossyay', 'hetay', 'arbay', 'andyay', 'uggedhay', 'Aylalay']
+
+In [4]:
+pig_latin_tokens = ['amisyay', 'ademyay', 'ishyay', 'ayway', 'rossacay', 'ethyay', 'aryabay', 'andyay', 'uggedhay', 'aylaLay']
+def merge_tokens(token_list):
+    return " ".join(token_list)
+merge_tokens(pig_latin_tokens)
+
+Out [4]:
+'Amisay ademay ishay ayway acrossyay hetay arbay andyay uggedhay Aylalay'
+
+In [5]:
+final_answer = 'amisyay ademyay ishyay ayway rossacay ethyay aryabay andyay uggedhay aylaLay'
+print("Ans: ",final_answer)
+
+Out [5]:
+Ans: amisyay ademyay ishyay ayway rossacay ethyay aryabay andyay uggedhay aylaLay
+
+In [1]:
+input_text = "Translate English into Pig Latin. (English) Tom is the most popular boy in school."
+
+Out [1]:
+def get_sentence(text):
+    text_start = re.search("(English) ", text).span(0)[1]
+    text_end = re.search("\.", text).span(0)[1]
+    return text[text_start:text_end]
+get_sentence(input_text)
+
+Out [1]:
+"Tom is the most popular boy in school."
+
+In [2]:
+input_text = "Tom is the most popular boy in school."
+def get_tokens(text):
+    tokens = text.split()
+    return tokens
+get_tokens(input_text)
+
+Out [2]:
+["Tom", "is", "the", "most", "popular", "boy", "in", "school."]
+
+In [3]:
+input_tokens = ["Tom", "is", "the", "most", "popular", "boy", "in", "school."]
+def isVowel(letter):
+    if letter in ('a', 'e', 'i', 'o', 'u', 'A', 'E', 'I', 'O', 'U'):
+        return True
+    else:
+        return False
+def translate(token_list):
+    return ' '.join([token[1:] + token[0:1] + 'ay' if isVowel(token[0]) else token[2:] + token[0:2] + 'ay' for token in token_list])
+translate(input_tokens)
+
+Out [3]:
+"Omtay isay ethay ostmay opularpay oybay inay oolschay."
+
+In [4]:
+final_answer = Omtay isay ethay ostmay opularpay oybay inay oolschay.
+print("Ans: ",final_answer)
+
+Out [4]:
+"Ans: Omtay isay ethay ostmay opularpay oybay inay oolschay."
+
+In [1]:
+input_text = "%s"
+"""
+
+def notebook(temperature=0.3, model_name="text-davinci-002"):
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=2048, temperature=temperature, quote='In [1]:', n=1)
+        prompts=[few_shot_notebook_prompt% (x) for x in chunk]
+        return gpt3(prompts)
+
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 20)):
+            x = [ex.replace("\nA:", "") for ex in x]
+            answers.extend(predict(task_description, x))
+            pdb.set_trace()
+        # preds = [[y.strip() for y in x.split("\n")] for x in answers]
+        preds = [x.strip() for x in answers]
+        perf_array.append(substring_match(labels, preds))
+        print(perf_array)
+    print("FS-CoT performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
 # repeat_copy_logic(temperature=0.3)
 # auto_cot(temperature=0.3)
 # few_shot_cot(temperature=0.3)
-dynamic_few_shot_cot(temperature=0.3, strategy="similar")
+# dynamic_few_shot_cot(temperature=0.3, strategy="similar")
+notebook(temperature=0.3, model_name="code-davinci-002")

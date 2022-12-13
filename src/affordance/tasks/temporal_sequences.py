@@ -262,8 +262,6 @@ Possible times:
     print("Std. Dev", np.std(perf_array))
 
 
-temporal_sequences()
-
 few_shot_cot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use a python code generation and execution function in one or more of your substeps, if required. Other functions like arithmetic and logical operations can also be used. 
 Description: 
 Input: 
@@ -429,9 +427,6 @@ def affordance():
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-# affordance()
-
-
 
 def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
 
@@ -465,9 +460,179 @@ def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
     print("Std. Dev", np.std(perf_array))
 
 
+few_shot_pot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can generate python code to solve arithmetic and algebra equations in using functions from sympy.
+from sympy import Symbol
+from sympy import simplify
+import math
+from sympy import solve_it
+# solve_it(equations, variable): solving the equations and return the variable value.
+
+Description: Solve the following arithmetic problems on ratios and fractions, writing out intermediate arithmetic calculations as python code. Store your result as a variable named 'ans'.
+Input:  In a flight of 600 km, an aircraft was slowed down due to bad weather. Its average speed for the trip was reduced by 200 km/hr and the time of flight increased by 30 minutes. The duration of the flight is:  A)1 hour B)2 hours C)3 hours D)4 hours E)5 hours
+Q1: [generate python code] write python code to solve the problem, using math and sympy.
+#1:
+duration = Symbol('duration', positive=True)
+delay = 30 / 60
+total_disntace = 600
+original_speed = total_disntace / duration
+reduced_speed = total_disntace / (duration + delay)
+solution = solve_it(original_speed - reduced_speed - 200, duration)
+ans = solution[duration]
+print(ans)
+Q2: [code execute] Execute the python code in #1 and get the value of "ans"
+#2:
+1.0
+Q3: [compare] Which of the options among A)1 hour B)2 hours C)3 hours D)4 hours E)5 hours is most similar to the answer? 
+#3: A
+Q3: [EOQ]
+Ans: A
+----
+Description: Solve the following arithmetic problems on ratios and fractions, writing out intermediate arithmetic calculations as python code. Store your result as a variable named 'ans'.
+Input: M men agree to purchase a gift for Rs. D. If 3 men drop out how much more will each have to contribute towards the purchase of the gift?  A)D/(M-3) B)MD/3 C)M/(D-3) D)3D/(M**2-3M) E)None of these
+Q1: [generate python code] write python code to solve the problem, using math and sympy.
+#1:
+M = Symbol('M')
+D = Symbol('D')
+cost_before_dropout = D / M
+cost_after_dropout = D / (M - 3)
+ans=simplify(cost_after_dropout - cost_before_dropout)
+print(ans)
+Q2: [code execute] Execute the python code in #1 and get the value of "ans"
+#2: 3*D/(M*(M - 3))
+Q3: [compare] Which of the options among A)D/(M-3) B)MD/3 C)M/(D-3) D)3D/(M**2-3M) E)None of these is most similar to the answer? 
+#3: D
+Q4: [EOQ]
+Ans: D
+----
+Description: Solve the following middle-school arithmetic problems, writing out intermediate arithmetic calculations as python code. Store your result as a variable named 'ans'.
+Input: Janet’s ducks lay 16 eggs per day. She eats three for breakfast every morning and bakes muffins for her friends every day with four. She sells the remainder at the farmers' market daily for $2 per fresh duck egg. How much in dollars does she make every day at the farmers' market?
+Q1: [generate python code] write down the arithmetic or algebra equations as python code
+#1:
+total_eggs = 16
+eaten_eggs = 3
+baked_eggs = 4
+sold_eggs = total_eggs - eaten_eggs - baked_eggs
+dollars_per_egg = 2
+ans = sold_eggs * dollars_per_egg
+print(ans)
+Q2: [code execute] Execute the python code in #1 and get the value of "ans"
+#2: 18
+Q3: [EOQ]
+Ans:18
+----
+Description: Solve the following middle-school arithmetic problems, writing out intermediate arithmetic calculations as python code. Store your result as a variable named 'ans'.
+Input: Every day, Wendi feeds each of her chickens three cups of mixed chicken feed, containing seeds, mealworms and vegetables to help keep them healthy.  She gives the chickens their feed in three separate meals. In the morning, she gives her flock of chickens 15 cups of feed.  In the afternoon, she gives her chickens another 25 cups of feed.  How many cups of feed does she need to give her chickens in the final meal of the day if the size of Wendi's flock is 20 chickens?
+Q1: [generate python code] write down the arithmetic or algebra equations as python code
+#1:
+numb_of_chickens = 20
+cups_for_each_chicken = 3
+cups_for_all_chicken = num_of_chickens * cups_for_each_chicken
+cups_in_the_morning = 15
+cups_in_the_afternoon = 25
+ans = cups_for_all_chicken - cups_in_the_morning - cups_in_the_afternoon
+print(ans)
+Q2: [code execute] Execute the python code in #1 and get the value of "ans"
+#2: 20
+Q3: [EOQ]
+Ans: 20
+----
+Description: Solve the following middle-school arithmetic problems, writing out intermediate arithmetic calculations as python code. Store your result as a variable named 'ans'.
+Input: Joseph and Getty went to buy ice creams, they together bought 36 ice creams. On the way back, Joseph ate 12 of the ice creasm, and he has 2 ice creams left now. 
+Q1: [generate python code] write down the arithmetic or algebra equations as python code
+#1:
+num_ice_creams_bought_by_joseph = 2 + 12
+total_ice_creams = 36
+ans = total_ice_creams - num_ice_creams_bought_by_joseph
+print(ans)
+Q2: [code execute] Execute the python code in #1 and get the value of "ans"
+#2: 22
+Q3: [EOQ]
+Ans: 22
+----
+Description: Solve the following problems on financial data in the form of text and tables, writing out intermediate calculations as python code. Store your result as a variable named 'ans'.
+Input: american tower corporation and subsidiaries notes to consolidated financial statements ( 3 ) consists of customer-related intangibles of approximately $75.0 million and network location intangibles of approximately $72.7 million. the customer-related intangibles and network location intangibles are being amortized on a straight-line basis over periods of up to 20 years. For acquired customer-related and network location intangibles, what is the expected annual amortization expenses, in millions?
+Q1: [generate python code] write down the arithmetic or algebra equations as python code
+#1:
+customer_related_intangibles = 75
+network_location_intangibles = 72.7
+straight_line_basis = 20
+amortization_expenses = ( customer_related_intangibles + network_location_intangibles ) / straight_line_basis
+ans = amortization_expenses
+print(ans)
+Q2: [code execute] Execute the python code and get the value of "ans"
+#2: 7.385
+Q3: [EOQ]
+Ans: 7.385
+----
+Descripton: %s
+Input: %s
+Q1:"""
+
+
+def few_shot_pot(temperature=0.3, model_name="text-davinci-002"):
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=2048, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_pot_prompt% (description, x) for x in chunk]
+        return gpt3(prompts)
+
+    perf_array = []
+    runs = 5
+    task_description = "Temporal sequences: Given the daily schedule of activities of a person and a final activity that they need to find time for, choose one of the four provided options when they could do the activity. Write out intermediate calculations as python code and store result as a variable named 'ans'."
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 20)):
+            x = [ex.replace("""\nPossible times:""", "") for ex in x]
+            answers.extend(predict(task_description, x))
+        # preds = [[y.strip() for y in x.split("\n")] for x in answers]
+        preds = [x.strip() for x in answers]
+        perf_array.append(substring_match(labels, preds))
+        print(perf_array)
+    print("FS-CoT performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
+
+def affordance(temperature=0.3, model_name = "text-davinci-002"):
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=2048, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_pot_prompt% (description, x) for x in chunk]
+        return gpt3(prompts)
+
+    perf_array = []
+    runs = 5
+    task_description = "Select the option that best replaces '()' in each text input given the chocies presented, by solving the arithmetic word problem in the text input. Solving the problem will require reasoning about units of measurement. Write out intermediate calculations as python code and store result as a variable named 'ans'."
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 20)):
+            x = [ex.replace("\nA:", "") for ex in x]
+            answers.extend(predict(task_description, x))
+            new_answers = []
+            for ans in answers:
+                try:
+                    parsed_program  = parse_program("Input: dummy\nQ1:" + ans)
+                    code_snippet = parsed_program.node_list[0].command_output
+                    result = safe_execute(code_snippet)
+                except:
+                    result = None
+                if result:
+                    new_answers.append(result)
+                else:
+                    new_answers.append(ans[re.search('Ans:', ans).span(0)[0]:] if "Ans:" in ans else ans)
+        # preds = [[y.strip() for y in x.split("\n")] for x in answers]
+        preds = [x.strip() for x in answers]
+        perf_array.append(substring_match(labels, preds))
+        print(perf_array)
+    print("FS-CoT performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
+
+
 # auto_decomp(10, 0.3)
 # affordance(temperature=0.3)
-dynamic_few_shot_cot(temperature=0.3, strategy="random")
-# few_shot_cot()
+# dynamic_few_shot_cot(temperature=0.3, strategy="random")
+few_shot_pot(temperature=0.3, model_name="code-davinci-002")
 # few_shot(N=5, temperature=0.3)
 # auto_cot()

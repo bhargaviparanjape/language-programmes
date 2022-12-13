@@ -8,6 +8,8 @@ import re
 from utils import get_few_shot_prompt
 from transformers import GPT2Tokenizer
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
+from prompt_library import random_tasks, similar_tasks, llm_similar_tasks, similar_auto_breakdowns
 
 # Musique
 data_files = {split:os.path.join(cache_dir, 'musique', 'data', 'musique_full_v1.0_%s.jsonl'%split) for split in ['train', 'dev']}
@@ -329,8 +331,8 @@ Q2: Does the information help answer the question? There could be no definitive 
 #2: No. The question is too specific
 Q3: What is the final answer?
 #3: Unknown
-Q4: [EOC]
-Unknown
+Q4: [EOQ]
+Ans: Unknown
 ----
 Description: An anachronism is a mistake in chronology, or a person, thing, or event that is out of its proper time. Does the sentence contain an anachrornism?
 Input: President George H. W. Bush called his generals to the Oval Office at the outset of the Gulf War.
@@ -346,8 +348,8 @@ Q4: Could these entities have co-existed based on thier time periods alone?
 #4: Yes. Their time periods intersect.
 Q5: Is this an anachronism?
 #5: No
-Q6: [EOC]
-No
+Q6: [EOQ]
+Ans: No
 ----
 Description: An anachronism is a mistake in chronology, or a person, thing, or event that is out of its proper time. Does the sentence contain an anachrornism?
 Input: Kurt Cobain starred in the 1980 television show "Twin Peaks".
@@ -363,8 +365,8 @@ Q4: Could these entities have co-existed based on this information?
 #4: No. Musician  Kurt Cobain could not have starred in Twin Peaks.
 Q5: Is this an anachronism?
 #5: Yes
-Q6: [EOC]
-Yes
+Q6: [EOQ]
+Ans: Yes
 ----
 Description: Answer questions about Hindu mythology by choosing the option that best answers the question.
 Input: In the Mahabharata, Karna is cursed to forget the incantations needed to use which weapon?
@@ -376,8 +378,8 @@ Q1: [search] In the Hindu epic Ramayana, who is the main villain?
 #1: As a result, he cursed Karna, saying that HIS MARTIAL SKILLS, including the use of BRAHMASTRA, would abandon him when he needed them most. Indra, the King of Gods, stung Karna in the form of a bee to get him cursed by Parshuram. Karna walked through the woods in despair, feeling dejected by the curse. A skilled & devoted warrior...
 Q2: [compare] Which option is the answer in #3 most similar to?
 #2: Brahmastra
-Q3: [EOC]
-Brahmastra
+Q3: [EOQ]
+Ans: Brahmastra
 ----
 Description: Choose the option that best answers the question. If the question does not have a known answer, choose "Unknown". 
 Input: Where was Mark Twain born?
@@ -389,8 +391,8 @@ Q2: Does the information help answer the question? There could be no definitive 
 #2: Yes. The answer is Florida, Missouri
 Q3: What is the final answer?
 #3: Florida, Missouri
-Q4: [EOC]
-Florida, Missouri
+Q4: [EOQ]
+Ans: Florida, Missouri
 ----
 Description: Answer questions about Hindu mythology by choosing the option that best answers the question.
 Input: In the Hindu epic Ramayana, the main villain was a devotee of which deity?
@@ -406,8 +408,8 @@ Q3: [search] Ravana was a devotee of which deity?
 #3: Ravana, was an ardent devotee of Lord Shiva, is depicted and described as a great scholar,a brahman,a capable ruler and a maestro of the Veena.
 Q4: [compare] Which option is the answer in #3 most similar to?
 #4: Shiva
-Q5: [EOC]
-Shiva
+Q5: [EOQ]
+Ans: Shiva
 ----
 Desciption: %s 
 Input: %s
@@ -425,8 +427,8 @@ Q2: Does the information help answer the question? There could be no definitive 
 #2: No. The question is too specific
 Q3: What is the final answer?
 #3: Unknown
-Q4: [EOC]
-Unknown
+Q4: [EOQ]
+Ans: Unknown
 ----
 Description: An anachronism is a mistake in chronology, or a person, thing, or event that is out of its proper time. Does the sentence contain an anachrornism?
 Input: President George H. W. Bush called his generals to the Oval Office at the outset of the Gulf War.
@@ -442,8 +444,8 @@ Q4: Could these entities have co-existed based on thier time periods alone?
 #4: Yes. Their time periods intersect.
 Q5: Is this an anachronism?
 #5: No
-Q6: [EOC]
-No
+Q6: [EOQ]
+Ans: No
 ----
 Description: Choose the option that best answers the question. If the question does not have a known answer, choose "Unknown". 
 Input: Where was Mark Twain born?
@@ -455,8 +457,8 @@ Q2: Does the information help answer the question? There could be no definitive 
 #2: Yes. The answer is Florida, Missouri
 Q3: What is the final answer?
 #3: Florida, Missouri
-Q4: [EOC]
-Florida, Missouri
+Q4: [EOQ]
+Ans: Florida, Missouri
 ----
 Description: Answer questions about Hindu mythology by choosing the option that best answers the question.
 Input: In the Hindu epic Ramayana, the main villain was a devotee of which deity?
@@ -472,8 +474,8 @@ Q3: [search] Ravana was a devotee of which deity?
 #3: Ravana, was an ardent devotee of Lord Shiva, is depicted and described as a great scholar,a brahman,a capable ruler and a maestro of the Veena.
 Q4: [compare] Which option is the answer in #3 most similar to?
 #4: Shiva
-Q5: [EOC]
-Shiva
+Q5: [EOQ]
+Ans: Shiva
 ----
 Desciption: %s 
 Input: %s
@@ -582,9 +584,50 @@ def affordance(temperature=0.3):
     print("Std. Dev", np.std(perf_array))
 
 
+def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
+    global few_shot_cot_prompt
+    task_name = "Multi-hop question answering."
+    task_description = "Answer the following complex multi-hop questions that require answering several intermediate questions."
+
+    if strategy == "fixed":
+        few_shot_cot_prompt = few_shot_cot_prompt
+    elif strategy == "random":
+        few_shot_cot_prompt = random_tasks(N=6)
+    elif strategy == "similar":
+        few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
+    elif strategy == "similar_auto_decomp":
+        few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
+    elif strategy == "llm_similar":
+        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
+
+    interpreter = TopDownVisitorBeta(model_name=model_name)
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(dev_inputs, 10)):
+            x = [ex.replace("\nEdited:", "") for ex in x]
+            prompts, answer = predict(task_description, x)
+            new_answer  = interpreter.batch_visit(prompts, answer)
+            pdb.set_trace()
+            answers.extend(new_answer)
+        preds = [x.strip() for x in answers]
+        perf_array.append(substring_match(dev_labels, preds))
+    print("FS-CoT Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
 
 # automatic_decomposition()
 # few_shot(N=100, temperature=0.3)
 # auto_cot(temperature=0.3)
 # few_shot_cot(temperature=0.4)
-affordance(temperature=0.3)
+# affordance(temperature=0.3)
+nl_program(temperature=0.3, model_name="text-davinci-002")

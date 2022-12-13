@@ -1,8 +1,7 @@
 from enum import auto
 from re import L
 from turtle import pd
-from utils import gpt3, propose_decomposition, propose_instruction, chunks, get_subset, OpenAIModel, cache_dir, substring_match
-from sequential_interpreter import TopDownVisitor
+from utils import gpt3, propose_decomposition, propose_instruction, chunks, get_subset, OpenAIModel, cache_dir, substring_match, get_answer
 import datasets
 import numpy as np
 from tqdm import tqdm
@@ -12,6 +11,8 @@ import time
 import openai
 import sys
 import subprocess
+from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
+from collections import Counter
 from prompt_library import random_tasks, similar_tasks, llm_similar_tasks, similar_auto_breakdowns
 import sys
 sys.path.append("/gscratch/zlab/bparan/projects/cascades/src/guidance")
@@ -251,9 +252,9 @@ Input: %s
 Q1:"""
 
 
-def few_shot_cot(temperature=0.3):
+def few_shot_cot(temperature=0.3, model_name="text-davinci-002"):
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=2048, temperature=temperature, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=2048, temperature=temperature, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
@@ -262,10 +263,11 @@ def few_shot_cot(temperature=0.3):
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nEdited:", "") for ex in x]
             answers.extend(predict(task_description, x))
             # pdb.set_trace()
+            time.sleep(60)
         preds = [x.strip() for x in answers]
         perf_array.append(substring_match(labels, preds))
     print("Few-shot COT performance:")
@@ -400,14 +402,301 @@ def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-def nl_program(temperature=0.3):
 
-    interpreter = TopDownVisitor()
+def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+    global few_shot_cot_prompt
+    task_name = "Simple Text Editing"
+    task_description = "Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is."
+
+    if strategy == "fixed":
+        few_shot_cot_prompt = few_shot_cot_prompt
+    elif strategy == "random":
+        few_shot_cot_prompt = random_tasks(N=6)
+    elif strategy == "similar":
+        few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
+    elif strategy == "similar_auto_decomp":
+        few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
+    elif strategy == "llm_similar":
+        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
+
+    interpreter = TopDownVisitorBeta(model_name=model_name)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=temperature, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return prompts, gpt3(prompts)
+
+    def predict_self_consistency(description, chunk, n=5):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    if self_consistency:
+        perf_array = []
+        runs = 5
+        batch_size = 10
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = [] # List of counters
+            for x in tqdm(chunks(inputs, batch_size)):
+                x = [ex.replace("\nEdited:", "") for ex in x]
+                prompts, answer_set = predict_self_consistency(task_description, x)
+                result_counter = [Counter() for i in range(batch_size)]
+                for ans in answer_set:
+                    new_answer = interpreter.batch_visit(prompts, ans)
+                    new_answer = [get_answer(program) for program in new_answer]
+                    for enum, pred in enumerate(new_answer):
+                        if pred is not None:
+                            result_counter[enum].update([pred])
+                answers.extend(result_counter)
+            preds = [x.most_common(1)[0][0] for x in answers]
+            perf_array.append(substring_match(labels, preds))
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+
+    perf_array = []
+    runs = 1
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 10)):
+            x = [ex.replace("\nEdited:", "") for ex in x]
+            prompts, answer = predict(task_description, x)
+            new_answer  = interpreter.batch_visit(prompts, answer)
+            answers.extend(new_answer)
+            time.sleep(60)
+        preds = [x.strip() for x in answers]
+        perf_array.append(substring_match(labels, preds))
+    print("FS-CoT Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
+
+def measure_task_selection_accuracy():
+    task_name = "Simple Text Editing"
+    task_description = "Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is."
+    from prompt_library import task_selection_accuracy
+    task_selection_accuracy(["date_understanding", "language_games", "k_letter_concatenation"], task_name, task_description, io_pairs)
+
+
+few_shot_notebook_prompt = """In [1]:
+import os
+import sys
+import numpy as np
+import re
+from sympy.solvers import solve
+from sympy import Symbol, Eq
+import math
+from sympy import simplify
+import numpy as np
+import cvxpy as cp
+import statistics
+from serpapi import GoogleSearch
+from utils import string_compare
+
+In [1]:
+input_text = "Take the letters at position 3 of the words in 'Ibrahim Francois Pei Shu Ngo' and concatenate them using a space."
+def get_sentence(text):
+    text_start = re.search("words in '", text).span(0)[1]
+    text_end = re.search("' and'", text).span(0)[0]
+    return text[text_start:text_end]
+get_sentence(input_text)
+
+Out [1]:
+"Ibrahim Francois Pei Shu Ngo"
+
+In [2]: 
+input_text = "Ibrahim Francois Pei Shu Ngo"
+def get_tokens(text):
+    tokens = text.split()
+    return tokens
+get_tokens(input_text)
+
+Out [2]:
+["Ibrahim", "Francois", "Pei", "Shu", "Ngo"]
+
+In [3]:
+input_tokens = ["Ibrahim", "Francois", "Pei", "Shu", "Ngo"]
+def get_nth_char_in_list(token_list, n):
+    char_list = [token[n-1] for token in token_list]
+    return char_list
+get_nth_char_in_list(input_tokens, 3)
+
+Out [3]:
+["r", "a", "i", "o", "u"]
+
+In [4]: 
+char_list = ["r", "a", "i", "o", "u"]
+def merge_chars(char_list):
+    return " ".join(char_list)
+merge_chars(char_list)
+
+Out [4]:
+r a i u o
+
+In [5]:
+final_answer = r a i u o
+print("Ans: ",final_answer)
+
+Out [5]:
+r a i u o
+
+In [1]:
+input_text = "Take the letters at position 3 of the words in 'Savita Saeed Ramos Sato Yadav' and concatenate them using a space."
+def get_sentence(text):
+    text_start = re.search("words in '", text).span(0)[1]
+    text_end = re.search("' and'", text).span(0)[0]
+    return text[text_start:text_end]
+get_sentence(input_text)
+
+Out [1]:
+"Savita Saeed Ramos Sato Yadav"
+
+In [2]: 
+input_text = "Savita Saeed Ramos Sato Yadav"
+def get_tokens(text):
+    tokens = text.split()
+    return tokens
+get_tokens(input_text)
+
+Out [2]:
+["Savita", "Saeed", "Ramos",  "Sato",  "Yadav"]
+
+In [3]:
+input_tokens = ["Savita", "Saeed", "Ramos",  "Sato",  "Yadav"]
+def get_nth_char_in_list(token_list, n):
+    char_list = [token[n-1] for token in token_list]
+    return char_list
+get_nth_char_in_list(input_tokens, 3)
+
+Out [3]:
+["v", "e", "m", "t", "d"]
+
+In [4]: 
+char_list = ["v", "e", "m", "t", "d"]
+def merge_chars(char_list):
+    return " ".join(char_list)
+merge_chars(char_list)
+
+Out [4]:
+v e m t d
+
+In [5]:
+final_answer = v e m t d
+print("Ans: ",final_answer)
+
+Out [5]:
+Ans: v e m t d
+
+In [1]:
+input_text = "Translate English into Pig Latin. (English) Sami made his way across the bar and hugged Layla."
+
+Out [1]:
+def get_sentence(text):
+    text_start = re.search("English into Pig Latin. \(English\) ", text).span(0)[1]
+    text_end = re.search("\.", text).span(0)[1]
+    return text[text_start:text_end]
+get_sentence(input_text)
+
+Out [1]:
+"Sami made his way across the bar and hugged Layla"
+
+In [2]:
+input_text = "Sami made his way across the bar and hugged Layla"
+def get_tokens(text):
+    tokens = text.split()
+    return tokens
+get_tokens(input_text)
+
+Out [2]:
+["Sami", "made", "his", "way", "across", "the", "bar", "and", "hugged", "Layla"]
+
+In [3]:                                  
+input_tokens = ["Sami", "made", "his", "way", "across", "the", "bar", "and", "hugged", "Layla"]
+def get_pig_latin(token_list):
+    vowels = ["a", "e", "i", "o", "u", "y"]
+    pig_latin_tokens = []
+    for token in token_list:
+        if token[0] in vowels:
+            pig_latin_tokens.append(token + "yay")
+        else:
+            pig_latin_tokens.append(token[1:] + token[0] + "ay")
+    return pig_latin_tokens
+get_pig_latin(input_tokens)
+
+Out [3]:
+['Amisay', 'ademay', 'ishay', 'ayway', 'acrossyay', 'hetay', 'arbay', 'andyay', 'uggedhay', 'Aylalay']
+
+In [4]:
+pig_latin_tokens = ['amisyay', 'ademyay', 'ishyay', 'ayway', 'rossacay', 'ethyay', 'aryabay', 'andyay', 'uggedhay', 'aylaLay']
+def merge_tokens(token_list):
+    return " ".join(token_list)
+merge_tokens(pig_latin_tokens)
+
+Out [4]:
+'Amisay ademay ishay ayway acrossyay hetay arbay andyay uggedhay Aylalay'
+
+In [5]:
+final_answer = 'amisyay ademyay ishyay ayway rossacay ethyay aryabay andyay uggedhay aylaLay'
+print("Ans: ",final_answer)
+
+Out [5]:
+Ans: amisyay ademyay ishyay ayway rossacay ethyay aryabay andyay uggedhay aylaLay
+
+In [1]:
+input_text = "Translate English into Pig Latin. (English) Tom is the most popular boy in school."
+
+Out [1]:
+def get_sentence(text):
+    text_start = re.search("(English) ", text).span(0)[1]
+    text_end = re.search("\.", text).span(0)[1]
+    return text[text_start:text_end]
+get_sentence(input_text)
+
+Out [1]:
+"Tom is the most popular boy in school."
+
+In [2]:
+input_text = "Tom is the most popular boy in school."
+def get_tokens(text):
+    tokens = text.split()
+    return tokens
+get_tokens(input_text)
+
+Out [2]:
+["Tom", "is", "the", "most", "popular", "boy", "in", "school."]
+
+In [3]:
+input_tokens = ["Tom", "is", "the", "most", "popular", "boy", "in", "school."]
+def isVowel(letter):
+    if letter in ('a', 'e', 'i', 'o', 'u', 'A', 'E', 'I', 'O', 'U'):
+        return True
+    else:
+        return False
+def translate(token_list):
+    return ' '.join([token[1:] + token[0:1] + 'ay' if isVowel(token[0]) else token[2:] + token[0:2] + 'ay' for token in token_list])
+translate(input_tokens)
+
+Out [3]:
+"Omtay isay ethay ostmay opularpay oybay inay oolschay."
+
+In [4]:
+final_answer = Omtay isay ethay ostmay opularpay oybay inay oolschay.
+print("Ans: ",final_answer)
+
+Out [4]:
+"Ans: Omtay isay ethay ostmay opularpay oybay inay oolschay."
+
+In [1]:
+input_text = "%s"
+"""
+
+def notebook(temperature=0.3, model_name="text-davinci-002"):
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=2048, temperature=temperature, quote='In [1]:', n=1)
+        prompts=[few_shot_notebook_prompt% (x) for x in chunk]
+        return gpt3(prompts)
 
     perf_array = []
     runs = 5
@@ -416,26 +705,25 @@ def nl_program(temperature=0.3):
         answers = []
         for x in tqdm(chunks(inputs, 20)):
             x = [ex.replace("\nEdited:", "") for ex in x]
-            prompts, answer = predict(task_description, x)
-            new_answer  = interpreter.batch_visit(prompts, answer)
-            answers.extend(new_answer)
-            pdb.set_trace()
+            answers.extend(predict(task_description, x))
+        # preds = [[y.strip() for y in x.split("\n")] for x in answers]
         preds = [x.strip() for x in answers]
         perf_array.append(substring_match(labels, preds))
-    print("FS-CoT Performance:")
+        print(perf_array)
+    print("FS-CoT performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
+
 # simple_text_editing(temperature=0.3)
 # auto_cot(temperature=0.3)
-# few_shot_cot(temperature=0.3)
+# few_shot_cot(temperature=0.3, model_name="text-davinci-003")
 # auto_decomp(10, 0.3)
 # affordance(temperature=0.3)
 # dynamic_few_shot_cot(temperature=0.3, strategy="llm_similar")
 # prompt_guidance()
-# nl_program(temperature=0.3)
+nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed")
+# notebook(temperature=0.3, model_name="code-davinci-002")
 
-task_name = "Simple Text Editing"
-task_description = "Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is."
-from prompt_library import task_selection_accuracy
-task_selection_accuracy(["date_understanding", "language_games", "k_letter_concatenation"], task_name, task_description, io_pairs)
+
+

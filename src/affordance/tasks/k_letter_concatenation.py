@@ -368,10 +368,10 @@ Description: Find the required date in MM/DD/YYYY using information about relate
 Input: Today is the first day of 2007. What is the date one week from today in MM/DD/YYYY?
 Q1: [string reformat] first day of 2007 in MM/DD/YYYY 
 #1: 01/01/2007
-Q2: What date is one week from 01/01/2007? 
+Q2: [subquestion] What date is one week from 01/01/2007? 
 #2: 01/08/2007
 Q3: [EOQ]
-01/08/2007
+Ans: 01/08/2007
 ----
 Description: Translate English into Pig Latin.
 Input: (English) Sami made his way across the bar and hugged Layla.
@@ -382,7 +382,7 @@ Q2: [string edit] Transfer the initial consonant of each word to the end of the 
 Q3: [string merge] Concatenate #2 into a full sentence.
 #3: Amisay ademay ishay ayway acrossyay ethay arbay andyay uggedhay Aylalay.
 Q4: [EOQ]
-Amisay ademay ishay ayway acrossyay ethay arbay andyay uggedhay Aylalay.
+Ans: Amisay ademay ishay ayway acrossyay ethay arbay andyay uggedhay Aylalay.
 ----
 Description: Take the letters at position 3 of the words in a list of words and concatenate them using a space.
 Input: Take the letters at position 3 of the words in "Savita Saeed Ramos Sato Yadav" and concatenate them using a space.
@@ -393,7 +393,7 @@ Q2: [string index] What is the third letter of words in the list in #1?
 Q3: [string merge] Concatenate #2 with spaces
 #3: "v e m t d"
 Q4: [EOQ]
-v e m t d
+Ans: v e m t d
 ----
 Desciption: Take the letters at position 3 of the words in a list of words and concatenate them using a space.
 Take the letters at position 3 of the words in "Ibrahim Francois Pei Shu Ngo" and concatenate them using a space.
@@ -404,7 +404,7 @@ Q2: [string index] What is the third letter of words in the list in #1?
 Q3: [string merge] Concatenate #2 with spaces
 #3: "r a i u o"
 Q4: [EOQ]
-r a i u o
+Ans: r a i u o
 ----
 Description: Translate English into Pig Latin.
 Input: (English) Tom is the most popular boy in school.
@@ -415,18 +415,18 @@ Q2: [string edit] Transfer the initial consonant of each word to the end of the 
 Q3: [string merge] Concatenate #2 into a full sentence.
 #3: Omtay isyay ethay ostmay opularpay oybay inyay oolschay.
 Q4: [EOQ]
-Omtay isyay ethay ostmay opularpay oybay inyay oolschay.
+Ans: Omtay isyay ethay ostmay opularpay oybay inyay oolschay.
 ----
 Description: Find the required date in MM/DD/YYYY using information about related events and dates in the input. Clue: First find what day is today.
 Input: The deadline is Jun 1, 2021, which is 2 days away from now. What is the date 24 hours later in MM/DD/YYYY?
 Q1: [string reformat] Jun 1, 2021 in MM/DD/YYYY
 #1: 06/01/2021
-Q2: 06/01/2021 is 2 days away from now. What date is today?
+Q2: [subquestion] 06/01/2021 is 2 days away from now. What date is today?
 #2: Today is 04/01/2021
-Q3: What date is 24 hours later than today?  
+Q3: [subquestion] What date is 24 hours later than today?  
 #3: 05/01/2021
 Q4: [EOQ]
-05/31/2021
+Ans: 05/31/2021
 ----
 Desciption: %s
 Input: %s
@@ -449,7 +449,6 @@ def few_shot_cot(temperature=0.3):
             answers.extend(predict(task_description, x))
         # preds = [[y.strip() for y in x.split("\n")] for x in answers]
         preds = [x.strip() for x in answers]
-        pdb.set_trace()
         perf_array.append(substring_match(dev_labels, preds))
         print(perf_array)
     print("FS-CoT performance:")
@@ -496,6 +495,20 @@ def affordance(temperature=0.3):
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
+    def predict_self_consistency(description, chunk):
+        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=2048, temperature=temperature, quote='---', n=10)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        to_return = []
+        results = gpt3(prompts)
+        pdb.set_trace()
+        for idx, g in enumerate(results['choices']):
+            text = g['text']
+            logprob = sum(g['logprobs']['token_logprobs'])
+            to_return.append((text, logprob))
+        to_return = sorted(to_return, key=lambda tup: tup[1], reverse=True)
+        to_return = [r[0] for r in to_return]
+        return to_return
+
     def string_index(sequence, position):
         char_list = []
         for word in sequence:
@@ -515,26 +528,146 @@ def affordance(temperature=0.3):
         answers = []
         new_answers = []
         for x in tqdm(chunks(dev_inputs, 20)):
-            answers = predict("Take the letters at position 3 of the words in a list of words and concatenate them using a space.", x)
+            answers = predict_self_consistency("Take the letters at position 3 of the words in a list of words and concatenate them using a space.", x)
             affordance_inputs = [json.loads(a.strip().split("\n")[1].replace("#1: ", "")) for a in answers]
             affordance_outputs = [string_index(inp, 2) for inp in affordance_inputs]
             x = [ex + a[:re.search("#2: ", a).span(0)[1]] + json.dumps(o) for ex, a, o in zip(x, answers, affordance_outputs)]
             new_answers.extend(predict_with_affordance("Take the letters at position 3 of the words in a list of words and concatenate them using a space.", x))
         # preds = [[y.strip() for y in x.split("\n")] for x in new_answers]
-        preds = [x.strip() for x in new_answers]
-        perf_array.append(substring_match(dev_labels, preds))
-        time.sleep(60)
+        preds = [ans.split("Ans:", 1)[-1] for ans in new_answers]
+        preds = [x.strip() for x in preds]
+        perf_array.append(exact_match(dev_labels, preds))
         print(perf_array)
     print("Few-shot Affordance COT performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
 
+few_shot_notebook_prompt = """In [1]:
+import os
+import sys
+import numpy as np
+import re
+from sympy.solvers import solve
+from sympy import Symbol, Eq
+import math
+from sympy import simplify
+import numpy as np
+import cvxpy as cp
+import statistics
+
+In [1]:
+input_text = "Take the letters at position 3 of the words in 'Ibrahim Francois Pei Shu Ngo' and concatenate them using a space."
+def get_sentence(text):
+    text_start = re.search("words in '", text).span(0)[1]
+    text_end = re.search("' and'", text).span(0)[0]
+    return text[text_start:text_end]
+get_sentence(input_text)
+
+Out [1]:
+"Ibrahim Francois Pei Shu Ngo"
+
+In [2]: 
+input_text = "Ibrahim Francois Pei Shu Ngo"
+def get_tokens(text):
+    tokens = text.split()
+    return tokens
+get_tokens(input_text)
+
+Out [2]:
+["Ibrahim", "Francois", "Pei", "Shu", "Ngo"]
+
+In [3]:
+input_tokens = ["Ibrahim", "Francois", "Pei", "Shu", "Ngo"]
+def get_nth_char_in_list(token_list, n):
+    char_list = [token[n-1] for token in token_list]
+    return char_list
+get_nth_char_in_list(input_tokens, 3)
+
+Out [3]:
+["r", "a", "i", "o", "u"]
+
+In [4]: 
+char_list = ["r", "a", "i", "o", "u"]
+def merge_chars(char_list):
+    return " ".join(char_list)
+merge_chars(char_list)
+
+Out [4]:
+r a i u o
+
+In [1]:
+input_text = "Take the letters at position 3 of the words in 'Savita Saeed Ramos Sato Yadav' and concatenate them using a space."
+def get_sentence(text):
+    text_start = re.search("words in '", text).span(0)[1]
+    text_end = re.search("' and'", text).span(0)[0]
+    return text[text_start:text_end]
+get_sentence(input_text)
+
+Out [1]:
+"Savita Saeed Ramos Sato Yadav"
+
+In [2]: 
+input_text = "Savita Saeed Ramos Sato Yadav"
+def get_tokens(text):
+    tokens = text.split()
+    return tokens
+get_tokens(input_text)
+
+Out [2]:
+["Savita", "Saeed", "Ramos",  "Sato",  "Yadav"]
+
+In [3]:
+input_tokens = ["Savita", "Saeed", "Ramos",  "Sato",  "Yadav"]
+def get_nth_char_in_list(token_list, n):
+    char_list = [token[n-1] for token in token_list]
+    return char_list
+get_nth_char_in_list(input_tokens, 3)
+
+Out [3]:
+["v", "e", "m", "t", "d"]
+
+In [4]: 
+char_list = ["v", "e", "m", "t", "d"]
+def merge_chars(char_list):
+    return " ".join(char_list)
+merge_chars(char_list)
+
+Out [4]:
+v e m t d
+
+In [1]:
+input_text = "%s"
+"""
+
+def notebook(temperature=0.3, model_name="text-davinci-002"):
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=2048, temperature=temperature, quote='In [1]:', n=1)
+        prompts=[few_shot_notebook_prompt% (x) for x in chunk]
+        return gpt3(prompts)
+
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(dev_inputs, 20)):
+            x = [ex.replace("\nA:", "").replace('"', "'") for ex in x]
+            answers.extend(predict(task_description, x))
+        # preds = [[y.strip() for y in x.split("\n")] for x in answers]
+        preds = [x.strip() for x in answers]
+        perf_array.append(substring_match(dev_labels, preds))
+        print(perf_array)
+    print("FS-CoT performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
 
 # k_letter_concatenation(temperature=0.3)
 # few_shot(N=100, temperature=0.3)
 # cot_rollout(temperature=0.3)
 # automatic_decomposition(N=10, temperature=0.3)
-auto_cot()
+# auto_cot()
 # affordance(temperature=0.4)
 # few_shot_cot(temperature=0.4)
+notebook(temperature=0.3, model_name="code-davinci-002")

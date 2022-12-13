@@ -1,12 +1,16 @@
 from re import L
 from turtle import pd
 from utils import gpt3, propose_decomposition, propose_instruction, chunks, get_subset, OpenAIModel, cache_dir, substring_match
-
+from prompt_library import random_tasks, similar_tasks, llm_similar_tasks, similar_auto_breakdowns
+from sequential_interpreter import TopDownVisitorBeta, TopDownVisitor
 import datasets
 import numpy as np
 from tqdm import tqdm
 import json, pdb
 import re
+import time
+
+task_description = """(CS Algorithms) Solve the following simple programming tasks using Python."""
 
 
 io_pairs=[("""Given two strings, determine the length of the longest common subsequence.
@@ -165,30 +169,29 @@ Valid
     print("Std. Dev", np.std(perf_array))
 
 
-cs_algorithms()
 
 
 few_shot_cot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use a python code generation and execution function in one or more of your substeps, if required. Other functions like arithmetic and logical operations can also be used. 
-Description: 
+Description: (Auto Debugging) Debug the following code snippets by finding the answer or the error message.
 Input: 
 ```
 if x < 5:
 	pass
 ```
 What error does this program surface?
-Q1: [execute] Execute the following python code snippet.
+Q1: [code execute] Execute the following python code snippet.
 if x < 5:
 	pass
 #1:
 Traceback (most recent call last):
   File "<stdin>", line 1, in <module>
 NameError: name 'x' is not defined
-Q2: What is the final error message?
+Q2: [get error message] What is the final error message?
 #2: NameError: name 'x' is not defined
-Q3: [EOC]
-NameError: name 'x' is not defined
+Q3: [EOQ]
+Ans: NameError: name 'x' is not defined
 ----
-Desciption:
+Desciption: (Auto Debugging) Debug the following code snippets by finding the answer or the error message.
 Input:
 ```
 x = set([1, 1, 2, 3])
@@ -199,14 +202,14 @@ x = set([1, 1, 2, 3])
 #1:
 x = set([1, 1, 2, 3])
 print(x)
-Q2: [execute] Execute the following python code snippet.
+Q2: [code execute] Execute the following python code snippet.
 x = set([1, 1, 2, 3])
 print(x)
 #2: {1, 2, 3}
-Q3: [EOC]
-{1, 2, 3}
+Q3: [EOQ]
+Ans: {1, 2, 3}
 ----
-Description:
+Description: (Code Description) Which of the following choices best describes the functionality of the given python code snippet. 
 Input:
 Python code:
 try:
@@ -251,13 +254,49 @@ try:
     print "sum is: ",sum
 except:
     print "enter integer values only"
-Q5: Which of the generated code snippets are most like the original one?
+Q5: [compare] Which of the generated code snippets are most like the original one?
 #5: prints sum of two input numbers only if they are integers otherwise raises error
-Q6: [EOC]
+Q6: [EOQ]
+Ans: prints sum of two input numbers only if they are integers otherwise raises error
+----
+Description: (Code Description) Which of the following choices best describes the functionality of the given python code snippet. 
+Input:
+Python code:
+numbers_list = [2, 6, 8, 10, 11, 4, 12, 7, 13, 17, 0, 3, 21]
+filtered_list = list(filter(lambda num: (num > 7), numbers_list))
+print(filtered_list)
+
+  choice: prints lambda
+  choice: returns a filtered list
+  choice: prints a list of numbers greater than 7 from numbers_list
+  choice: prints numbers from 2 to 6
+Q1: [code generate] prints lambda
+#1:
+print("lambda")
+Q2: [code generate] returns a filtered list
+#2
+def filter_list(l):
+  'return a new list with the strings filtered out'
+  return [x for x in l if not isinstance(x, str)]
+Q3: [code generate] prints a list of numbers greater than 7 from numbers_list
+#3:
+numbers_list = [1,2,3,4,5,6,7,8,9,10]
+for number in numbers_list:
+    if number > 7:
+        print(number)
+Q4: [code generate] prints numbers from 2 to 6
+#4:
+for i in range(2,7):
+    print(i)
+Q5: Which of the generated code snippets are most like the original one?
+#5: prints a list of numbers greater than 7 from numbers_list
+Q6: [EOQ]
+Ans: prints a list of numbers greater than 7 from numbers_list
 ----
 Desciption: %s
 Input: %s
-Q1: """
+Q1:"""
+
 
 
 
@@ -333,8 +372,6 @@ def affordance():
     print("Std. Dev", np.std(perf_array))
 
 
-from prompt_library import random_tasks, similar_tasks, llm_similar_tasks, similar_auto_breakdowns
-task_description = """CS Algorithms: Solve the following simple programming tasks."""
 
 def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
 
@@ -368,9 +405,53 @@ def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
     print("Std. Dev", np.std(perf_array))
 
 
+
+def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
+    global few_shot_cot_prompt
+    task_name = "CS Algorithms"
+    task_description = "(CS Algorithms) Solve the following simple programming tasks using Python, executing the code to get the final answer."
+
+    if strategy == "fixed":
+        few_shot_cot_prompt = few_shot_cot_prompt
+    elif strategy == "random":
+        few_shot_cot_prompt = random_tasks(N=6)
+    elif strategy == "similar":
+        few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
+    elif strategy == "similar_auto_decomp":
+        few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
+    elif strategy == "llm_similar":
+        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
+
+    interpreter = TopDownVisitorBeta(model_name=model_name)
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 10)):
+            prompts, answer = predict(task_description, x)
+            new_answer  = interpreter.batch_visit(prompts, answer)
+            answers.extend(new_answer)
+            time.sleep(60)
+        preds = [x.strip() for x in answers]
+        perf_array.append(substring_match(labels, preds))
+    print("FS-CoT Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
+
+
+
 # auto_decomp(10, 0.3)
 # affordance(temperature=0.3)
-dynamic_few_shot_cot(temperature=0.3, strategy="random")
+# dynamic_few_shot_cot(temperature=0.3, strategy="random")
 # few_shot_cot()
 # few_shot(N=5, temperature=0.3)
 # auto_cot()
+nl_program(temperature=0.3)

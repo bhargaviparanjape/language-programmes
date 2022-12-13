@@ -6,6 +6,7 @@ import time
 from enum import auto
 from re import L
 from turtle import pd
+import pdb
 
 import datasets
 import numpy as np
@@ -99,7 +100,7 @@ Q2: [check answer type] Does the information help answer the question? There cou
 #2: No. The question is too specific
 Q3: [compare] What is the final answer?
 #3: Unknown
-Q4: [EOC]
+Q4: [EOQ]
 Ans: Unknown""",
 """Input: Where was Mark Twain born?
   choice: Unknown
@@ -111,7 +112,7 @@ Q2: [check answer type] Does the information help answer the question? There cou
 #2: Yes. The answer is Florida, Missouri
 Q3: [compare] What is the final answer?
 #3: Florida, Missouri
-Q4: [EOC]
+Q4: [EOQ]
 Ans: Florida, Missouri"""]
 },
 "anachronisms":{
@@ -130,7 +131,7 @@ Q3: [search] When was the Gulf War fought?
 Yes. Their time periods intersect.
 Q5: [generate output] Is this an anachronism?
 #5: No
-Q6: [EOC]
+Q6: [EOQ]
 Ans: No""",
 """Input: Kurt Cobain starred in the 1980 television show "Twin Peaks".
 Q1: [tag] What are the entities in this sentence?
@@ -145,7 +146,7 @@ Q4: Could these entities have co-existed based on this information?
 No. Musician  Kurt Cobain could not have starred in Twin Peaks.
 Q5: [generate output] Is this an anachronism?
 #5: Yes
-Q6: [EOC]
+Q6: [EOQ]
 Ans: Yes"""]
 },
 "hindu_knowledge":{
@@ -160,7 +161,7 @@ Q1: [search] In the Hindu epic Ramayana, who is the main villain?
 #1: As a result, he cursed Karna, saying that HIS MARTIAL SKILLS, including the use of BRAHMASTRA, would abandon him when he needed them most. Indra, the King of Gods, stung Karna in the form of a bee to get him cursed by Parshuram. Karna walked through the woods in despair, feeling dejected by the curse. A skilled & devoted warrior...
 Q2: [compare] Which option is the answer in #3 most similar to?
 #2: Brahmastra
-Q3: [EOC]
+Q3: [EOQ]
 Ans: Brahmastra""",
 """Input: In the Hindu epic Ramayana, the main villain was a devotee of which deity?
   choice: Indra
@@ -175,7 +176,7 @@ Q3: [search] Ravana was a devotee of which deity?
 #3: Ravana, was an ardent devotee of Lord Shiva, is depicted and described as a great scholar,a brahman,a capable ruler and a maestro of the Veena.
 Q4: [compare] Which option is the answer in #3 most similar to?
 #4: Shiva
-Q5: [EOC]
+Q5: [EOQ]
 Ans: Shiva"""]
 },
 "auto_debugging":{
@@ -196,7 +197,7 @@ Traceback (most recent call last):
 NameError: name 'x' is not defined
 Q2: [generate answer] What is the final error message?
 #2: NameError: name 'x' is not defined
-Q3: [EOC]
+Q3: [EOQ]
 Ans: NameError: name 'x' is not defined""",
 """Input:
 ```
@@ -212,7 +213,7 @@ Q2: [execute] Execute the following python code snippet.
 x = set([1, 1, 2, 3])
 print(x)
 #2: {1, 2, 3}
-Q3: [EOC]
+Q3: [EOQ]
 Ans: {1, 2, 3}"""]
 },
 "code_description":{
@@ -264,7 +265,7 @@ except:
     print "enter integer values only"
 Q5: [compare] Which of the generated code snippets are most like the original one?
 #5: prints sum of two input numbers only if they are integers otherwise raises error
-Q6: [EOC]
+Q6: [EOQ]
 Ans: prints sum of two input numbers only if they are integers otherwise raises error""",
 """Input:
 Python code:
@@ -296,9 +297,253 @@ for i in range(2,7):
     print(i)
 Q5: Which of the generated code snippets are most like the original one?
 #5: prints a list of numbers greater than 7 from numbers_list
-Q6: [EOC]
+Q6: [EOQ]
 Ans: prints a list of numbers greater than 7 from numbers_list"""]
 },
+"aqua_rat": {
+    "name": "Arithmetic about Ratios",
+    "prompt_prefix": """In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can generate python code to solve arithmetic and algebra equations in using functions from sympy.
+from sympy import Symbol
+from sympy import simplify
+import math
+from sympy import solve_it
+# solve_it(equations, variable): solving the equations and return the variable value.
+""",
+    "description": "Solve the following arithmetic problems on ratios and fractions, writing out intermediate arithmetic calculations as python code. Store your result as a variable named 'ans'.",
+    "instances": ["""Input: Divide the number 49 into two parts, such that if the greater part is increased by 6 and the lesser part is decreased by 11, their ratio is 9 to 2. What is the greater number? A) 29 B) 30 C) 31 D) 32 E) None
+Q1: [generate python code] write python code to solve the problem, using math and sympy.
+#1:
+num1 = Symbol('num1', positive=True)
+num2 = 49 - num1
+num1_after_change = num1 + 6
+num2_after_change = num2 - 11
+solution = solve_it(num1_after_change / num2_after_change - 9 / 2, num1)
+ans = solution[num1]
+print(ans)
+Q2: [code execute] Execute the python code and get the value of "ans"
+#2: 30
+Q3: [compare] Which of the options among A) 29 B) 30 C) 31 D) 32 E) None is most similar to the answer? 
+#3: B
+Q4: [EOQ]
+Ans: B""",
+"""Input:A salesman makes a 10%% commission on the selling price for each light switch he sells. If he sells 220 switches and the selling price of each switch is $6, what is his total commission? A) 66 B) 88 C) 100 D) 120 E) 132
+Q1: [generate python code] write python code to solve the problem, using math and sympy.
+#1:
+commission_percentage = 10
+number_of_switches_sold = 220
+selling_price_of_each_switch = 6
+total_commission = ( commission_percentage / 100 ) * number_of_switches_sold * selling_price_of_each_switch
+ans = total_commission
+print(ans)
+Q2: [code execute] Execute the python code in #1 and get the value of "ans"
+#2: 132
+Q3: [compare] Which of the options among A) 66 B) 88 C) 100 D) 120 E) 132 is most similar to the answer? 
+#3: E
+Q4: [EOQ]
+Ans: E"""]
+},
+"gsm8k":{
+    "name" : "Middle school arithmetic problems",
+    "description": "Solve the following middle-school arithmetic problems, writing out intermediate arithmetic calculations as python code. Store your result as a variable named 'ans'.",
+    "instances": ["""Input: A toy manufacturer receives an order for 400 toys. 5 workers are available to work on the order. 2 of the workers produce 6 toys an hour, and another 2 workers produce 4 toys an hour. They all work on the order during their 10-hour shift, and by the end of their shift the manufacturer still needs another 20 toys to be able to ship the order. How many toys per hour does the fifth worker produce?
+Q1: [generate python code] write down the arithmetic or algebra equations as python code
+#1:
+num_toys_ordered = 400
+num_workers = 5
+toys_produced_per_hour_by_worker1 = 6
+toys_produced_per_hour_by_worker2 = 6
+toys_produced_per_hour_by_worker3 = 4
+toys_produced_per_hour_by_worker4 = 4
+toys_produced_per_hour_by_worker5 = Symbol('toys_produced_per_hour_by_worker5', positive=True)
+hours_worked = 10
+toys_produced = num_toys_ordered-20
+toys_produced_by_all_workers = ( toys_produced_per_hour_by_worker1 + toys_produced_per_hour_by_worker2 + toys_produced_per_hour_by_worker3 + toys_produced_per_hour_by_worker4 + toys_produced_per_hour_by_worker5) * hours_worked
+solution = solve_it(toys_produced_by_all_workers - toys_produced, toys_produced_per_hour_by_worker5)
+ans = solution[toys_produced_per_hour_by_worker5]
+print(ans)
+Q2: [code execute] Execute the python code in #1 and get the value of "ans"
+#2: 18
+Q3: [EOQ]
+Ans: 18""",
+"""Input: If two trains depart from a station in opposite directions, and one train is traveling 60 miles an hour while the other is traveling half that distance per hour, how far apart are they from each other after 3 hours?
+Q1: [generate python code] write down the arithmetic or algebra equations as python code
+#1:
+speed_of_first_train = 60
+speed_of_second_train = 30
+distance_apart = speed_of_first_train * 3 + speed_of_second_train * 3
+ans = distance_apart
+print(ans)
+Q2: [code execute] Execute the python code and get the value of "ans"
+#2: 270
+Q3: [add unit] Add the appropriate unit to the final answer.
+#3: 270 miles
+Q4: [EOQ]
+Ans: 270 miles"""]
+},
+"elemetary_math_qa":{
+    "name": "Elementary school arithmetic problems",
+    "description": "What is the result of the following arithmetic operations? Write out intermediate arithmetic calculations as python code. Store your result as a variable named 'ans'.",
+    "instances": ["""Input: add 70 to 90, subtract 20 from result, subtract result from 200.
+ choice:130
+ choice:80
+ choice:150
+ choice:100
+ choice:60
+Q1: [generate python code] write down the arithmetic or algebra equations as python code
+#1:
+70 + 90 = 160
+160 - 20 = 140
+200 - 140 = 60
+ans = 60
+print(ans)
+Q2: [code execute] Execute the python code and get the value of "ans"
+#2: 60
+Q3: [EOQ]
+Ans: 60""",
+"""Input: machine r takes 2 more hours than machine b to make 20 widgets . if working together , the machines can make 25 widgets in 3 hours , how long will it take machine r to make 40 widgets ?
+ choice:12
+ choice:8
+ choice:5
+ choice:10
+ choice:6
+Q1: [generate python code] write down the arithmetic or algebra equations as python code                                                                                                                                                  
+#1:                                                                                                                                                                                                                                    
+time_to_make_20_widgets_by_machine_b = Symbol('time_to_make_20_widgets_by_machine_b', positive=True)
+time_to_make_20_widgets_by_machine_r = time_to_make_20_widgets_by_machine_b + 2
+num_widgets_produced_by_b = 20 / time_to_make_20_widgets_by_machine_b
+num_widgets_produced_by_r = 20 / time_to_make_20_widgets_by_machine_r
+sum_widgets = num_widgets_produced_by_b + num_widgets_produced_by_r
+time_to_make_25_widgets_together = 3
+num_widgets_produced_together = 25 / time_to_make_25_widgets_together
+ans = solve_it(sum_widgets - num_widgets_produced_together, time_to_make_20_widgets_by_machine_b)
+print(ans)
+Q2: [code execute] Execute the python code and get the value of "ans"
+#2: {time_to_make_20_widgets_by_machine_b: 4.00000000000000}
+Q3: [generate python code] How long will it take machine r to make 40 widgets. Write python code to solve for this.
+#3:
+time_to_make_20_widgets_by_machine_b = 4.0
+time_to_make_20_widgets_by_machine_r = time_to_make_20_widgets_by_machine_b + 2
+time_to_make_40_widgets_by_machine_r = time_to_make_20_widgets_by_machine_r*2
+ans = time_to_make_40_widgets_by_machine_r
+print(ans)
+Q4: [code execute] Execute the python code and get the value of "ans"
+#4: 12
+Q5: [EOQ]
+Ans: 12"""]
+},
+"mawps":{
+    "name": "Arithmetic word problems",
+    "description": "Solve the following arithmetic word problems, writing out intermediate arithmetic calculations arithmetic calculations as python code. Store your result as a variable named 'ans'.",
+    "instances" : ["""Input: Viola had 167 Bread. Nancy took 137 from him. Now How many Bread Viola have difference?
+Q1: [generate python code] write down the arithmetic or algebra equations as python code
+#1:
+viola_bought = 167
+nancy_took = 137
+ans = viola_bought - nancy_took
+print(ans)
+Q2: [code execute] Execute the python code and get the value of "ans"
+#2: 30
+Q3: [EOQ]
+Ans: 30""",
+"""Input: Rodney had 35 pear . He dice each pear into 13 slices . How many pear slices did Rodney make?
+Q1: [generate python code] write down the arithmetic or algebra equations as python code
+#1:
+pear = 35
+slices = 13
+ans = pear * slices
+print(ans)
+Q2: [code execute] Execute the python code and get the value of "ans"
+#2: 455
+Q3: [EOQ]
+Ans: 455"""]
+},
+"svamp":{
+    "name": "Math word problems",
+    "description": """Solve the following arithmetic word problems, writing out intermediate arithmetic calculations arithmetic calculations as python code. Store your result as a variable named 'ans'.""",
+    "instances": ["""Input: James bought 93 red and 10 blue stickers, he used 31 red sticker on his fridge and 7 blue stickers on his laptop. How many red stickers does James have?
+Q1: [generate python code] write down the arithmetic or algebra equations as python code
+#1:
+original_red_stickers = 93
+used_red_stickers = 31
+ans = original_red_stickers - used_red_stickers
+print(ans)
+Q2: [code execute] Execute the python code and get the value of "ans"
+#2: 62
+Q3: [EOQ]
+Ans: 62""",
+""""Input: There are 5 girls and 4 boys in the Masquerade, 12 more girls and 7 more boys joined. How many more girls than boys are in the Masquerade?
+Q1: [generate python code] write down the arithmetic or algebra equations as python code
+#1:
+num_girls_before = 5
+num_girls_joined = 12
+num_boys_before = 4
+num_boys_joined = 7
+total_girls = num_girls_before + num_girls_joined
+total_boys = num_boys_before + num_boys_joined
+ans = total_girls - total_boys
+print(ans)
+Q2: [code execute] Execute the python code and get the value of "ans"
+#2: 6
+Q3: [EOQ]
+Ans: 6"""]
+},
+"finqa":{
+    "name": "Financial Question Answering",
+    "description": """Read the following text and table. To answer a question, write out intermediate arithmetic calculations arithmetic calculations as python code. Store your result as a variable named 'ans'.""",
+    "instances": ["""Input: the aggregate commitment under the liquidity asset purchase agreements was approximately $ 23.59 billion and $ 28.37 billion at december 31 , 2008 and 2007 , respectively .
+( dollars in billions ) | 2008 amount | 2008 percent of total conduit assets | 2008 amount | percent of total conduit assets
+united states | $ 11.09 | 46% ( 46 % ) | $ 12.14 | 42% ( 42 % )
+australia | 4.30 | 17 | 6.10 | 21
+great britain | 1.97 | 8 | 2.93 | 10
+spain | 1.71 | 7 | 1.90 | 7
+italy | 1.66 | 7 | 1.86 | 7
+portugal | 0.62 | 3 | 0.70 | 2
+germany | 0.57 | 3 | 0.70 | 2
+netherlands | 0.40 | 2 | 0.55 | 2
+belgium | 0.29 | 1 | 0.31 | 1
+greece | 0.27 | 1 | 0.31 | 1
+other | 1.01 | 5 | 1.26 | 5
+total conduit assets | $ 23.89 | 100% ( 100 % ) | $ 28.76 | 100% ( 100 % )
+what is percentage change in total conduit asset from 2007 to 2008?
+Q1: [generate python code] write down the arithmetic or algebra equations as python code
+#1:
+total_conduit_assets_2007 = 28.76
+total_conduit_assets_2008 = 23.89
+net_change_in_total_conduit_assets = total_conduit_assets_2008 - total_conduit_assets_2007
+percent_change_in_total_conduit_assets = net_change_in_total_conduit_assets / total_conduit_assets_2007
+ans = percent_change_in_total_conduit_assets
+print(ans)
+Q2: [code execute] Execute the python code and get the value of "ans"
+#2: -0.1693
+Q3: [EOQ]
+Ans: -0.1693""",
+"""Input:american tower corporation and subsidiaries notes to consolidated financial statements ( 3 ) consists of customer-related intangibles of approximately $ 75.0 million and network location intangibles of approximately $ 72.7 million . the customer-related intangibles and network location intangibles are being amortized on a straight-line basis over periods of up to 20 years .
+- | preliminary purchase price allocation
+current assets | $ 8763
+non-current assets | 2332
+property and equipment | 26711
+intangible assets ( 1 ) | 21079
+other non-current liabilities | -1349 ( 1349 )
+fair value of net assets acquired | $ 57536
+goodwill ( 2 ) | 5998
+for acquired customer-related and network location intangibles , what is the expected annual amortization expenses , in millions?
+Q1: [generate python code] write down the arithmetic or algebra equations as python code
+#1:
+customer_related_intangibles = 75
+network_location_intangibles = 72.7
+straight_line_basis = 20
+amortization_expenses = ( customer_related_intangibles + network_location_intangibles ) / straight_line_basis
+ans = amortization_expenses
+print(ans)
+Q2: [code execute] Execute the python code and get the value of "ans"
+#2: 7.385
+Q3: [EOQ]
+Ans: 7.385"""]
+}
+}
+
+
+additional_arithmetic_tasks = {
 "aqua_rat":{
     "name": "Arithmetic about Ratios",
     "description": "Solve the following arithmetic problems on ratios and fractions, writing out intermediate arithmetic calculations as needed.",
@@ -322,7 +567,7 @@ Q5: [solve] Solve for x: (x+6):(49-x-11) = 9:2
 #5: x = 30
 Q6: [compare] Which option is closes to this answer?
 #6: 30
-Q7: [EOC]
+Q7: [EOQ]
 Ans: 30""",
 """Input: A salesman makes a 10%% commission on the selling price for each light switch he sells. If he sells 220 switches and the selling price of each switch is $6, what is his total commission?
     choice: 66
@@ -334,7 +579,7 @@ Q1: [arithmetic] What is the total selling price of all light bulbs.
 #1: 220*6=1320
 Q2: [arithmetic] What is 10%% of #1?
 #2: 0.10*1320=132
-Q3: [EOC]
+Q3: [EOQ]
 Ans: 132
 """]
 },
@@ -354,7 +599,7 @@ Q5: [arithmetic] How many toys did the last worker make?
 #5: Out of 400 toys, 120+80=200 toys were made by the first 4 workers. The 5th worker didn't finish the job, since 20 toys were still remaining to be made. So they made 400-200-20=180 toys.
 Q6: [arithmetic] How many toys per hour does the fifth worker produce if he worked for 10 hours?
 #6: The 5th worker made 180/10 = 18 toys per hour.
-Q7: [EOC]
+Q7: [EOQ]
 Ans: 18""",
 """Input: If two trains depart from a station in opposite directions, and one train is traveling 60 miles an hour while the other is traveling half that distance per hour, how far apart are they from each other after 3 hours?
 Q1: [arithmetic] What is the speed of the second train? 
@@ -367,7 +612,7 @@ Q4: [subquestion] Are the trains moving towards or away from each other?
 #4: Away from each other.
 Q5: [arithmetic] How far apart are the trains after 3 hours?
 #5: 180+90=270 miles
-Q6: [EOC]
+Q6: [EOQ]
 Ans: 270 miles"""]
 },
 "elemetary_math_qa":{
@@ -387,7 +632,7 @@ Q3: [arithmetic] subtract result 140 from 200
 #3: 200-140=60
 Q4: [compare] Which option does the final answer match?
 #4: 60
-Q5: [EOC]
+Q5: [EOQ]
 Ans: 60""",
 """Input: machine r takes 2 more hours than machine b to make 20 widgets . if working together , the machines can make 25 widgets in 3 hours , how long will it take machine r to make 40 widgets ?
  choice:12
@@ -413,7 +658,7 @@ Q6: [arithmetic] How long does it take machine r to make 40 widgets?
 #6: 2*6=12 
 Q5: [compare] Which option is closes to this answer?
 #5: 12
-Q6: [EOC]
+Q6: [EOQ]
 Ans: 12"""]
 },
 "mawps":{
@@ -422,12 +667,12 @@ Ans: 12"""]
     "instances": ["""Input: Viola had 167 Bread. Nancy took 137 from him. Now How many Bread Viola have difference?
 Q1: [arithmetic] How much bread does Viola have if he had 167 loafs before and Nancy too 137 of them?
 #1: 167-137=30
-Q2: [EOC]
+Q2: [EOQ]
 Ans: 30""",
 """Input: Rodney had 35 pear . He dice each pear into 13 slices . How many pear slices did Rodney make?
 Q1: [arithmetic]  How many pear slices did Rodney make if he started with 35 pears and diced each into 13 slices?
 #1: 35*13=455
-Q2: [EOC]
+Q2: [EOQ]
 Ans: 455"""]
 },
 "navigation":{
@@ -450,7 +695,7 @@ Q7: [vector arithmetic] What is total distance moved from starting point?
 #7: 7 steps vertically, 8 steps horizontally 
 Q8: [subquestion] Is the total distance moved, both vertically and horizontally, 0? 
 #8: No
-Q9: [EOC]
+Q9: [EOQ]
 Ans: No""",
 """Input: Always face forward. Take 6 steps right. Take 10 steps left. Take 3 steps left. Take 1 step forward. Take 4 steps left. Take 10 steps left.
 Q1: [subquestion] Does this question require vector arithmetic?
@@ -469,7 +714,7 @@ Q7: [vector arithmetic] What is total distance moved from starting point?
 #7: 8-1=7 steps vertically, 27-6=21 steps horizontally 
 Q8: [subquestion] Is the total distance moved, both vertically and horizontally, 0? 
 #8: No
-Q9: [EOC]
+Q9: [EOQ]
 Ans: No"""]
 },
 }
@@ -578,32 +823,45 @@ Reason:
 
 
 def llm_similar_tasks(task_name, task_description, io_pairs, N=5):
-    gpt3 = OpenAIModel(model="text-davinci-002",  max_length=500, temperature=0.5, quote='---', n=1)
+    gpt3 = OpenAIModelLogProb(model="text-davinci-002",  max_length=500, temperature=0.5, quote='---', n=1, logprobs=10)
 
     query = "[" + task_name + "] "  + task_description +  " Input: " + io_pairs[0][0] + "\nThe final answer is " + io_pairs[0][1]
 
     selected_tasks = []
     selection_reasons = []
+    selection_scores = []
     for key, task in TASKS.items():
-        print(key)
+        selected_tasks.append(key)
         parsed_program = parse_program(task["instances"][0])
         doc = "[" + task["name"] + "] "  + task["description"] + " Input: " + parsed_program.input_node.text + parsed_program.answer_node.text.replace("Ans: ", "The final answer is ")
         filled_prompt = task_similarity_prompt % (query, doc)
         
-        similar = gpt3(filled_prompt)[0]
-        selection_reasons.append(similar)
-        print(similar)
-        if "yes" in similar.strip().lower():
-            selected_tasks.append(key)
+        # similar = gpt3(filled_prompt)[0]
+        results = gpt3(filled_prompt)
+        tokens = results['choices'][0]['logprobs']['tokens']
+        token_logprobs = results['choices'][0]['logprobs']['token_logprobs']
+        top_logprobs = results['choices'][0]['logprobs']['top_logprobs']
+        yes_score = -100000.0
+        for token_dict in top_logprobs:
+            alist = [(k,v) for k,v in token_dict.items()]
+            alist = sorted(alist, key=lambda x:x[1], reverse=True)
+            for k,v in alist:
+                if k.strip().lower() == "yes":
+                    if v > yes_score:
+                        yes_score = v
+        selection_reasons.append(results['choices'][0]['text'])
+        selection_scores.append(yes_score)
+        
+    selected_tasks = sorted([(task_name, task_score, reason) for task_name, task_score, reason in zip(selected_tasks, selection_scores, selection_reasons)], key = lambda x:x[1], reverse=True)
     
-    
-    if len(selected_tasks) >= N:
-        random_tasks = np.random.choice(len(selected_tasks), N, replace=False)
-        selected_tasks = [selected_tasks[t] for t in random_tasks]
+    # if len(selected_tasks) >= N:
+    #     random_tasks = np.random.choice(len(selected_tasks), N, replace=False)
+    #     selected_tasks = [selected_tasks[t] for t in random_tasks]
     
     prompt = """In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use affordances like string operations, search engines, arithmetic functions, or code generation. Be sure to use "[]" to specify affordances in subtasks.\n----\n"""
-    for task in selected_tasks:
-        prompt += TASKS[task]["instances"][0] + "\n----\n"
+    for task in selected_tasks[:N]:
+        print(task[0], task[-1])
+        prompt += TASKS[task[0]]["instances"][0] + "\n----\n"
     
     prompt += "Description: %s\nInput: %s\nQ1:"
     return prompt
@@ -646,6 +904,3 @@ def task_selection_accuracy(reference_tasks, task_name, task_description, io_pai
 
     print([(task, reason) for task, reason in zip(selected_tasks, selection_reasons)])
     print("Jaccard:", jaccard(reference_tasks, selected_tasks))
-
-
-    

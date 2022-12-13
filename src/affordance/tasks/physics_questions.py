@@ -191,6 +191,7 @@ def few_shot_cot(temperature=0.3):
         for x in tqdm(chunks(inputs, 20)):
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict("Answer these high-school-level physics multiple-choice questions.", x))
+            pdb.set_trace()
         preds = [x.strip() for x in answers]
         perf_array.append(substring_match(labels, preds))
     print("Few-shot COT performance:")
@@ -310,7 +311,7 @@ def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
 
 # auto_decomp(10, 0.3)
 # affordance(temperature=0.3)
-dynamic_few_shot_cot(temperature=0.3, strategy="random")
-# few_shot_cot()
+# dynamic_few_shot_cot(temperature=0.3, strategy="random")
+few_shot_cot()
 # few_shot(N=5, temperature=0.3)
 # auto_cot()

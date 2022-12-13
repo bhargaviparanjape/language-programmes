@@ -2,8 +2,6 @@ import datasets
 import os
 import openai
 import numpy as np
-with open(os.path.expanduser('~/.openai_api_key'), 'r') as file:
-    openai.api_key = file.read().replace('\n', '')
 
 import adatest
 import pdb
@@ -24,7 +22,7 @@ search_url = "https://api.bing.microsoft.com/v7.0/search"
 headers = {"Ocp-Apim-Subscription-Key": subscription_key}
 from IPython.display import HTML
 
-with open(os.path.expanduser('~/.openai_api_key'), 'r') as file:
+with open(os.path.expanduser('~/.openai_api_key_uw'), 'r') as file:
     openai.api_key = file.read().replace('\n', '')
 print(openai.api_key)
 cache_dir = '/gscratch/zlab/bparan/projects/cascades/data'
@@ -151,13 +149,17 @@ class Command:
 
     @classmethod
     def convert_to_nlprogram(cls, rank, command, input_only=False):
-        # TODO: Add feature for multiline
+        # TODO: Add feature for multiline (not all multiline inputs and outputs are in new lines in the retrieval)
+        input_sep = "\n" if "\n" in command.command_input else " "
+        output_sep = "\n" if "\n" in command.command_output else " "
         if not input_only:
             if rank == 1:
-                return " {1} {2}\n#{3}: {4}".format(rank, command.command_name, command.command_input, rank, command.command_output)    
-            return "Q{0}: {1} {2}\n#{3}: {4}".format(rank, command.command_name, command.command_input, rank, command.command_output)
+                return " {1}{2}{3}\n#{4}:{5}{6}".format(rank, command.command_name, input_sep, command.command_input, rank, output_sep, command.command_output)    
+            return "Q{0}: {1}{2}{3}\n#{4}:{5}{6}".format(rank, command.command_name, input_sep, command.command_input, rank, output_sep, command.command_output)
         else:
-            return "Q{0}: {1} {2}".format(rank, command.command_name, command.command_input)
+            if rank == 1:
+                return " {1}{2}{3}".format(rank, command.command_name, input_sep, command.command_input)    
+            return "Q{0}: {1}{2}{3}".format(rank, command.command_name, input_sep, command.command_input)
 
 class StacktraceItem():
     def __init__(self,
@@ -347,6 +349,15 @@ def edit_code(instructions, current_code):
     )
     return response
 
+def get_answer(x, return_original=False):
+    search_result = re.search("Ans: ", x)
+    if search_result:
+        return x[search_result.span(0)[1]:].strip()
+    else:
+        # Program did not complete
+        if return_original:
+            return x.strip()
+        return ""
 
 program = """Input:
 Python code:

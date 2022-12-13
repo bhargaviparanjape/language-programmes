@@ -206,9 +206,9 @@ Input: %s
 Q1:"""
 
 
-def few_shot_cot(temperature=0.3):
+def few_shot_cot(temperature=0.3, model_name="text-davinci-002"):
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=0.4, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=0.4, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
@@ -337,6 +337,129 @@ def affordance(temperature = 0.3):
     print("Std. Dev", np.std(perf_array))
 
 
+few_shot_notebook_prompt = """In [1]:
+import os
+import sys
+import numpy as np
+import re
+from sympy.solvers import solve
+from sympy import Symbol, Eq
+import math
+from sympy import simplify
+import numpy as np
+import cvxpy as cp
+import statistics
+from serpapi import GoogleSearch
+from utils import string_compare
+
+
+In [1]:
+input_text = \"""Q: In Hinduism, which musical instrument is most associated with the god Krishna?
+  choice: Sitar
+  choice: Veena
+  choice: Flute
+  choice: Tabla (drum)\"""
+
+In [2]:
+input_query = "In Hinduism, which musical instrument is most associated with the god Krishna?"
+search_result = GoogleSearch(input_query)
+search_result
+
+Out [2]:
+The venu is associated with the Hindu god Krishna, who is often depicted playing it. This kind of flute is mainly used in South India. Vishnu is portrayed as Venugopala, playing the flute of creation.
+
+In [3]:
+search_result = "The venu is associated with the Hindu god Krishna, who is often depicted playing it. This kind of flute is mainly used in South India. Vishnu is portrayed as Venugopala, playing the flute of creation."
+choices = ["Sitar", "Veena", "Flute", "Table (drum)"]
+closest_choice = string_compare(search_result, choices)
+closest_choice
+
+Out [3]:
+Flute
+
+In [1]: 
+input_text = \"""Q: In Hinduism, the era known as Dvapara Yuga is preceded by which era?
+  choice: Krita Yuga
+  choice: Treta Yuga
+  choice: Kali Yuga
+  choice: Satya Yuga\"""
+
+In [2]:
+input_query = "In Hinduism, the era known as Dvapara Yuga is preceded by which era?"
+search_result = GoogleSearch(input_query)
+search_result
+
+Out [2]:
+Dvapara Yuga ( a.k.a. Dwapara Yuga), in Hinduism, is the third and third best of the four yugas (world ages) in a Yuga Cycle, preceded by Treta Yuga and followed by Kali Yuga.
+
+In [3]:
+search_result = "Dvapara Yuga ( a.k.a. Dwapara Yuga), in Hinduism, is the third and third best of the four yugas (world ages) in a Yuga Cycle, preceded by Treta Yuga and followed by Kali Yuga."
+choices = ["Krita Yuga", "Treta Yuga", "Kali Yuga", "Satya Yuga"]
+closest_choice = string_compare(search_result, choices)
+closest_choice
+
+Out [3]:
+Treta Yuga
+
+In [1]: \"""Q: In the Hindu epic Ramayana, which character killed Lavanasura?
+  choice: Lakshmana
+  choice: Shatrughna
+  choice: Bharata
+  choice: Rama\"""
+
+In [2]:
+input_query = "In the Hindu epic Ramayana, which character killed Lavanasura?"
+search_result = GoogleSearch(input_query)
+search_result
+
+Out [2]:
+He is slain by Shatrughna, the youngest brother of Rama, in the Hindu epic Ramayana. Lavana is slain by Shatrughna.
+
+In [3]:
+search_result = "He is slain by Shatrughna, the youngest brother of Rama, in the Hindu epic Ramayana. Lavana is slain by Shatrughna."
+choices = ["Lakshmana", "Shatrughna", "Bharata", "Rama"]
+closest_choice = string_compare(search_result, choices)
+closest_choice
+
+Out [3]:
+Shatrughna
+
+In [1]:
+input_text = \"""%s\"""
+"""
+
+def notebook(temperature=0.3, model_name="text-davinci-002"):
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=2048, temperature=temperature, quote='In [1]:', n=1)
+        prompts=[few_shot_notebook_prompt% (x) for x in chunk]
+        return gpt3(prompts)
+
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 20)):
+            x = [ex.replace("\nA:", "").replace('"', "'") for ex in x]
+            answers.extend(predict(task_description, x))
+        # preds = [[y.strip() for y in x.split("\n")] for x in answers]
+        preds = [x.strip() for x in answers]
+        final_preds = []
+        for pred in preds:
+            answer_span = re.search("Out \[3\]", pred)
+            if answer_span:
+                final_preds.append(pred[answer_span.span(0)[1]:])
+            else:
+                final_preds.append("")
+        final_preds = [x.strip() for x in final_preds]
+        # preds = [pred[re.search("Out \[3\]", pred).span(0)[1]:] for pred in preds]
+        perf_array.append(substring_match(labels, final_preds))
+        print(perf_array)
+    print("FS-CoT performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
 # auto_cot(temperature=0.3)
-# few_shot_cot(temperature=0.3)
-affordance(temperature=0.3)
+few_shot_cot(temperature=0.3, model_name="code-davinci-002")
+# affordance(temperature=0.3)
+# notebook(temperature=0.3, model_name="code-davinci-002")

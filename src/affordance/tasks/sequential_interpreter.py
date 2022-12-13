@@ -19,11 +19,13 @@ from tqdm import tqdm
 from utils import (Command, OpenAIModel, StacktraceItem, cache_dir, chunks,
                    get_subset, gpt3, parse_program, propose_decomposition,
                    propose_instruction, substring_match)
+from pot_tools import safe_execute, simplify_ans
 
 subscription_key = '28dc412935f24fb9974d80c30915483a'
 search_url = "https://api.bing.microsoft.com/v7.0/search"
 headers = {"Ocp-Apim-Subscription-Key": subscription_key}
 from serpapi import GoogleSearch
+import time
 
 serp_api_key = "5599fad2263e4b1c6d4efb62fa15f83f5ad2d1bb727b8721d616d719399a7f7b"
 
@@ -75,41 +77,81 @@ def google_search(query, previous_input=None, top_k=1):
     return toret, None
 
 def code_generate(instruction, code_input):
-    pdb.set_trace()
-    response = openai.Edit.create(
-    model="code-davinci-edit-001",
-    input="x = " + code_input,
-    instruction="Python code for " + instruction,
-    temperature=0,
-    top_p=1
+    # response = openai.Edit.create(
+    # model="code-davinci-edit-001",
+    # input="x = " + code_input,
+    # instruction="Python code for " + instruction,
+    # temperature=0,
+    # top_p=1
+    # )
+    if instruction in code_input:
+        # Code input is sufficient to write code
+        comment = "\"\"\"\n{0}\nStore the final result as a variable named 'ans' and print it.\n\"\"\"\n\ndef".format(code_input)
+    else:
+        if re.search("#[0-9]+", instruction):
+            input_string = re.search("#[0-9]+", instruction).group(0)
+            instruction = instruction.replace(input_string, "Input")
+        comment = "\"\"\"\n{0}\nInput:{1}\nStore the final result as a variable named 'ans' and print it.\n\"\"\"\n\ndef".format(instruction, code_input)
+        
+    response = openai.Completion.create(
+    model="code-davinci-002",
+    prompt=comment,
+    temperature=0.0,
+    max_tokens=256,
+    top_p=1,
+    frequency_penalty=0,
+    presence_penalty=0,
+    stop=["print(ans)"]
     )
     code_snippet = response.choices[0].text
-    return code_snippet, None
+    return "def" + code_snippet, comment
 
 def code_execute(code_snippet, code_input=None):
     # generally includes a first line consisting of command instruction
+    if code_input:
+        try:
+            code_output = safe_execute(code_input)
+            result = simplify_ans(code_output)
+            if result:
+                return result, code_input
+        except:
+            pass
+
     try:
+        result = subprocess.run([sys.executable, "-c", code_snippet], capture_output=True, text=True)
+        if result.stderr == "":
+            return result.stdout, code_snippet
+    except:
+        pass
+
+    try:
+        # Command instruction (if its code) starts in the previous line.
         code_snippet = code_snippet.split("\n", 1)[1]
     except:
-        pdb.set_trace()
+        return None, code_snippet
     result = subprocess.run([sys.executable, "-c", code_snippet], capture_output=True, text=True)
     if result.stderr == "":
         return result.stdout, code_snippet
-    return None, None
+
+    return None, code_snippet
 
 def code_generate_then_execute(instruction, code_input):
-    output = openai.Edit.create(
-    model="code-davinci-edit-001",
-    input="x = " + code_input,
-    instruction="Python code for " + instruction,
-    temperature=0,
-    top_p=1
-    )
-    code_snippet = output.choices[0].text
-    result = subprocess.run([sys.executable, "-c", code_snippet], capture_output=True, text=True)
-    if result.stderr == "":
-        return result.stdout, code_snippet
-    return None, None
+    # output = openai.Edit.create(
+    # model="code-davinci-edit-001",
+    # input="x = " + code_input,
+    # instruction="Python code for " + instruction,
+    # temperature=0,
+    # top_p=1
+    # )
+    # code_snippet = output.choices[0].text
+    pdb.set_trace()
+    code_snippet, generate_details = code_generate(instruction=instruction, code_input=code_input)
+    # result = subprocess.run([sys.executable, "-c", code_snippet], capture_output=True, text=True)
+    # if result.stderr == "":
+    #     return result.stdout, code_snippet
+    result = safe_execute(code_snippet)
+    result = simplify_ans(result)
+    return result, code_snippet
 
 
 def arithmetic(equations, previous_input):
@@ -127,7 +169,7 @@ class Interpreter():
 
 
 class TopDownVisitor(Interpreter):
-    def __init__(self):
+    def __init__(self, model_name="text-davinci-002"):
         self.built_ins = {
             "[generate]": generate,
             "[search]": search,
@@ -135,9 +177,10 @@ class TopDownVisitor(Interpreter):
             "[code execute]": code_execute,
             "[string edit]" : code_generate_then_execute,
             "[arithmetic]" : arithmetic,
+            "[generate python code]" : code_generate,
         }
 
-        self.program_completer = OpenAIModel(model="text-davinci-002",  max_length=500, quote='', n=1)
+        self.program_completer = OpenAIModel(model=model_name,  max_length=500, quote='', n=1)
 
     def syntax_check(self, program):
         # Look for programs with EOC ending and final answer in syntax.
@@ -196,7 +239,6 @@ class TopDownVisitor(Interpreter):
         command_node_list = parsed_program.node_list
         answer_node = parsed_program.answer_node
         stack_trace = []
-
         while command_node_list[i].command_name != "[EOQ]":
             
             node = command_node_list[i]
@@ -247,9 +289,8 @@ class TopDownVisitor(Interpreter):
         return program
 
 
-
 class TopDownVisitorBeta(Interpreter):
-    def __init__(self):
+    def __init__(self, model_name="text-davinci-002"):
         self.built_ins = {
             "[generate]": generate,
             "[search]": google_search,
@@ -257,9 +298,10 @@ class TopDownVisitorBeta(Interpreter):
             "[code execute]": code_execute,
             "[string edit]" : code_generate_then_execute,
             "[arithmetic]" : arithmetic,
+            "[generate python code]" : code_generate,
         }
 
-        self.program_completer = OpenAIModel(model="text-davinci-002",  max_length=500, quote='', n=1)
+        self.program_completer = OpenAIModel(model=model_name,  max_length=500, quote='', n=1)
 
     def syntax_check(self, program):
         # Look for programs with EOC ending and final answer in syntax.
@@ -278,10 +320,22 @@ class TopDownVisitorBeta(Interpreter):
             return self.built_ins[processed_command] 
         # What to do when no built-infunction is triggered.
 
+    def shorten_prefix(self, prefix, to_remove=1):
+        # Program prefix contains other demonstrations, along with Q1:
+        individual_programs = prefix.split("\n----\n")
+        
+        # to Remove: Number of programs to remove 
+        # If they are organized by task relevance probably best to get rif of the latter ones.
+        shifted_programs = individual_programs[:-(to_remove+1)] + [individual_programs[-1]]
+        new_prefix = "\n----\n".join(shifted_programs)
+        
+        return new_prefix
+
     def complete_program(self, prefix, program):
         # Check for out-of-window errors and shift window to reduce the number of programs shown.
         continuation = program
         runs = 5
+        prefix = self.shorten_prefix(prefix, 1)
         while not self.syntax_check(continuation) and runs > 0:
             continuation = self.program_completer(prefix + continuation)[0]
             continuation = program + continuation
@@ -292,7 +346,7 @@ class TopDownVisitorBeta(Interpreter):
         # Check for out-of-window errors and shift window to reduce the number of programs shown.
         program_prefix = prefix + "\n".join([Command.convert_to_nlprogram(i+1, command) for i, command in enumerate(prev_command_list[:-1])])
         # TODO: Add feature for multiline
-        program_prefix += "\n" + Command.convert_to_nlprogram(len(prev_command_list), prev_command_list[-1], input_only=True) + "\n#{0}: {1}\n".format(len(prev_command_list), current_command_output.strip())
+        program_prefix += "\n" + Command.convert_to_nlprogram(len(prev_command_list), prev_command_list[-1], input_only=True) + "\n#{0}: {1}\nQ".format(len(prev_command_list), current_command_output.strip())
         # Replace last line with corrected input, if necessary.
         continuation = self.program_completer(program_prefix)[0]
         return program_prefix, continuation
@@ -331,33 +385,36 @@ class TopDownVisitorBeta(Interpreter):
             # After one attempt at completing program, give up checking for affordance
             return program
 
+        previous_input = input_node.text
+
         while  command_node_list[i].command_name != "[EOQ]":
-            
-            
+
             node = command_node_list[i]
             command_name = node.command_name
             command_input = node.command_input
             command_output = node.command_output
             # Check affordance list to run.
             affordance = self.check_builtin(command=command_name)
-            
-            if affordance and previous_input:
 
+
+            # if affordance and previous_input:
+            if affordance:
+                
                 affordance_output, affordance_details = affordance(command_input, previous_input)
                 if affordance_output:
                     # affordance_output and command_output (i.e. GPT-3) need to be interpolated appropriately.
                     # For code executions
                     command_output = affordance_output
                     # For Search (concatenate the GPT_3 output with retrieval output)
-                
-                # Run GPT-3 again.
+
+                # Run GPT-3 again (technically only if the execution is different)
                 program_prefix, rerun_program = self.rerun_program(prefix, command_node_list[:i+1], command_output)
                 
-
                 # Replace nodes i+1 though N (again complication is that this should be done EOC i.e. till the program is fully generated.)
                 new_program = program_prefix + rerun_program
                 new_program = new_program.rsplit("----\n", 1)[1].split("\n", 1)[1]
                 new_program = self.complete_program(prefix, new_program)
+                
                 try:
                     parsed_rerun_program = parse_program(new_program)
                 except:
