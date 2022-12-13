@@ -246,8 +246,8 @@ def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
 
 def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
     global few_shot_cot_prompt
-    task_name = "Simple Text Editing"
-    task_description = "Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is."
+    task_name = "Repeating text with logic"
+    task_description = "Repeat the given phrase following logical constraints provided in the question, editing the phrase as required."
 
     if strategy == "fixed":
         few_shot_cot_prompt = few_shot_cot_prompt
@@ -308,7 +308,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
-            time.sleep(60)
+            time.sleep(120)
         preds = [x.strip() for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)

@@ -22,7 +22,7 @@ search_url = "https://api.bing.microsoft.com/v7.0/search"
 headers = {"Ocp-Apim-Subscription-Key": subscription_key}
 from IPython.display import HTML
 
-with open(os.path.expanduser('~/.openai_api_key_uw'), 'r') as file:
+with open(os.path.expanduser('~/.openai_api_key'), 'r') as file:
     openai.api_key = file.read().replace('\n', '')
 print(openai.api_key)
 cache_dir = '/gscratch/zlab/bparan/projects/cascades/data'

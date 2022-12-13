@@ -139,29 +139,26 @@ F = m * a
     print("Std. Dev", np.std(perf_array))
 
 
-def few_shot_cot():
-    def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1400, temperature=0.4, quote='---', n=1)
-        prompts=["""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use search functions like Google search in one or more of your substeps, if there in insufficient information. Other functions like arithmetic and logical operations can also be used.  
+few_shot_cot_prompt = """In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use search functions like Google search in one or more of your substeps, if there in insufficient information. Other functions like arithmetic and logical operations can also be used.  
 Description: Choose the option that best answers the question. If the question does not have a known answer, choose "Unknown". 
 Input: How many hairs were on Neil Armstrong's head when he landed on the moon?
   choice: Unknown
   choice: Five million
-Q1: [Search] How many hairs were on Neil Armstrong's head when he landed on the moon? 
-#1: 
-Apollo 11 (July 16–24, 1969) was the American spaceflight that first landed humans on the Moon. Commander Neil Armstrong and lunar module pilot Buzz Aldri...
-Neil Alden Armstrong (August 5, 1930 – August 25, 2012) was an American astronaut and aeronautical engineer who became the first person to walk on the Moon ...
-Q2: Does the information help answer the question? There could be no definitive answer because the question is too specific, about personal details not in public record, because the answer is not yet known, or the question is opinion-based.
+Q1: [search] How many hairs were on Neil Armstrong's head when he landed on the moon? 
+#1:
+Apollo 11 (July 16–24, 1969) was the American spaceflight that first landed humans on the Moon. Commander Neil Armstrong and lunar module pilot Buzz Aldrin.
+Neil Alden Armstrong (August 5, 1930 – August 25, 2012) was an American astronaut and aeronautical engineer who became the first person to walk on the Moon.
+Q2: [check answer type] Does the information help answer the question? There could be no definitive answer because the question is too specific, about personal details not in public record, because the answer is not yet known, or the question is opinion-based.
 #2: No. The question is too specific
-Q3: What is the final answer?
-Unknown
-Q4: [EOC]
-Unknown
+Q3: [compare] What is the final answer?
+#3: Unknown
+Q4: [EOQ]
+Ans: Unknown
 ----
-Description: An anachronism is a mistake in chronology, or a person, thing, or event that is out of its proper time. Does the sentence contain an anachrornism?
+Description: An anachronism is a mistake in chronology, or a person, thing, or event that is out of its proper time. Figure out whether a sentence contains anachronisms or not, and answer 'Yes' or 'No'."
 Input: President George H. W. Bush called his generals to the Oval Office at the outset of the Gulf War.
 Q1: [tag] What are the entities in this sentence?
-#1: 
+#1:
 President George H. W. Bush
 Gulf War
 Q2: [search] When was President George H. W. Bush president?
@@ -170,15 +167,15 @@ Q3: [search] When was the Gulf War fought?
 #3: The Gulf War[b] was a 1990–1991 armed campaign waged by a 35-country military coalition in response to the Iraqi invasion of Kuwait.
 #4: Could these entities have co-existed based on thier time periods alone?
 Yes. Their time periods intersect.
-Q5: Is this an anachronism?
+Q5: [generate output] Is this an anachronism?
 #5: No
-Q6: [EOC]
-No
+Q6: [EOQ]
+Ans: No
 ----
-Description: An anachronism is a mistake in chronology, or a person, thing, or event that is out of its proper time. Does the sentence contain an anachrornism?
+Description: An anachronism is a mistake in chronology, or a person, thing, or event that is out of its proper time. Figure out whether a sentence contains anachronisms or not, and answer 'Yes' or 'No'."
 Input: Kurt Cobain starred in the 1980 television show "Twin Peaks".
 Q1: [tag] What are the entities in this sentence?
-#1: 
+#1:
 Kurt Cobain
 "Twin Peaks"
 Q2: [search] When did television show "Twin Peaks" air?
@@ -187,10 +184,10 @@ Q3: [search] When did Kurt Cobain live?
 #3: Kurt Donald Cobain (February 20, 1967 – c. April 5, 1994) was an American musician, best known as the lead vocalist, guitarist and primary songwriter of the ...
 Q4: Could these entities have co-existed based on this information?
 No. Musician  Kurt Cobain could not have starred in Twin Peaks.
-Q5: Is this an anachronism?
+Q5: [generate output] Is this an anachronism?
 #5: Yes
-Q6: [EOC]
-Yes
+Q6: [EOQ]
+Ans: Yes
 ----
 Description: Answer questions about Hindu mythology by choosing the option that best answers the question.
 Input: In the Mahabharata, Karna is cursed to forget the incantations needed to use which weapon?
@@ -198,32 +195,36 @@ Input: In the Mahabharata, Karna is cursed to forget the incantations needed to 
   choice: Narayanastra
   choice: Agneyastra
   choice: Brahmastra
-Q1: [subquestion] In the Mahabharata, Karna is cursed to forget the incantations needed to use which weapon?
-#1: No.
-Q2: [search] In the Hindu epic Ramayana, who is the main villain? 
-#2: As a result, he cursed Karna, saying that HIS MARTIAL SKILLS, including the use of BRAHMASTRA, would abandon him when he needed them most. Indra, the King of Gods, stung Karna in the form of a bee to get him cursed by Parshuram. Karna walked through the woods in despair, feeling dejected by the curse. A skilled & devoted warrior...
-Q3: [compare] Which option is the answer in #3 most similar to?
-#3: Brahmastra
-Q4: [EOC]
-Brahmastra
+Q1: [search] In the Mahabharata, Karna is cursed to forget the incantations needed to use which weapon?
+#1: As a result, he cursed Karna, saying that HIS MARTIAL SKILLS, including the use of BRAHMASTRA, would abandon him when he needed them most. Indra, the King of Gods, stung Karna in the form of a bee to get him cursed by Parshuram. Karna walked through the woods in despair, feeling dejected by the curse. A skilled & devoted warrior...
+Q2: [compare] Which option is the answer in #3 most similar to?
+#2: Brahmastra
+Q3: [EOQ]
+Ans: Brahmastra
 ----
 Description: Choose the option that best answers the question. If the question does not have a known answer, choose "Unknown". 
 Input: Where was Mark Twain born?
   choice: Unknown
   choice: Florida, Missouri
-Q1: [Search] Where was Mark Twain born?
-#1: 
+Q1: [search] Where was Mark Twain born?
+#1:
 Mark Twain. Samuel Langhorne Clemens was born in Florida, Missouri, and later moved with his family to Hannibal, Missouri, where he grew up.
-Q2: Does the information help answer the question? There could be no definitive answer because the question is too specific, about personal details not in public record, because the answer is not yet known, or the question is opinion-based.
+Q2: [check answer type] Does the information help answer the question? There could be no definitive answer because the question is too specific, about personal details not in public record, because the answer is not yet known, or the question is opinion-based.
 #2: Yes. The answer is Florida, Missouri
-Q3: What is the final answer?
-Florida, Missouri
-Q4: [EOC]
-Florida, Missouri
+Q3: [compare] What is the final answer?
+#3: Florida, Missouri
+Q4: [EOQ]
+Ans: Florida, Missouri
 ----
 Desciption: %s 
 Input: %s
-"""% (description, x) for x in chunk]
+Q1:"""
+
+
+def few_shot_cot():
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1400, temperature=0.4, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
     perf_array = []
@@ -312,8 +313,8 @@ def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
 
 def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
     global few_shot_cot_prompt
-    task_name = "Simple Text Editing"
-    task_description = "Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is."
+    task_name = "Physics Formulas"
+    task_description = "Identify the physics formula that would be most useful for finding the answer to each of the following word problems."
 
     if strategy == "fixed":
         few_shot_cot_prompt = few_shot_cot_prompt
@@ -346,7 +347,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
             print("Run %d"%run)
             answers = [] # List of counters
             for x in tqdm(chunks(inputs, batch_size)):
-                x = [ex.replace("repeat with logic:\n\n", "") for ex in x]
+                x = [ex.replace("Identify the physics formula that would be most useful for finding the answer to each of the following word problems.", "") for ex in x]
                 x = [ex.replace("\nA:", "") for ex in x]
                 prompts, answer_set = predict_self_consistency(task_description, x)
                 result_counter = [Counter() for i in range(batch_size)]
@@ -369,9 +370,9 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
         print("Run %d"%run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
-            x = [ex.replace("repeat with logic:\n\n", "") for ex in x]
+            x = [ex.replace("Identify the physics formula that would be most useful for finding the answer to each of the following word problems.", "") for ex in x]
             x = [ex.replace("\nA:", "") for ex in x]
-            prompts, answer = predict(task_description, x)
+            prompts, answer = predict(task_description, x) 
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
             time.sleep(60)
@@ -388,3 +389,4 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
 # few_shot_cot()
 # few_shot(N=5, temperature=0.3)
 # auto_cot()
+nl_program(temperature=0.3)

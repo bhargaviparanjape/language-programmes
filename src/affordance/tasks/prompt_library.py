@@ -157,7 +157,7 @@ Ans: Yes"""]
   choice: Narayanastra
   choice: Agneyastra
   choice: Brahmastra
-Q1: [search] In the Hindu epic Ramayana, who is the main villain? 
+Q1: [search] In the Mahabharata, Karna is cursed to forget the incantations needed to use which weapon?
 #1: As a result, he cursed Karna, saying that HIS MARTIAL SKILLS, including the use of BRAHMASTRA, would abandon him when he needed them most. Indra, the King of Gods, stung Karna in the form of a bee to get him cursed by Parshuram. Karna walked through the woods in despair, feeling dejected by the curse. A skilled & devoted warrior...
 Q2: [compare] Which option is the answer in #3 most similar to?
 #2: Brahmastra

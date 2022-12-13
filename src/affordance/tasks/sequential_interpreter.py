@@ -92,6 +92,8 @@ def code_generate(instruction, code_input):
             input_string = re.search("#[0-9]+", instruction).group(0)
             instruction = instruction.replace(input_string, "Input")
         comment = "\"\"\"\n{0}\nInput:{1}\nStore the final result as a variable named 'ans' and print it.\n\"\"\"\n\ndef".format(instruction, code_input)
+
+    time.sleep(60)
         
     response = openai.Completion.create(
     model="code-davinci-002",
@@ -103,6 +105,7 @@ def code_generate(instruction, code_input):
     presence_penalty=0,
     stop=["print(ans)"]
     )
+    
     code_snippet = response.choices[0].text
     return "def" + code_snippet, comment
 
@@ -419,9 +422,6 @@ class TopDownVisitorBeta(Interpreter):
                     # For code executions
                     command_output = affordance_output
                     # For Search (concatenate the GPT_3 output with retrieval output)
-
-                if type(affordance_output) == subprocess.CompletedProcess:
-                    pdb.set_trace()
 
                 # Run GPT-3 again (technically only if the execution is different)
                 program_prefix, rerun_program = self.rerun_program(prefix, command_node_list[:i+1], command_output)
