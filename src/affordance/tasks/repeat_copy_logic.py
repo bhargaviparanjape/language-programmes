@@ -311,6 +311,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
             time.sleep(60)
         preds = [x.strip() for x in answers]
         perf_array.append(substring_match(labels, preds))
+        print(perf_array)
     print("FS-CoT Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))

@@ -1,6 +1,6 @@
 from re import L
 from turtle import pd
-from utils import gpt3, propose_decomposition, propose_instruction, chunks, get_subset, OpenAIModel, cache_dir, substring_match, get_few_shot_prompt
+from utils import gpt3, propose_decomposition, propose_instruction, chunks, get_subset, OpenAIModel, cache_dir, substring_match, get_few_shot_prompt, get_answer
 
 import datasets
 import numpy as np
@@ -11,6 +11,9 @@ from utils import get_few_shot_prompt
 from transformers import GPT2Tokenizer
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 from prompt_library import random_tasks, similar_tasks, llm_similar_tasks, similar_auto_breakdowns
+from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
+import time
+from collections import Counter
 
 
 d = datasets.load_dataset('bigbench', 'physics', cache_dir=cache_dir)
@@ -307,9 +310,81 @@ def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
     print("Std. Dev", np.std(perf_array))
 
 
+def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+    global few_shot_cot_prompt
+    task_name = "Simple Text Editing"
+    task_description = "Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is."
+
+    if strategy == "fixed":
+        few_shot_cot_prompt = few_shot_cot_prompt
+    elif strategy == "random":
+        few_shot_cot_prompt = random_tasks(N=6)
+    elif strategy == "similar":
+        few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
+    elif strategy == "similar_auto_decomp":
+        few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
+    elif strategy == "llm_similar":
+        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
+
+    interpreter = TopDownVisitorBeta(model_name=model_name)
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    def predict_self_consistency(description, chunk, n=5):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    if self_consistency:
+        perf_array = []
+        runs = 5
+        batch_size = 10
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = [] # List of counters
+            for x in tqdm(chunks(inputs, batch_size)):
+                x = [ex.replace("repeat with logic:\n\n", "") for ex in x]
+                x = [ex.replace("\nA:", "") for ex in x]
+                prompts, answer_set = predict_self_consistency(task_description, x)
+                result_counter = [Counter() for i in range(batch_size)]
+                for ans in answer_set:
+                    new_answer = interpreter.batch_visit(prompts, ans)
+                    new_answer = [get_answer(program) for program in new_answer]
+                    for enum, pred in enumerate(new_answer):
+                        if pred is not None:
+                            result_counter[enum].update([pred])
+                answers.extend(result_counter)
+            preds = [x.most_common(1)[0][0] for x in answers]
+            perf_array.append(substring_match(labels, preds))
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+
+    perf_array = []
+    runs = 1
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 10)):
+            x = [ex.replace("repeat with logic:\n\n", "") for ex in x]
+            x = [ex.replace("\nA:", "") for ex in x]
+            prompts, answer = predict(task_description, x)
+            new_answer  = interpreter.batch_visit(prompts, answer)
+            answers.extend(new_answer)
+            time.sleep(60)
+        preds = [x.strip() for x in answers]
+        perf_array.append(substring_match(labels, preds))
+    print("FS-CoT Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
+
 # auto_decomp(10, 0.3)
 # affordance(temperature=0.3)
-dynamic_few_shot_cot(temperature=0.3, strategy="random")
+# dynamic_few_shot_cot(temperature=0.3, strategy="random")
 # few_shot_cot()
 # few_shot(N=5, temperature=0.3)
 # auto_cot()
