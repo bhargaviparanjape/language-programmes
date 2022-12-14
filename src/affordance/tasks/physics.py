@@ -221,9 +221,9 @@ Input: %s
 Q1:"""
 
 
-def few_shot_cot():
+def few_shot_cot(temperature=0.3, model_name="text-davinci-002"):
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1400, temperature=0.4, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
@@ -232,13 +232,13 @@ def few_shot_cot():
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
             x = [ex.replace("Identify the physics formula that would be most useful for finding the answer to each of the following word problems.\n\n\n", "") for ex in x]
             answers.extend(predict("Given a physics word problem, choose which physics formula from among the choices is most helpful in solving the word problem. The final answer should be one of the choices.", x))
-        preds = [[y.strip() for y in x.split("\n")] for x in answers]
-        pdb.set_trace()
-        perf_array.append(token_match(labels, preds))
+            time.sleep(30)
+        preds = [get_answer(x.strip()) for x in answers]
+        perf_array.append(substring_match(labels, preds))
     print("Few-shot COT performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
@@ -370,13 +370,15 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
         print("Run %d"%run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
-            x = [ex.replace("Identify the physics formula that would be most useful for finding the answer to each of the following word problems.", "") for ex in x]
+            # x = [ex.replace("Identify the physics formula that would be most useful for finding the answer to each of the following word problems.", "") for ex in x]
+            x = [ex.replace("\n\n\nQ: ", "") for ex in x]
             x = [ex.replace("\nA:", "") for ex in x]
             prompts, answer = predict(task_description, x) 
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
+            preds = [get_answer(x.strip()) for x in answers]
             time.sleep(60)
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x.strip()) for x in answers]
         perf_array.append(substring_match(labels, preds))
     print("FS-CoT Performance:")
     print("Mean", np.mean(perf_array))
@@ -386,7 +388,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
 # auto_decomp(10, 0.3)
 # affordance(temperature=0.3)
 # dynamic_few_shot_cot(temperature=0.3, strategy="random")
-# few_shot_cot()
+few_shot_cot()
 # few_shot(N=5, temperature=0.3)
 # auto_cot()
-nl_program(temperature=0.3)
+#nl_program(temperature=0.3)

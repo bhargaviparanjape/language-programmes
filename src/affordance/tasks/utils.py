@@ -10,9 +10,9 @@ import json
 import jsonlines
 import seqio
 import os
-os.environ['CURL_CA_BUNDLE'] = "/etc/ssl/certs/ca-bundle.crt"
-from bigbench.bbseqio import tasks
-vocabulary=seqio.SentencePieceVocabulary("/gscratch/zlab/bparan/projects/cascades/models/t5-spiece.model")
+#os.environ['CURL_CA_BUNDLE'] = "/etc/ssl/certs/ca-bundle.crt"
+#from bigbench.bbseqio import tasks
+#vocabulary=seqio.SentencePieceVocabulary("/gscratch/zlab/bparan/projects/cascades/models/t5-spiece.model")
 from sklearn.metrics import accuracy_score
 from typing import List
 import tqdm
@@ -22,10 +22,11 @@ search_url = "https://api.bing.microsoft.com/v7.0/search"
 headers = {"Ocp-Apim-Subscription-Key": subscription_key}
 from IPython.display import HTML
 
-with open(os.path.expanduser('~/.openai_api_key'), 'r') as file:
+with open(os.path.expanduser('~/.openai_api_key_uw'), 'r') as file:
     openai.api_key = file.read().replace('\n', '')
 print(openai.api_key)
-cache_dir = '/gscratch/zlab/bparan/projects/cascades/data'
+#cache_dir = '/gscratch/zlab/bparan/projects/cascades/data'
+cache_dir = '/home/bparanjape/language-programmes/data'
 import subprocess
 import sys
 
@@ -355,6 +356,10 @@ def get_answer(x, return_original=False):
         return x[search_result.span(0)[1]:].strip()
     else:
         # Program did not complete
+        matches = [match for match in re.finditer("\#[0-9]+:", x)]
+        # If any match is made, return the last match output 
+        if len(matches):
+            return x[matches[-1].start():]
         if return_original:
             return x.strip()
         return ""

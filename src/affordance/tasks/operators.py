@@ -1,6 +1,6 @@
 from re import L
 from turtle import pd
-from utils import gpt3, propose_decomposition, propose_instruction, chunks, get_subset, OpenAIModel, cache_dir, substring_match, parse_program
+from utils import gpt3, propose_decomposition, propose_instruction, chunks, get_subset, OpenAIModel, cache_dir, substring_match, parse_program, get_answer
 
 import datasets
 import numpy as np
@@ -9,6 +9,7 @@ import json, pdb
 import re
 from sequential_interpreter import TopDownVisitorBeta, TopDownVisitor
 from pot_tools import safe_execute
+import time
 
 d = datasets.load_dataset('bigbench', 'operators', cache_dir=cache_dir)
 inputs = d['train']['inputs'] + d['validation']['inputs']
@@ -477,7 +478,7 @@ def affordance(temperature=0.3, model_name = "text-davinci-002"):
     print("Std. Dev", np.std(perf_array))
 
 
-def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
+def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
     global few_shot_pot_prompt
     task_name = "Arithmetic operators"
     task_description = "Given the definition of the op operator, compute the result. Write out intermediate arithmetic operations as python code. Store your result as a variable named 'ans'."
@@ -500,17 +501,44 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed")
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
+    def predict_self_consistency(description, chunk, n=5):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    if self_consistency:
+        perf_array = []
+        runs = 5
+        batch_size = 10
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = [] # List of counters
+            for x in tqdm(chunks(inputs, batch_size)):
+                prompts, answer_set = predict_self_consistency(task_description, x)
+                result_counter = [Counter() for i in range(batch_size)]
+                for ans in answer_set:
+                    new_answer = interpreter.batch_visit(prompts, ans)
+                    new_answer = [get_answer(program) for program in new_answer]
+                    for enum, pred in enumerate(new_answer):
+                        if pred is not None:
+                            result_counter[enum].update([pred])
+                answers.extend(result_counter)
+            preds = [x.most_common(1)[0][0] for x in answers]
+            perf_array.append(substring_match(labels, preds))
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+
     perf_array = []
-    runs = 5
+    runs = 1
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
-            x = [ex.replace("\nEdited:", "") for ex in x]
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x.strip()) for x in answers]
         perf_array.append(substring_match(labels, preds))
     print("FS-CoT Performance:")
     print("Mean", np.mean(perf_array))
@@ -524,4 +552,4 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed")
 # few_shot(N=5, temperature=0.3)
 # auto_cot()
 # few_shot_pot(temperature=0.2, model_name="code-davinci-002")
-nl_program(temperature=0.3)
+nl_program(temperature=0.3, model_name="text-davinci-002")
