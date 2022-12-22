@@ -21,7 +21,9 @@ from collections import Counter
 
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 from prompt_library import (llm_similar_tasks, random_tasks,
-                            similar_auto_breakdowns, similar_tasks)
+                            similar_auto_breakdowns, similar_tasks,
+                            few_shot_retrieval_prompt, few_shot_code_prompt, 
+                            few_shot_arithmetic_prompt, few_shot_string_prompt)
 from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 
 d = datasets.load_dataset('bigbench', 'temporal_sequences', cache_dir=cache_dir)
@@ -118,7 +120,7 @@ def token_match(labels, predictions):
 
 def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=200, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=200, temperature=temperature, quote='---', n=1)
         prompts = ["""Today, Elizabeth went to the construction site. Between what times could they have gone?
 We know that: 
 Elizabeth woke up at 5am.
@@ -269,105 +271,109 @@ Possible times:
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
+            time.sleep(10)
         preds = [x.strip() for x in answers]
         perf_array.append(exact_match(labels, preds))
+        print(perf_array)
     print("No decomposition Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
 
-few_shot_cot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use a python code generation and execution function in one or more of your substeps, if required. Other functions like arithmetic and logical operations can also be used. 
-Description: 
-Input: 
-```
-if x < 5:
-	pass
-```
-What error does this program surface?
-Q1: [execute] Execute the following python code snippet.
-if x < 5:
-	pass
-#1:
-Traceback (most recent call last):
-  File "<stdin>", line 1, in <module>
-NameError: name 'x' is not defined
-Q2: What is the final error message?
-#2: NameError: name 'x' is not defined
-Q3: [EOC]
-NameError: name 'x' is not defined
-----
-Desciption:
-Input:
-```
-x = set([1, 1, 2, 3])
-```
-What is the value of x after this program executes?
-Q1: [code edit] Edit the following code to get the value of x
-x = set([1, 1, 2, 3])
-#1:
-x = set([1, 1, 2, 3])
-print(x)
-Q2: [execute] Execute the following python code snippet.
-x = set([1, 1, 2, 3])
-print(x)
-#2: {1, 2, 3}
-Q3: [EOC]
-{1, 2, 3}
-----
-Description:
-Input:
-Python code:
-try:
-    n = int(input())
-    m = int(input())
-    integer_sum = int(n) + int(m)
-    print(integer_sum)
-except:
-    print('error')
+# few_shot_cot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use a python code generation and execution function in one or more of your substeps, if required. Other functions like arithmetic and logical operations can also be used. 
+# Description: 
+# Input: 
+# ```
+# if x < 5:
+# 	pass
+# ```
+# What error does this program surface?
+# Q1: [execute] Execute the following python code snippet.
+# if x < 5:
+# 	pass
+# #1:
+# Traceback (most recent call last):
+#   File "<stdin>", line 1, in <module>
+# NameError: name 'x' is not defined
+# Q2: What is the final error message?
+# #2: NameError: name 'x' is not defined
+# Q3: [EOC]
+# NameError: name 'x' is not defined
+# ----
+# Desciption:
+# Input:
+# ```
+# x = set([1, 1, 2, 3])
+# ```
+# What is the value of x after this program executes?
+# Q1: [code edit] Edit the following code to get the value of x
+# x = set([1, 1, 2, 3])
+# #1:
+# x = set([1, 1, 2, 3])
+# print(x)
+# Q2: [execute] Execute the following python code snippet.
+# x = set([1, 1, 2, 3])
+# print(x)
+# #2: {1, 2, 3}
+# Q3: [EOC]
+# {1, 2, 3}
+# ----
+# Description:
+# Input:
+# Python code:
+# try:
+#     n = int(input())
+#     m = int(input())
+#     integer_sum = int(n) + int(m)
+#     print(integer_sum)
+# except:
+#     print('error')
 
-  choice: prints number between 5 and 6
-  choice: try input and except error
-  choice: inputs the string 'try'
-  choice: prints sum of two input numbers only if they are integers otherwise raises error
-Q1: [code generate] prints number between 5 and 6
-#1:
-import random
+#   choice: prints number between 5 and 6
+#   choice: try input and except error
+#   choice: inputs the string 'try'
+#   choice: prints sum of two input numbers only if they are integers otherwise raises error
+# Q1: [code generate] prints number between 5 and 6
+# #1:
+# import random
 
-print(random.uniform(5,6))
-Q2: [code generate] try input and except error
-#2
-try:
-    #open file
-    file = open(file_name, "r")
-    #read file
-    data = file.read()
-    #close file
-    file.close()
-    #split data
-    data = data.split("\n")
-    #remove empty string
-Q3: [code generate] inputs the string 'try'
-#3: print('try')
-Q4: [code generate] prints sum of two input numbers only if they are integers otherwise raises error
-#4:
-#!/usr/bin/python
+# print(random.uniform(5,6))
+# Q2: [code generate] try input and except error
+# #2
+# try:
+#     #open file
+#     file = open(file_name, "r")
+#     #read file
+#     data = file.read()
+#     #close file
+#     file.close()
+#     #split data
+#     data = data.split("\n")
+#     #remove empty string
+# Q3: [code generate] inputs the string 'try'
+# #3: print('try')
+# Q4: [code generate] prints sum of two input numbers only if they are integers otherwise raises error
+# #4:
+# #!/usr/bin/python
 
-a=raw_input("enter first number: ")
-b=raw_input("enter second number: ")
-try:
-    sum=int(a)+int(b)
-    print "sum is: ",sum
-except:
-    print "enter integer values only"
-Q5: Which of the generated code snippets are most like the original one?
-#5: prints sum of two input numbers only if they are integers otherwise raises error
-Q6: [EOC]
-----
-Desciption: %s
-Input: %s
-Q1: """
+# a=raw_input("enter first number: ")
+# b=raw_input("enter second number: ")
+# try:
+#     sum=int(a)+int(b)
+#     print "sum is: ",sum
+# except:
+#     print "enter integer values only"
+# Q5: Which of the generated code snippets are most like the original one?
+# #5: prints sum of two input numbers only if they are integers otherwise raises error
+# Q6: [EOC]
+# ----
+# Desciption: %s
+# Input: %s
+# Q1: """
+
+few_shot_cot_prompt = few_shot_arithmetic_prompt
 
 auto_cot_corrected_prompt = """TASK: 
 Today, Elizabeth went to the construction site. Between what times could they have gone?
@@ -509,11 +515,13 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nPossible times:", "") for ex in x]
             answers.extend(predict(x))
+            time.sleep(10)
         preds = [x.strip() for x in answers]
         perf_array.append(substring_match(labels, preds))
+        print(perf_array)
     print("Auto-CoT Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
@@ -543,7 +551,7 @@ def affordance():
         print("Run %d"%run)
         answers = []
         new_answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             answers = predict("Take the letters at position 3 of the words in a list of words and concatenate them using a space.", x)
             pdb.set_trace()
             affordance_inputs = [json.loads(a.strip().split("\n")[1].replace("#1: ", "")) for a in answers]
@@ -579,7 +587,7 @@ def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             # x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(task_description, x))
         preds = [x.strip() for x in answers]
@@ -705,7 +713,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     task_description = """(Temporal sequences) Given the daily schedule of activities of a person and a final activity that they need to find time for, choose one of the four provided options when they could do the activity."""
 
     if strategy == "fixed":
-        few_shot_cot_prompt = few_shot_pot_prompt
+        few_shot_cot_prompt = few_shot_cot_prompt
     elif strategy == "random":
         few_shot_cot_prompt = random_tasks(N=6)
     elif strategy == "similar":
@@ -726,9 +734,10 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("""\nPossible times:""", "") for ex in x]
             answers.extend(predict(task_description, x))
+            time.sleep(10)
         # preds = [[y.strip() for y in x.split("\n")] for x in answers]
         preds = [x.strip() for x in answers]
         perf_array.append(substring_match(labels, preds))
@@ -750,7 +759,7 @@ def affordance(temperature=0.3, model_name = "text-davinci-002"):
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(task_description, x))
             new_answers = []
@@ -842,7 +851,7 @@ if __name__ == "__main__":
         print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
-        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name)
     elif args.inference_strategy == "nl_program":

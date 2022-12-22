@@ -21,7 +21,9 @@ from collections import Counter
 
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 from prompt_library import (llm_similar_tasks, random_tasks,
-                            similar_auto_breakdowns, similar_tasks)
+                            similar_auto_breakdowns, similar_tasks,
+                            few_shot_retrieval_prompt, few_shot_code_prompt, 
+                            few_shot_arithmetic_prompt, few_shot_string_prompt)
 from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 
 d = datasets.load_dataset('bigbench', 'language_games', cache_dir=cache_dir)
@@ -101,10 +103,12 @@ def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
+            time.sleep(10)
         preds = [x.strip() for x in answers]
         perf_array.append(exact_match(labels, preds))
+        print(perf_array)
     print("No decomposition Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
@@ -172,7 +176,7 @@ Evernay eforebay avehay Iyay eensay uchsay engthstray.
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
         preds = [x.strip() for x in answers]
         perf_array.append(exact_match(labels, preds))
@@ -181,75 +185,76 @@ Evernay eforebay avehay Iyay eensay uchsay engthstray.
     print("Std. Dev", np.std(perf_array))
 
 
-few_shot_cot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use string operations like splitting, reformatting, editing or merging. You can also use other operations like arithmetic and logic.
-Description: Find the required date in MM/DD/YYYY using information about related events and dates in the input. Clue: First find what day is today.
-Input: Today is the first day of 2007. What is the date one week from today in MM/DD/YYYY?
-Q1: [string reformat] first day of 2007 in MM/DD/YYYY 
-#1: 01/01/2007
-Q2: What date is one week from 01/01/2007? 
-#2: 01/08/2007
-Q3: [EOQ]
-Ans: 01/08/2007
-----
-Description: Translate English into Pig Latin.
-Input: (English) Sami made his way across the bar and hugged Layla.
-Q1: [string split] What are the words in "Sami made his way across the bar and hugged Layla."?
-#1: ["Sami", "made", "his", "way", "across", "the",  "bar", "and", "hugged", "Layla", "."]
-Q2: [string edit] Transfer the initial consonant of each word to the end of the word and adding "ay" after it.
-#2: ["Amisay", "ademay", "ishay", "ayway", "acrossyay", "ethay", "arbay", "andyay", "uggedhay", "Aylalay", "."]
-Q3: [string merge] Concatenate #2 into a full sentence.
-#3: Amisay ademay ishay ayway acrossyay ethay arbay andyay uggedhay Aylalay.
-Q4: [EOQ]
-Ans: Amisay ademay ishay ayway acrossyay ethay arbay andyay uggedhay Aylalay.
-----
-Description: Take the letters at position 3 of the words in a list of words and concatenate them using a space.
-Input: Take the letters at position 3 of the words in "Savita Saeed Ramos Sato Yadav" and concatenate them using a space.
-Q1: [string split] What are the words in "Savita Saeed Ramos Sato Yadav"?
-#1: ["Savita", "Saeed", "Ramos",  "Sato",  "Yadav"]
-Q2: [string index] What is the third letter of words in the list in #1?
-#2: ["v", "e", "m", "t", "d"]
-Q3: [string merge] Concatenate #2 with spaces
-#3: "v e m t d"
-Q4: [EOQ]
-Ans: v e m t d
-----
-Desciption: Take the letters at position 3 of the words in a list of words and concatenate them using a space.
-Take the letters at position 3 of the words in "Ibrahim Francois Pei Shu Ngo" and concatenate them using a space.
-Q1: [string split] What are the words in "Ibrahim Francois Pei Shu Ngo"?
-#1: ["Ibrahim", "Francois", "Pei", "Shu", "Ngo"]
-Q2: [string index] What is the third letter of words in the list in #1?
-#2: ["r", "a", "i", "o", "u"]
-Q3: [string merge] Concatenate #2 with spaces
-#3: "r a i u o"
-Q4: [EOQ]
-Ans: r a i u o
-----
-Description: Translate English into Pig Latin.
-Input: (English) Tom is the most popular boy in school.
-Q1: [string split] What are the words in "Tom is the most popular boy in school."?
-#1: ["Tom", "is", "the", "most", "popular", "boy",  "in", "school", "."]
-Q2: [string edit] Transfer the initial consonant of each word to the end of the word and adding "ay" after it.
-#2: ["Omtay", "isyay", "ethay", "ostmay", "opularpay", "oybay",  "inyay", "oolschay", "."]
-Q3: [string merge] Concatenate #2 into a full sentence.
-#3: Omtay isyay ethay ostmay opularpay oybay inyay oolschay.
-Q4: [EOQ]
-Ans: Omtay isyay ethay ostmay opularpay oybay inyay oolschay.
-----
-Description: Find the required date in MM/DD/YYYY using information about related events and dates in the input. Clue: First find what day is today.
-Input: The deadline is Jun 1, 2021, which is 2 days away from now. What is the date 24 hours later in MM/DD/YYYY?
-Q1: [string reformat] Jun 1, 2021 in MM/DD/YYYY
-#1: 06/01/2021
-Q2: 06/01/2021 is 2 days away from now. What date is today?
-#2: Today is 04/01/2021
-Q3: What date is 24 hours later than today?  
-#3: 05/01/2021
-Q4: [EOQ]
-Ans: 05/31/2021
-----
-Desciption: %s
-Input: %s
-Q1:"""
+# few_shot_cot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use string operations like splitting, reformatting, editing or merging. You can also use other operations like arithmetic and logic.
+# Description: Find the required date in MM/DD/YYYY using information about related events and dates in the input. Clue: First find what day is today.
+# Input: Today is the first day of 2007. What is the date one week from today in MM/DD/YYYY?
+# Q1: [string reformat] first day of 2007 in MM/DD/YYYY 
+# #1: 01/01/2007
+# Q2: What date is one week from 01/01/2007? 
+# #2: 01/08/2007
+# Q3: [EOQ]
+# Ans: 01/08/2007
+# ----
+# Description: Translate English into Pig Latin.
+# Input: (English) Sami made his way across the bar and hugged Layla.
+# Q1: [string split] What are the words in "Sami made his way across the bar and hugged Layla."?
+# #1: ["Sami", "made", "his", "way", "across", "the",  "bar", "and", "hugged", "Layla", "."]
+# Q2: [string edit] Transfer the initial consonant of each word to the end of the word and adding "ay" after it.
+# #2: ["Amisay", "ademay", "ishay", "ayway", "acrossyay", "ethay", "arbay", "andyay", "uggedhay", "Aylalay", "."]
+# Q3: [string merge] Concatenate #2 into a full sentence.
+# #3: Amisay ademay ishay ayway acrossyay ethay arbay andyay uggedhay Aylalay.
+# Q4: [EOQ]
+# Ans: Amisay ademay ishay ayway acrossyay ethay arbay andyay uggedhay Aylalay.
+# ----
+# Description: Take the letters at position 3 of the words in a list of words and concatenate them using a space.
+# Input: Take the letters at position 3 of the words in "Savita Saeed Ramos Sato Yadav" and concatenate them using a space.
+# Q1: [string split] What are the words in "Savita Saeed Ramos Sato Yadav"?
+# #1: ["Savita", "Saeed", "Ramos",  "Sato",  "Yadav"]
+# Q2: [string index] What is the third letter of words in the list in #1?
+# #2: ["v", "e", "m", "t", "d"]
+# Q3: [string merge] Concatenate #2 with spaces
+# #3: "v e m t d"
+# Q4: [EOQ]
+# Ans: v e m t d
+# ----
+# Desciption: Take the letters at position 3 of the words in a list of words and concatenate them using a space.
+# Take the letters at position 3 of the words in "Ibrahim Francois Pei Shu Ngo" and concatenate them using a space.
+# Q1: [string split] What are the words in "Ibrahim Francois Pei Shu Ngo"?
+# #1: ["Ibrahim", "Francois", "Pei", "Shu", "Ngo"]
+# Q2: [string index] What is the third letter of words in the list in #1?
+# #2: ["r", "a", "i", "o", "u"]
+# Q3: [string merge] Concatenate #2 with spaces
+# #3: "r a i u o"
+# Q4: [EOQ]
+# Ans: r a i u o
+# ----
+# Description: Translate English into Pig Latin.
+# Input: (English) Tom is the most popular boy in school.
+# Q1: [string split] What are the words in "Tom is the most popular boy in school."?
+# #1: ["Tom", "is", "the", "most", "popular", "boy",  "in", "school", "."]
+# Q2: [string edit] Transfer the initial consonant of each word to the end of the word and adding "ay" after it.
+# #2: ["Omtay", "isyay", "ethay", "ostmay", "opularpay", "oybay",  "inyay", "oolschay", "."]
+# Q3: [string merge] Concatenate #2 into a full sentence.
+# #3: Omtay isyay ethay ostmay opularpay oybay inyay oolschay.
+# Q4: [EOQ]
+# Ans: Omtay isyay ethay ostmay opularpay oybay inyay oolschay.
+# ----
+# Description: Find the required date in MM/DD/YYYY using information about related events and dates in the input. Clue: First find what day is today.
+# Input: The deadline is Jun 1, 2021, which is 2 days away from now. What is the date 24 hours later in MM/DD/YYYY?
+# Q1: [string reformat] Jun 1, 2021 in MM/DD/YYYY
+# #1: 06/01/2021
+# Q2: 06/01/2021 is 2 days away from now. What date is today?
+# #2: Today is 04/01/2021
+# Q3: What date is 24 hours later than today?  
+# #3: 05/01/2021
+# Q4: [EOQ]
+# Ans: 05/31/2021
+# ----
+# Desciption: %s
+# Input: %s
+# Q1:"""
 
+few_shot_cot_prompt = few_shot_string_prompt
 
 def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
 
@@ -279,7 +284,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(task_description, x))
         # preds = [[y.strip() for y in x.split("\n")] for x in answers]
@@ -440,11 +445,13 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         for run in range(runs): 
             print("Run %d"%run)
             answers = []
-            for x in tqdm(chunks(inputs, 20)):
+            for x in tqdm(chunks(inputs, 10)):
                 x = [ex.replace("\nA:", "") for ex in x]
                 answers.extend(predict(x))
+                time.sleep(10)
             preds = [x.strip() for x in answers]
             perf_array.append(substring_match(labels, preds))
+            print(perf_array)
         print("Auto-CoT Performance:")
         print("Mean", np.mean(perf_array))
         print("Std. Dev", np.std(perf_array))
@@ -474,7 +481,7 @@ def affordance(temperature=0.3):
         print("Run %d"%run)
         answers = []
         new_answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             answers = predict("Take the letters at position 3 of the words in a list of words and concatenate them using a space.", x)
             affordance_inputs = [json.loads(a.strip().split("\n")[1].replace("#1: ", "")) for a in answers]
             affordance_outputs = [string_index(inp, 2) for inp in affordance_inputs]
@@ -592,7 +599,7 @@ if __name__ == "__main__":
         print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
-        auto_cot(args.temperature, args.model_name, use_corrected=True, self_consistency=False)
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name)
     elif args.inference_strategy == "nl_program":

@@ -21,7 +21,8 @@ from sklearn.metrics import jaccard_score
 
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 
-TASKS = {"date_understanding" : {
+TASKS = {
+"date_understanding" : {
 "name": "Date Understanding", 
 "description": "Find the required date in MM/DD/YYYY using information about related events and dates in the input. Clue: First find what day is today.",
 "instances": [
@@ -86,6 +87,7 @@ Q3: [string merge] Concatenate #2 with spaces
 Q4: [EOQ]
 Ans: r a i u o"""]
 },
+
 "known_unknown":{
     "name": "Known Unknown",
     "description": """Choose the option that best answers the question. If the question does not have a known answer, choose "Unknown".""",
@@ -179,6 +181,7 @@ Q4: [compare] Which option is the answer in #3 most similar to?
 Q5: [EOQ]
 Ans: Shiva"""]
 },
+
 "auto_debugging":{
     "name": "Auto Debugging",
     "description": "Debug the following code snippets by finding the answer or the error message.",
@@ -300,6 +303,7 @@ Q5: Which of the generated code snippets are most like the original one?
 Q6: [EOQ]
 Ans: prints a list of numbers greater than 7 from numbers_list"""]
 },
+
 "aqua_rat": {
     "name": "Arithmetic about Ratios",
     "prompt_prefix": """In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can generate python code to solve arithmetic and algebra equations in using functions from sympy.
@@ -719,6 +723,411 @@ Ans: No"""]
 },
 }
 
+
+few_shot_retrieval_prompt = """In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use search functions like Google search in one or more of your substeps, if there in insufficient information. Other functions like arithmetic and logical operations can also be used.
+Description: (Knwon or Unknwon) Choose the option that best answers the question. If the question does not have a known answer, choose "Unknown".
+Input: How many hairs were on Neil Armstrong's head when he landed on the moon?
+  choice: Unknown
+  choice: Five million
+Q1: [search] How many hairs were on Neil Armstrong's head when he landed on the moon? 
+#1:
+Apollo 11 (July 16–24, 1969) was the American spaceflight that first landed humans on the Moon. Commander Neil Armstrong and lunar module pilot Buzz Aldrin.
+Neil Alden Armstrong (August 5, 1930 – August 25, 2012) was an American astronaut and aeronautical engineer who became the first person to walk on the Moon.
+Q2: [subquestion] Does the information help answer the question? There could be no definitive answer because the question is too specific, about personal details not in public record, because the answer is not yet known, or the question is opinion-based.
+#2: No. The question is too specific
+Q3: [compare] What is the final answer?
+#3: Unknown
+Q4: [EOQ]
+Ans: Unknown
+----
+Description: (Anachronisms) An anachronism is a mistake in chronology, or a person, thing, or event that is out of its proper time. Does the sentence contain an anachrornism? Answer Yes/No.
+Input: President George H. W. Bush called his generals to the Oval Office at the outset of the Gulf War.
+Q1: [tag] What are the entities in this sentence?
+#1:
+President George H. W. Bush
+Gulf War
+Q2: [search] When was President George H. W. Bush president?
+#2: George H. W. Bush's tenure as the 41st president of the United States began with his inauguration on January 20, 1989, and ended on January 20, 1993.
+Q3: [search] When was the Gulf War fought?
+#3: The Gulf War[b] was a 1990–1991 armed campaign waged by a 35-country military coalition in response to the Iraqi invasion of Kuwait.
+#4: [subquestion] Could these entities have co-existed based on thier time periods alone?
+Yes. Their time periods intersect.
+Q5: [generate output] Is this an anachronism?
+#5: No
+Q6: [EOQ]
+Ans: No
+----
+Description: (Hindu Knowledge) Answer questions about Hindu mythology by choosing the option that best answers the question.
+Input: In the Mahabharata, Karna is cursed to forget the incantations needed to use which weapon?
+  choice: Anjalikastra
+  choice: Narayanastra
+  choice: Agneyastra
+  choice: Brahmastra
+Q1: [search] In the Mahabharata, Karna is cursed to forget the incantations needed to use which weapon?
+#1: As a result, he cursed Karna, saying that HIS MARTIAL SKILLS, including the use of BRAHMASTRA, would abandon him when he needed them most. Indra, the King of Gods, stung Karna in the form of a bee to get him cursed by Parshuram. Karna walked through the woods in despair, feeling dejected by the curse. A skilled & devoted warrior...
+Q2: [compare] Which option is the answer in #3 most similar to?
+#2: Brahmastra
+Q3: [EOQ]
+Ans: Brahmastra
+----
+Description: (Anachronisms) An anachronism is a mistake in chronology, or a person, thing, or event that is out of its proper time. Does the sentence contain an anachrornism? Answer Yes/No.
+Input: Kurt Cobain starred in the 1980 television show "Twin Peaks".
+Q1: [tag] What are the entities in this sentence?
+#1:
+Kurt Cobain
+"Twin Peaks"
+Q2: [search] When did television show "Twin Peaks" air?
+#2: Twin Peaks is an American mystery serial drama television series created by Mark Frost and David Lynch. It premiered on ABC on April 8, 1990, and originally ran for two seasons until its cancellation in 1991.
+Q3: [search] When did Kurt Cobain live?
+#3: Kurt Donald Cobain (February 20, 1967 – c. April 5, 1994) was an American musician, best known as the lead vocalist, guitarist and primary songwriter of the ...
+Q4: [subquestion] Could these entities have co-existed based on this information?
+No. Musician  Kurt Cobain could not have starred in Twin Peaks.
+Q5: [generate output] Is this an anachronism?
+#5: Yes
+Q6: [EOQ]
+Ans: Yes
+----
+Description: (Knwon or Unknwon) Choose the option that best answers the question. If the question does not have a known answer, choose "Unknown".
+Input: Where was Mark Twain born?
+  choice: Unknown
+  choice: Florida, Missouri
+Q1: [search] Where was Mark Twain born?
+#1:
+Mark Twain. Samuel Langhorne Clemens was born in Florida, Missouri, and later moved with his family to Hannibal, Missouri, where he grew up.
+Q2: [subquestion] Does the information help answer the question? There could be no definitive answer because the question is too specific, about personal details not in public record, because the answer is not yet known, or the question is opinion-based.
+#2: Yes. The answer is Florida, Missouri
+Q3: [compare] What is the final answer?
+#3: Florida, Missouri
+Q4: [EOQ]
+Ans: Florida, Missouri
+----
+Description: (Hindu Knowledge) Answer questions about Hindu mythology by choosing the option that best answers the question.
+Input: In the Hindu epic Ramayana, the main villain was a devotee of which deity?
+  choice: Indra
+  choice: Vishnu
+  choice: Brahma
+  choice: Shiva
+Q1: [subquestion] Can this question be answered step-by-step?
+#1: Yes.
+Q2: [search] In the Hindu epic Ramayana, who is the main villain? 
+#2: Ravana is the main antagonist of the Hindu Epic, the Ramayana. 
+Q3: [search] Ravana was a devotee of which deity?
+#3: Ravana, was an ardent devotee of Lord Shiva, is depicted and described as a great scholar,a brahman,a capable ruler and a maestro of the Veena.
+Q4: [compare] Which option is the answer in #3 most similar to?
+#4: Shiva
+Q5: [EOQ]
+Ans: Shiva
+----
+Desciption: %s 
+Input: %s
+Q1:"""
+
+
+few_shot_string_prompt = """In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use string operations like splitting, reformatting, editing or merging. You can also use other operations like arithmetic and logic.
+Description: (Date Understanding) Find the required date in MM/DD/YYYY using information about related events and dates in the input. Clue: First find what day is today.
+Input: The deadline is Jun 1, 2021, which is 2 days away from now. What is the date 24 hours later in MM/DD/YYYY?
+Q1: [string reformat] Jun 1, 2021 in MM/DD/YYYY
+#1: 06/01/2021
+Q2: [arithmetic] 06/01/2021 is 2 days away from now. What date is today?
+#2: Today is 04/01/2021
+Q3: [arithmetic] What date is 24 hours later than today?  
+#3: 05/01/2021
+Q4: [EOQ]
+Ans: 05/31/2021
+----
+Description: (Language games) Translate English into Pig Latin.
+Input: (English) Sami made his way across the bar and hugged Layla.
+Q1: [string split] What are the words in "Sami made his way across the bar and hugged Layla."?
+#1: ["Sami", "made", "his", "way", "across", "the",  "bar", "and", "hugged", "Layla", "."]
+Q2: [string edit] Transfer the initial consonant of each word to the end of the word and adding "ay" after it.
+#2: ["Amisay", "ademay", "ishay", "ayway", "acrossyay", "ethay", "arbay", "andyay", "uggedhay", "Aylalay", "."]
+Q3: [string merge] Concatenate #2 into a full sentence.
+#3: Amisay ademay ishay ayway acrossyay ethay arbay andyay uggedhay Aylalay.
+Q4: [EOQ]
+Ans: Amisay ademay ishay ayway acrossyay ethay arbay andyay uggedhay Aylalay.
+----
+Description: (Kth letter concatenation) Take the letters at position 3 of the words in a list of words and concatenate them using a space.
+Input: Take the letters at position 3 of the words in "Savita Saeed Ramos Sato Yadav" and concatenate them using a space.
+Q1: [string split] What are the words in "Savita Saeed Ramos Sato Yadav"?
+#1: ["Savita", "Saeed", "Ramos",  "Sato",  "Yadav"]
+Q2: [string index] What is the third letter of words in the list in #1?
+#2: ["v", "e", "m", "t", "d"]
+Q3: [string merge] Concatenate #2 with spaces
+#3: "v e m t d"
+Q4: [EOQ]
+Ans: v e m t d
+----
+Description: (Kth letter concatenation) Take the letters at position 3 of the words in a list of words and concatenate them using a space.
+Input: Take the letters at position 3 of the words in "Ibrahim Francois Pei Shu Ngo" and concatenate them using a space.
+Q1: [string split] What are the words in "Ibrahim Francois Pei Shu Ngo"?
+#1: ["Ibrahim", "Francois", "Pei", "Shu", "Ngo"]
+Q2: [string index] What is the third letter of words in the list in #1?
+#2: ["r", "a", "i", "o", "u"]
+Q3: [string merge] Concatenate #2 with spaces
+#3: "r a i u o"
+Q4: [EOQ]
+Ans: r a i u o
+----
+Description: (Language games) Translate English into Pig Latin.
+Input: (English) Tom is the most popular boy in school.
+Q1: [string split] What are the words in "Tom is the most popular boy in school."?
+#1: ["Tom", "is", "the", "most", "popular", "boy",  "in", "school", "."]
+Q2: [string edit] Transfer the initial consonant of each word to the end of the word and adding "ay" after it.
+#2: ["Omtay", "isyay", "ethay", "ostmay", "opularpay", "oybay",  "inyay", "oolschay", "."]
+Q3: [string merge] Concatenate #2 into a full sentence.
+#3: Omtay isyay ethay ostmay opularpay oybay inyay oolschay.
+Q4: [EOQ]
+Ans: Omtay isyay ethay ostmay opularpay oybay inyay oolschay.
+----
+Description: (Date Understanding) Find the required date in MM/DD/YYYY using information about related events and dates in the input. Clue: First find what day is today.
+Input: Today is the first day of 2007. What is the date one week from today in MM/DD/YYYY?
+Q1: [string reformat] first day of 2007 in MM/DD/YYYY 
+#1: 01/01/2007
+Q2: [arithmetic] What date is one week from 01/01/2007? 
+#2: 01/08/2007
+Q3: [EOQ]
+Ans: 01/08/2007
+----
+Descripton: %s
+Input: %s
+Q1:
+"""
+
+
+few_shot_code_prompt = """In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use a python code generation and execution function in one or more of your substeps, if required. Other functions like arithmetic and logical operations can also be used.
+Description: (Auto Debugging) Debug the following code snippets by finding the answer or the error message.
+Input: 
+```
+if x < 5:
+    pass
+```
+What error does this program surface?
+Q1: [execute] Execute the following python code snippet.
+if x < 5:
+    pass
+#1:
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+NameError: name 'x' is not defined
+Q2: [generate answer] What is the final error message?
+#2: NameError: name 'x' is not defined
+Q3: [EOQ]
+Ans: NameError: name 'x' is not defined
+----
+Description: (Auto Debugging) Debug the following code snippets by finding the answer or the error message.
+Input:
+```
+x = set([1, 1, 2, 3])
+```
+What is the value of x after this program executes?
+Q1: [code edit] Edit the following code to get the value of x
+x = set([1, 1, 2, 3])
+#1:
+x = set([1, 1, 2, 3])
+print(x)
+Q2: [execute] Execute the following python code snippet.
+x = set([1, 1, 2, 3])
+print(x)
+#2: {1, 2, 3}
+Q3: [EOQ]
+Ans: {1, 2, 3}
+----
+Description: (Code description) Given a python code snippet, choose the option that is the best description of the code snippet.
+Input:
+Python code:
+try:
+    n = int(input())
+    m = int(input())
+    integer_sum = int(n) + int(m)
+    print(integer_sum)
+except:
+    print('error')
+
+  choice: prints number between 5 and 6
+  choice: try input and except error
+  choice: inputs the string 'try'
+  choice: prints sum of two input numbers only if they are integers otherwise raises error
+Q1: [code generate] prints number between 5 and 6
+#1:
+import random
+
+print(random.uniform(5,6))
+Q2: [code generate] try input and except error
+#2:
+try:
+    #open file
+    file = open(file_name, "r")
+    #read file
+    data = file.read()
+    #close file
+    file.close()
+    #split data
+    data = data.split("\n")
+    #remove empty string
+Q3: [code generate] inputs the string 'try'
+#3: print('try')
+Q4: [code generate] prints sum of two input numbers only if they are integers otherwise raises error
+#4:
+#!/usr/bin/python
+
+a=raw_input("enter first number: ")
+b=raw_input("enter second number: ")
+try:
+    sum=int(a)+int(b)
+    print "sum is: ",sum
+except:
+    print "enter integer values only"
+Q5: [compare] Which of the generated code snippets are most like the original one?
+#5: prints sum of two input numbers only if they are integers otherwise raises error
+Q6: [EOQ]
+Ans: prints sum of two input numbers only if they are integers otherwise raises error
+----
+Description: (Code description) Given a python code snippet, choose the option that is the best description of the code snippet.
+Input:
+Python code:
+numbers_list = [2, 6, 8, 10, 11, 4, 12, 7, 13, 17, 0, 3, 21]
+filtered_list = list(filter(lambda num: (num > 7), numbers_list))
+print(filtered_list)
+
+  choice: prints lambda
+  choice: returns a filtered list
+  choice: prints a list of numbers greater than 7 from numbers_list
+  choice: prints numbers from 2 to 6
+Q1: [code generate] prints lambda
+#1:
+print("lambda")
+Q2: [code generate] returns a filtered list
+#2
+def filter_list(l):
+  'return a new list with the strings filtered out'
+  return [x for x in l if not isinstance(x, str)]
+Q3: [code generate] prints a list of numbers greater than 7 from numbers_list
+#3:
+numbers_list = [1,2,3,4,5,6,7,8,9,10]
+for number in numbers_list:
+    if number > 7:
+        print(number)
+Q4: [code generate] prints numbers from 2 to 6
+#4:
+for i in range(2,7):
+    print(i)
+Q5: Which of the generated code snippets are most like the original one?
+#5: prints a list of numbers greater than 7 from numbers_list
+Q6: [EOQ]
+Ans: prints a list of numbers greater than 7 from numbers_list
+----
+Descripton: %s
+Input: %s
+Q1:"""
+
+
+few_shot_arithmetic_prompt = """In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can generate python code to solve arithmetic and algebra equations in using functions from sympy.
+from sympy import Symbol
+from sympy import simplify
+import math
+from sympy import solve_it
+# solve_it(equations, variable): solving the equations and return the variable value.
+
+Description: Solve the following arithmetic problems on ratios and fractions, writing out intermediate arithmetic calculations as python code. Store your result as a variable named 'ans'.
+Input:  In a flight of 600 km, an aircraft was slowed down due to bad weather. Its average speed for the trip was reduced by 200 km/hr and the time of flight increased by 30 minutes. The duration of the flight is:  A)1 hour B)2 hours C)3 hours D)4 hours E)5 hours
+Q1: [generate python code] write python code to solve the problem, using math and sympy.
+#1:
+duration = Symbol('duration', positive=True)
+delay = 30 / 60
+total_disntace = 600
+original_speed = total_disntace / duration
+reduced_speed = total_disntace / (duration + delay)
+solution = solve_it(original_speed - reduced_speed - 200, duration)
+ans = solution[duration]
+print(ans)
+Q2: [code execute] Execute the python code in #1 and get the value of "ans"
+#2:
+1.0
+Q3: [compare] Which of the options among A)1 hour B)2 hours C)3 hours D)4 hours E)5 hours is most similar to the answer? 
+#3: A
+Q4: [EOQ]
+Ans: A
+----
+Description: Solve the following arithmetic problems on ratios and fractions, writing out intermediate arithmetic calculations as python code. Store your result as a variable named 'ans'.
+Input: M men agree to purchase a gift for Rs. D. If 3 men drop out how much more will each have to contribute towards the purchase of the gift?  A)D/(M-3) B)MD/3 C)M/(D-3) D)3D/(M**2-3M) E)None of these
+Q1: [generate python code] write python code to solve the problem, using math and sympy.
+#1:
+M = Symbol('M')
+D = Symbol('D')
+cost_before_dropout = D / M
+cost_after_dropout = D / (M - 3)
+ans=simplify(cost_after_dropout - cost_before_dropout)
+print(ans)
+Q2: [code execute] Execute the python code in #1 and get the value of "ans"
+#2: 3*D/(M*(M - 3))
+Q3: [compare] Which of the options among A)D/(M-3) B)MD/3 C)M/(D-3) D)3D/(M**2-3M) E)None of these is most similar to the answer? 
+#3: D
+Q4: [EOQ]
+Ans: D
+----
+Description: Solve the following middle-school arithmetic problems, writing out intermediate arithmetic calculations as python code. Store your result as a variable named 'ans'.
+Input: Janet’s ducks lay 16 eggs per day. She eats three for breakfast every morning and bakes muffins for her friends every day with four. She sells the remainder at the farmers' market daily for $2 per fresh duck egg. How much in dollars does she make every day at the farmers' market?
+Q1: [generate python code] write down the arithmetic or algebra equations as python code
+#1:
+total_eggs = 16
+eaten_eggs = 3
+baked_eggs = 4
+sold_eggs = total_eggs - eaten_eggs - baked_eggs
+dollars_per_egg = 2
+ans = sold_eggs * dollars_per_egg
+print(ans)
+Q2: [code execute] Execute the python code in #1 and get the value of "ans"
+#2: 18
+Q3: [EOQ]
+Ans:18
+----
+Description: Solve the following middle-school arithmetic problems, writing out intermediate arithmetic calculations as python code. Store your result as a variable named 'ans'.
+Input: Every day, Wendi feeds each of her chickens three cups of mixed chicken feed, containing seeds, mealworms and vegetables to help keep them healthy.  She gives the chickens their feed in three separate meals. In the morning, she gives her flock of chickens 15 cups of feed.  In the afternoon, she gives her chickens another 25 cups of feed.  How many cups of feed does she need to give her chickens in the final meal of the day if the size of Wendi's flock is 20 chickens?
+Q1: [generate python code] write down the arithmetic or algebra equations as python code
+#1:
+numb_of_chickens = 20
+cups_for_each_chicken = 3
+cups_for_all_chicken = num_of_chickens * cups_for_each_chicken
+cups_in_the_morning = 15
+cups_in_the_afternoon = 25
+ans = cups_for_all_chicken - cups_in_the_morning - cups_in_the_afternoon
+print(ans)
+Q2: [code execute] Execute the python code in #1 and get the value of "ans"
+#2: 20
+Q3: [EOQ]
+Ans: 20
+----
+Description: Solve the following middle-school arithmetic problems, writing out intermediate arithmetic calculations as python code. Store your result as a variable named 'ans'.
+Input: Joseph and Getty went to buy ice creams, they together bought 36 ice creams. On the way back, Joseph ate 12 of the ice creasm, and he has 2 ice creams left now. 
+Q1: [generate python code] write down the arithmetic or algebra equations as python code
+#1:
+num_ice_creams_bought_by_joseph = 2 + 12
+total_ice_creams = 36
+ans = total_ice_creams - num_ice_creams_bought_by_joseph
+print(ans)
+Q2: [code execute] Execute the python code in #1 and get the value of "ans"
+#2: 22
+Q3: [EOQ]
+Ans: 22
+----
+Description: Solve the following problems on financial data in the form of text and tables, writing out intermediate calculations as python code. Store your result as a variable named 'ans'.
+Input: american tower corporation and subsidiaries notes to consolidated financial statements ( 3 ) consists of customer-related intangibles of approximately $75.0 million and network location intangibles of approximately $72.7 million. the customer-related intangibles and network location intangibles are being amortized on a straight-line basis over periods of up to 20 years. For acquired customer-related and network location intangibles, what is the expected annual amortization expenses, in millions?
+Q1: [generate python code] write down the arithmetic or algebra equations as python code
+#1:
+customer_related_intangibles = 75
+network_location_intangibles = 72.7
+straight_line_basis = 20
+amortization_expenses = ( customer_related_intangibles + network_location_intangibles ) / straight_line_basis
+ans = amortization_expenses
+print(ans)
+Q2: [code execute] Execute the python code and get the value of "ans"
+#2: 7.385
+Q3: [EOQ]
+Ans: 7.385
+----
+Descripton: %s
+Input: %s
+Q1:"""
 
 
 def random_tasks(N=5):

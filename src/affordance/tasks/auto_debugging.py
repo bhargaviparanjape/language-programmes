@@ -21,7 +21,9 @@ from collections import Counter
 
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 from prompt_library import (llm_similar_tasks, random_tasks,
-                            similar_auto_breakdowns, similar_tasks)
+                            similar_auto_breakdowns, similar_tasks,
+                            few_shot_retrieval_prompt, few_shot_code_prompt, 
+                            few_shot_arithmetic_prompt, few_shot_string_prompt)
 from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 
 d = datasets.load_dataset('bigbench', 'auto_debugging', cache_dir=cache_dir)
@@ -123,7 +125,7 @@ What is the output of this program?
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
         preds = [x.strip() for x in answers]
         perf_array.append(exact_match(labels, preds))
@@ -148,107 +150,111 @@ def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
+            time.sleep(10)
         preds = [x.strip() for x in answers]
         perf_array.append(exact_match(labels, preds))
+        print(perf_array)
     print("No decomposition Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
 
 
-few_shot_cot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use a python code generation and execution function in one or more of your substeps, if required. Other functions like arithmetic and logical operations can also be used. 
-Description: Auto Debugging: Debug the following code snippets by finding the answer or the error message.
-Input: 
-```
-if x < 5:
-	pass
-```
-What error does this program surface?
-Q1: [code execute] Execute the following python code snippet.
-if x < 5:
-	pass
-#1:
-Traceback (most recent call last):
-  File "<stdin>", line 1, in <module>
-NameError: name 'x' is not defined
-Q2: [get error message] What is the final error message?
-#2: NameError: name 'x' is not defined
-Q3: [EOQ]
-Ans: NameError: name 'x' is not defined
-----
-Desciption: Auto Debugging: Debug the following code snippets by finding the answer or the error message.
-Input:
-```
-x = set([1, 1, 2, 3])
-```
-What is the value of x after this program executes?
-Q1: [code edit] Edit the following code to get the value of x
-x = set([1, 1, 2, 3])
-#1:
-x = set([1, 1, 2, 3])
-print(x)
-Q2: [code execute] Execute the following python code snippet.
-x = set([1, 1, 2, 3])
-print(x)
-#2: {1, 2, 3}
-Q3: [EOQ]
-Ans: {1, 2, 3}
-----
-Description: Code Description: Which of the following choices best describes the functionality of the given python code snippet. 
-Input:
-Python code:
-try:
-    n = int(input())
-    m = int(input())
-    integer_sum = int(n) + int(m)
-    print(integer_sum)
-except:
-    print('error')
+# few_shot_cot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use a python code generation and execution function in one or more of your substeps, if required. Other functions like arithmetic and logical operations can also be used. 
+# Description: Auto Debugging: Debug the following code snippets by finding the answer or the error message.
+# Input: 
+# ```
+# if x < 5:
+# 	pass
+# ```
+# What error does this program surface?
+# Q1: [code execute] Execute the following python code snippet.
+# if x < 5:
+# 	pass
+# #1:
+# Traceback (most recent call last):
+#   File "<stdin>", line 1, in <module>
+# NameError: name 'x' is not defined
+# Q2: [get error message] What is the final error message?
+# #2: NameError: name 'x' is not defined
+# Q3: [EOQ]
+# Ans: NameError: name 'x' is not defined
+# ----
+# Desciption: Auto Debugging: Debug the following code snippets by finding the answer or the error message.
+# Input:
+# ```
+# x = set([1, 1, 2, 3])
+# ```
+# What is the value of x after this program executes?
+# Q1: [code edit] Edit the following code to get the value of x
+# x = set([1, 1, 2, 3])
+# #1:
+# x = set([1, 1, 2, 3])
+# print(x)
+# Q2: [code execute] Execute the following python code snippet.
+# x = set([1, 1, 2, 3])
+# print(x)
+# #2: {1, 2, 3}
+# Q3: [EOQ]
+# Ans: {1, 2, 3}
+# ----
+# Description: Code Description: Which of the following choices best describes the functionality of the given python code snippet. 
+# Input:
+# Python code:
+# try:
+#     n = int(input())
+#     m = int(input())
+#     integer_sum = int(n) + int(m)
+#     print(integer_sum)
+# except:
+#     print('error')
 
-  choice: prints number between 5 and 6
-  choice: try input and except error
-  choice: inputs the string 'try'
-  choice: prints sum of two input numbers only if they are integers otherwise raises error
-Q1: [code generate] prints number between 5 and 6
-#1:
-import random
+#   choice: prints number between 5 and 6
+#   choice: try input and except error
+#   choice: inputs the string 'try'
+#   choice: prints sum of two input numbers only if they are integers otherwise raises error
+# Q1: [code generate] prints number between 5 and 6
+# #1:
+# import random
 
-print(random.uniform(5,6))
-Q2: [code generate] try input and except error
-#2
-try:
-    #open file
-    file = open(file_name, "r")
-    #read file
-    data = file.read()
-    #close file
-    file.close()
-    #split data
-    data = data.split("\n")
-    #remove empty string
-Q3: [code generate] inputs the string 'try'
-#3: print('try')
-Q4: [code generate] prints sum of two input numbers only if they are integers otherwise raises error
-#4:
-#!/usr/bin/python
+# print(random.uniform(5,6))
+# Q2: [code generate] try input and except error
+# #2
+# try:
+#     #open file
+#     file = open(file_name, "r")
+#     #read file
+#     data = file.read()
+#     #close file
+#     file.close()
+#     #split data
+#     data = data.split("\n")
+#     #remove empty string
+# Q3: [code generate] inputs the string 'try'
+# #3: print('try')
+# Q4: [code generate] prints sum of two input numbers only if they are integers otherwise raises error
+# #4:
+# #!/usr/bin/python
 
-a=raw_input("enter first number: ")
-b=raw_input("enter second number: ")
-try:
-    sum=int(a)+int(b)
-    print "sum is: ",sum
-except:
-    print "enter integer values only"
-Q5: [compare] Which of the generated code snippets are most like the original one?
-#5: prints sum of two input numbers only if they are integers otherwise raises error
-Q6: [EOQ]
-Ans: prints sum of two input numbers only if they are integers otherwise raises error
-----
-Desciption: %s
-Input: %s
-Q1:"""
+# a=raw_input("enter first number: ")
+# b=raw_input("enter second number: ")
+# try:
+#     sum=int(a)+int(b)
+#     print "sum is: ",sum
+# except:
+#     print "enter integer values only"
+# Q5: [compare] Which of the generated code snippets are most like the original one?
+# #5: prints sum of two input numbers only if they are integers otherwise raises error
+# Q6: [EOQ]
+# Ans: prints sum of two input numbers only if they are integers otherwise raises error
+# ----
+# Desciption: %s
+# Input: %s
+# Q1:"""
+
+few_shot_cot_prompt=few_shot_code_prompt
 
 auto_cot_corrected_prompt = """Auto Debugging: Debug the following code snippets by finding the answer or the error message.
 ```
@@ -311,6 +317,7 @@ The final answer is 3.
 ----
 """
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
+    global auto_cot_corrected_prompt
     auto_cot_prompt = ""
     description = "Auto Debugging: Debug the following code snippets by finding the answer or the error message."
     for io_pair in io_pairs:
@@ -350,10 +357,12 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
+            time.sleep(10)
         preds = [x.strip() for x in answers]
         perf_array.append(substring_match(labels, preds))
+        print(perf_array)
     print("Auto-CoT Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
@@ -385,9 +394,10 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             # x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict("""Auto Debugging: Debug the following code snippets by finding the answer or the error message.""", x))
+            time.sleep(10)
         preds = [x.strip() for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
@@ -453,7 +463,7 @@ def affordance(temperature=0.5):
         print("Run %d"%run)
         answers = []
         new_answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             answers = predict("Answer the following questions about code debugging by executing code snippets.", x)
             # affordance_inputs = [json.loads(a.strip().split("\n")[1].replace("#1: ", "")) for a in answers]
             affordance_outputs = [manipulate_code("Q1: " + inp.strip()) for inp in answers]
@@ -504,7 +514,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nEdited:", "") for ex in x]
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)

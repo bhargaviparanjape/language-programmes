@@ -22,7 +22,9 @@ from collections import Counter
 
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 from prompt_library import (llm_similar_tasks, random_tasks,
-                            similar_auto_breakdowns, similar_tasks)
+                            similar_auto_breakdowns, similar_tasks,
+                            few_shot_retrieval_prompt, few_shot_code_prompt, 
+                            few_shot_arithmetic_prompt, few_shot_string_prompt)
 from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 from word2number import w2n
 
@@ -121,10 +123,12 @@ six
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
+            time.sleep(10)
         preds = [x.strip() for x in answers]
         perf_array.append(exact_match(labels, preds))
+        print(perf_array)
     print("No decomposition Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
@@ -273,11 +277,13 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
+            time.sleep(10)
         preds = [x.strip() for x in answers]
         perf_array.append(substring_match(labels, preds))
+        print(perf_array)
     print("Auto-CoT Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
@@ -436,9 +442,10 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         answers = []
         numeric_labels = [str(w2n.word_to_num(l)) for l in labels]
         new_labels = [[l1, l2] for l1, l2 in zip(labels, numeric_labels)]
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(task_description, x))
+            time.sleep(10)
         # preds = [[y.strip() for y in x.split("\n")] for x in answers]
         preds = [x.strip() for x in answers]
         perf_array.append(substring_match_v2(new_labels, preds))
@@ -518,7 +525,7 @@ if __name__ == "__main__":
         print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
-        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name)
     elif args.inference_strategy == "nl_program":

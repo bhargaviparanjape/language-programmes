@@ -22,7 +22,9 @@ import urllib.request
 from collections import Counter
 
 from prompt_library import (llm_similar_tasks, random_tasks,
-                            similar_auto_breakdowns, similar_tasks)
+                            similar_auto_breakdowns, similar_tasks,
+                            few_shot_retrieval_prompt, few_shot_code_prompt, 
+                            few_shot_arithmetic_prompt, few_shot_string_prompt)
 from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 
 io_pairs = [("Q: The word untamqu is a scrambled version of the English word", 
@@ -67,7 +69,7 @@ def token_match(labels, predictions):
 
 def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=200, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name, temperature=temperature, max_length=200, quote='---', n=1)
         prompts = ["""Q: The word untamqu is a scrambled version of the English word 
 A:
 quantum
@@ -97,10 +99,12 @@ fireplace
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
+            time.sleep(10)
         preds = [x.strip() for x in answers]
         perf_array.append(exact_match(labels, preds))
+        print(perf_array)
     print("No decomposition Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
@@ -193,7 +197,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=2048, temperature=0.4, quote='---', n=1)
+        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=2048, temperature=temperature, quote='---', n=1)
         prompts=[few_shot_cot_prompt % (description, x) for x in chunk]
         return gpt3(prompts)
 
@@ -202,10 +206,13 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
+            x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict("Unscrambling the given word into a word in English.", x))
+            time.sleep(10)
         preds = [[y.strip() for y in x.split("\n")] for x in answers]
         perf_array.append(token_match(labels, preds))
+        print(perf_array)
     print("Few-shot COT performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
@@ -281,12 +288,13 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         for run in range(runs): 
             print("Run %d"%run)
             answers = []
-            for x in tqdm(chunks(inputs, 20)):
+            for x in tqdm(chunks(inputs, 10)):
                 x = [ex.replace("\nA:", "") for ex in x]
                 answers.extend(predict(x))
-                pdb.set_trace()
+                time.sleep(10)
             preds = [x.strip() for x in answers]
             perf_array.append(substring_match(labels, preds))
+            print(perf_array)
         print("Auto-CoT Performance:")
         print("Mean", np.mean(perf_array))
         print("Std. Dev", np.std(perf_array))
@@ -359,7 +367,7 @@ def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(task_description, x))
         preds = [x.strip() for x in answers]
@@ -592,7 +600,7 @@ def notebook(temperature=0.3, model_name="text-davinci-002"):
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(task_description, x))
             pdb.set_trace()
@@ -706,7 +714,7 @@ if __name__ == "__main__":
         print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
-        auto_cot(args.temperature, args.model_name, predict=False, use_corrected=False, self_consistency=True)
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name)
     elif args.inference_strategy == "nl_program":

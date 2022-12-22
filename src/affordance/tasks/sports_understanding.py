@@ -21,7 +21,9 @@ from collections import Counter
 
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 from prompt_library import (llm_similar_tasks, random_tasks,
-                            similar_auto_breakdowns, similar_tasks)
+                            similar_auto_breakdowns, similar_tasks,
+                            few_shot_retrieval_prompt, few_shot_code_prompt, 
+                            few_shot_arithmetic_prompt, few_shot_string_prompt)
 from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 
 # international_phonetic_alphabet_transliterate too 
@@ -69,10 +71,12 @@ def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
+            time.sleep(10)
         preds = [x.strip() for x in answers]
         perf_array.append(exact_match(labels, preds))
+        print(perf_array)
     print("No decomposition Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
@@ -126,7 +130,7 @@ plausible
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
         preds = [x.strip() for x in answers]
         perf_array.append(exact_match(labels, preds))
@@ -135,86 +139,88 @@ plausible
     print("Std. Dev", np.std(perf_array))
 
 
-few_shot_cot_prompt = """In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use search functions like Google search in one or more of your substeps, if there in insufficient information. Other functions like arithmetic and logical operations can also be used.  
-Description: Choose the option that best answers the question. If the question does not have a known answer, choose "Unknown". 
-Input: How many hairs were on Neil Armstrong's head when he landed on the moon?
-  choice: Unknown
-  choice: Five million
-Q1: [search] How many hairs were on Neil Armstrong's head when he landed on the moon? 
-#1:
-Apollo 11 (July 16–24, 1969) was the American spaceflight that first landed humans on the Moon. Commander Neil Armstrong and lunar module pilot Buzz Aldrin.
-Neil Alden Armstrong (August 5, 1930 – August 25, 2012) was an American astronaut and aeronautical engineer who became the first person to walk on the Moon.
-Q2: [check answer type] Does the information help answer the question? There could be no definitive answer because the question is too specific, about personal details not in public record, because the answer is not yet known, or the question is opinion-based.
-#2: No. The question is too specific
-Q3: [compare] What is the final answer?
-#3: Unknown
-Q4: [EOQ]
-Ans: Unknown
-----
-Description: An anachronism is a mistake in chronology, or a person, thing, or event that is out of its proper time. Figure out whether a sentence contains anachronisms or not, and answer 'Yes' or 'No'."
-Input: President George H. W. Bush called his generals to the Oval Office at the outset of the Gulf War.
-Q1: [tag] What are the entities in this sentence?
-#1:
-President George H. W. Bush
-Gulf War
-Q2: [search] When was President George H. W. Bush president?
-#2: George H. W. Bush's tenure as the 41st president of the United States began with his inauguration on January 20, 1989, and ended on January 20, 1993.
-Q3: [search] When was the Gulf War fought?
-#3: The Gulf War[b] was a 1990–1991 armed campaign waged by a 35-country military coalition in response to the Iraqi invasion of Kuwait.
-#4: Could these entities have co-existed based on thier time periods alone?
-Yes. Their time periods intersect.
-Q5: [generate output] Is this an anachronism?
-#5: No
-Q6: [EOQ]
-Ans: No
-----
-Description: An anachronism is a mistake in chronology, or a person, thing, or event that is out of its proper time. Figure out whether a sentence contains anachronisms or not, and answer 'Yes' or 'No'."
-Input: Kurt Cobain starred in the 1980 television show "Twin Peaks".
-Q1: [tag] What are the entities in this sentence?
-#1:
-Kurt Cobain
-"Twin Peaks"
-Q2: [search] When did television show "Twin Peaks" air?
-#2: Twin Peaks is an American mystery serial drama television series created by Mark Frost and David Lynch. It premiered on ABC on April 8, 1990, and originally ran for two seasons until its cancellation in 1991.
-Q3: [search] When did Kurt Cobain live?
-#3: Kurt Donald Cobain (February 20, 1967 – c. April 5, 1994) was an American musician, best known as the lead vocalist, guitarist and primary songwriter of the ...
-Q4: [subquestion] Could these entities have co-existed based on this information?
-No. Musician  Kurt Cobain could not have starred in Twin Peaks.
-Q5: [generate output] Is this an anachronism?
-#5: Yes
-Q6: [EOQ]
-Ans: Yes
-----
-Description: Answer questions about Hindu mythology by choosing the option that best answers the question.
-Input: In the Mahabharata, Karna is cursed to forget the incantations needed to use which weapon?
-  choice: Anjalikastra
-  choice: Narayanastra
-  choice: Agneyastra
-  choice: Brahmastra
-Q1: [search] In the Mahabharata, Karna is cursed to forget the incantations needed to use which weapon?
-#1: As a result, he cursed Karna, saying that HIS MARTIAL SKILLS, including the use of BRAHMASTRA, would abandon him when he needed them most. Indra, the King of Gods, stung Karna in the form of a bee to get him cursed by Parshuram. Karna walked through the woods in despair, feeling dejected by the curse. A skilled & devoted warrior...
-Q2: [compare] Which option is the answer in #3 most similar to?
-#2: Brahmastra
-Q3: [EOQ]
-Ans: Brahmastra
-----
-Description: Choose the option that best answers the question. If the question does not have a known answer, choose "Unknown". 
-Input: Where was Mark Twain born?
-  choice: Unknown
-  choice: Florida, Missouri
-Q1: [search] Where was Mark Twain born?
-#1:
-Mark Twain. Samuel Langhorne Clemens was born in Florida, Missouri, and later moved with his family to Hannibal, Missouri, where he grew up.
-Q2: [check answer type] Does the information help answer the question? There could be no definitive answer because the question is too specific, about personal details not in public record, because the answer is not yet known, or the question is opinion-based.
-#2: Yes. The answer is Florida, Missouri
-Q3: [compare] What is the final answer?
-#3: Florida, Missouri
-Q4: [EOQ]
-Ans: Florida, Missouri
-----
-Desciption: %s 
-Input: %s
-Q1:"""
+# few_shot_cot_prompt = """In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use search functions like Google search in one or more of your substeps, if there in insufficient information. Other functions like arithmetic and logical operations can also be used.  
+# Description: Choose the option that best answers the question. If the question does not have a known answer, choose "Unknown". 
+# Input: How many hairs were on Neil Armstrong's head when he landed on the moon?
+#   choice: Unknown
+#   choice: Five million
+# Q1: [search] How many hairs were on Neil Armstrong's head when he landed on the moon? 
+# #1:
+# Apollo 11 (July 16–24, 1969) was the American spaceflight that first landed humans on the Moon. Commander Neil Armstrong and lunar module pilot Buzz Aldrin.
+# Neil Alden Armstrong (August 5, 1930 – August 25, 2012) was an American astronaut and aeronautical engineer who became the first person to walk on the Moon.
+# Q2: [check answer type] Does the information help answer the question? There could be no definitive answer because the question is too specific, about personal details not in public record, because the answer is not yet known, or the question is opinion-based.
+# #2: No. The question is too specific
+# Q3: [compare] What is the final answer?
+# #3: Unknown
+# Q4: [EOQ]
+# Ans: Unknown
+# ----
+# Description: An anachronism is a mistake in chronology, or a person, thing, or event that is out of its proper time. Figure out whether a sentence contains anachronisms or not, and answer 'Yes' or 'No'."
+# Input: President George H. W. Bush called his generals to the Oval Office at the outset of the Gulf War.
+# Q1: [tag] What are the entities in this sentence?
+# #1:
+# President George H. W. Bush
+# Gulf War
+# Q2: [search] When was President George H. W. Bush president?
+# #2: George H. W. Bush's tenure as the 41st president of the United States began with his inauguration on January 20, 1989, and ended on January 20, 1993.
+# Q3: [search] When was the Gulf War fought?
+# #3: The Gulf War[b] was a 1990–1991 armed campaign waged by a 35-country military coalition in response to the Iraqi invasion of Kuwait.
+# #4: Could these entities have co-existed based on thier time periods alone?
+# Yes. Their time periods intersect.
+# Q5: [generate output] Is this an anachronism?
+# #5: No
+# Q6: [EOQ]
+# Ans: No
+# ----
+# Description: An anachronism is a mistake in chronology, or a person, thing, or event that is out of its proper time. Figure out whether a sentence contains anachronisms or not, and answer 'Yes' or 'No'."
+# Input: Kurt Cobain starred in the 1980 television show "Twin Peaks".
+# Q1: [tag] What are the entities in this sentence?
+# #1:
+# Kurt Cobain
+# "Twin Peaks"
+# Q2: [search] When did television show "Twin Peaks" air?
+# #2: Twin Peaks is an American mystery serial drama television series created by Mark Frost and David Lynch. It premiered on ABC on April 8, 1990, and originally ran for two seasons until its cancellation in 1991.
+# Q3: [search] When did Kurt Cobain live?
+# #3: Kurt Donald Cobain (February 20, 1967 – c. April 5, 1994) was an American musician, best known as the lead vocalist, guitarist and primary songwriter of the ...
+# Q4: [subquestion] Could these entities have co-existed based on this information?
+# No. Musician  Kurt Cobain could not have starred in Twin Peaks.
+# Q5: [generate output] Is this an anachronism?
+# #5: Yes
+# Q6: [EOQ]
+# Ans: Yes
+# ----
+# Description: Answer questions about Hindu mythology by choosing the option that best answers the question.
+# Input: In the Mahabharata, Karna is cursed to forget the incantations needed to use which weapon?
+#   choice: Anjalikastra
+#   choice: Narayanastra
+#   choice: Agneyastra
+#   choice: Brahmastra
+# Q1: [search] In the Mahabharata, Karna is cursed to forget the incantations needed to use which weapon?
+# #1: As a result, he cursed Karna, saying that HIS MARTIAL SKILLS, including the use of BRAHMASTRA, would abandon him when he needed them most. Indra, the King of Gods, stung Karna in the form of a bee to get him cursed by Parshuram. Karna walked through the woods in despair, feeling dejected by the curse. A skilled & devoted warrior...
+# Q2: [compare] Which option is the answer in #3 most similar to?
+# #2: Brahmastra
+# Q3: [EOQ]
+# Ans: Brahmastra
+# ----
+# Description: Choose the option that best answers the question. If the question does not have a known answer, choose "Unknown". 
+# Input: Where was Mark Twain born?
+#   choice: Unknown
+#   choice: Florida, Missouri
+# Q1: [search] Where was Mark Twain born?
+# #1:
+# Mark Twain. Samuel Langhorne Clemens was born in Florida, Missouri, and later moved with his family to Hannibal, Missouri, where he grew up.
+# Q2: [check answer type] Does the information help answer the question? There could be no definitive answer because the question is too specific, about personal details not in public record, because the answer is not yet known, or the question is opinion-based.
+# #2: Yes. The answer is Florida, Missouri
+# Q3: [compare] What is the final answer?
+# #3: Florida, Missouri
+# Q4: [EOQ]
+# Ans: Florida, Missouri
+# ----
+# Desciption: %s 
+# Input: %s
+# Q1:"""
+
+few_shot_cot_prompt = few_shot_retrieval_prompt
 
 auto_cot_corrected_prompt = """Sports Understanding: Determine whether an artificially constructed sentence relating to sports is plausible or implausible. The final answer should be 'plausible' or 'implausible'
 Determine whether the following statement or statements are plausible or implausible:
@@ -302,9 +308,10 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             # x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
+            time.sleep(10)
         preds = [x.strip() for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
@@ -330,7 +337,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=0.4, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
@@ -342,7 +349,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         for x in tqdm(chunks(inputs, 10)):
             # x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict("""Sports Understanding: Determine whether an artificially constructed sentence relating to sports is plausible or implausible. The final answer should be "plausible" or "implausible""", x))
-            time.sleep(60)
+            time.sleep(10)
         preds = [x.strip() for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
@@ -375,7 +382,7 @@ def affordance():
         print("Run %d"%run)
         answers = []
         new_answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             answers = predict("Take the letters at position 3 of the words in a list of words and concatenate them using a space.", x)
             pdb.set_trace()
             affordance_inputs = [json.loads(a.strip().split("\n")[1].replace("#1: ", "")) for a in answers]
@@ -411,7 +418,7 @@ def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             # x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(task_description, x))
         preds = [x.strip() for x in answers]
@@ -521,7 +528,7 @@ if __name__ == "__main__":
         print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
-        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name)
     elif args.inference_strategy == "nl_program":
