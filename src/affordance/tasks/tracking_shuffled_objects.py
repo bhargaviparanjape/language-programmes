@@ -1,14 +1,28 @@
+import argparse
+import ast
+import json
+import pdb
+import re
+import time
 from re import L
 from turtle import pd
-from utils import gpt3, propose_decomposition, propose_instruction, chunks, get_subset, OpenAIModel, cache_dir, substring_match
 
 import datasets
 import numpy as np
 from tqdm import tqdm
-import json, pdb
-import re
-from prompt_library import random_tasks, similar_tasks, llm_similar_tasks, similar_auto_breakdowns
+from transformers import GPT2Tokenizer
+from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+                   get_few_shot_prompt, get_subset, gpt3,
+                   propose_decomposition, propose_instruction, substring_match)
 
+tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+import urllib.request
+from collections import Counter
+
+tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+from prompt_library import (llm_similar_tasks, random_tasks,
+                            similar_auto_breakdowns, similar_tasks)
+from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 
 d = datasets.load_dataset('bigbench', 'tracking_shuffled_objects', cache_dir=cache_dir)
 inputs =  d['validation']['inputs']
@@ -16,6 +30,9 @@ inputs =  d['validation']['inputs']
 labels =  d['validation']['targets']
 labels = [l[0] for l in labels]
 print(len(inputs))
+
+train_inputs = d['train']['inputs']
+train_labels = d['train']['targets']
 
 task_description = """Shuffled objects: You are given a list of persons or objects that sequentially interact with each other in pairs. Track how the pairs change over the course of the interaction and figure out the pair of the final person or object."""
 
@@ -62,9 +79,9 @@ def token_match(labels, predictions):
         count += 1
     return (1.0*correct)/count
 
-def tracking_shuffled_objects():
+def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=200, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=200, quote='---', n=1)
         prompts = ["""Alice, Bob, Claire, Dave, and Eve are playing a game. At the start of the game, they are each holding a ball: Alice has a brown ball, Bob has a purple ball, Claire has a black ball, Dave has a green ball, and Eve has a yellow ball. 
 
 As the game progresses, pairs of players trade balls. First, Claire and Alice swap balls. Then, Bob and Alice swap balls. Then, Eve and Dave swap balls. Then, Dave and Claire swap balls. Finally, Alice and Bob swap balls. At the end of the game, Claire has the
@@ -132,7 +149,176 @@ Frankenstein.
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-tracking_shuffled_objects()
+
+auto_cot_corrected_prompt = """(Tracking shuffled objects) You are given a list of persons or objects that sequentially interact with each other in pairs. Track how the pairs change over the course of the interaction and figure out the pair of the final person or object.
+Alice, Bob, Claire, Dave, and Eve are playing a game. At the start of the game, they are each holding a ball: Alice has a brown ball, Bob has a purple ball, Claire has a black ball, Dave has a green ball, and Eve has a yellow ball. 
+
+As the game progresses, pairs of players trade balls. First, Claire and Alice swap balls. Then, Bob and Alice swap balls. Then, Eve and Dave swap balls. Then, Dave and Claire swap balls. Finally, Alice and Bob swap balls. At the end of the game, Claire has the
+A: Let's think step-by-step.
+
+Alice has a brown ball, Bob has a purple ball, Claire has a black ball, Dave has a green ball, and Eve has a yellow ball.
+Claire and Alice swap balls. Now Claire has the brown ball and Alice has the black ball.
+Bob and Alice swap balls. Now Bob has the black ball and Alice has the purple ball.
+Eve and Dave swap balls. Now Eve has the green ball and Dave has the yellow ball.
+Dave and Claire swap balls. Now Dave has the brown ball and Claire has the yellow ball.
+Alice and Bob swap balls. Now Alice has the purple ball and Bob has the black ball.
+Therefore, at the end of the game, Alice has the purple ball, Bob has the black ball, Claire has the yellow ball, Dave has the brown ball and Eve has the green ball.
+
+The final answer is yellow ball.
+----
+(Tracking shuffled objects) You are given a list of persons or objects that sequentially interact with each other in pairs. Track how the pairs change over the course of the interaction and figure out the pair of the final person or object.
+Alice, Bob, Claire, Dave, and Eve are playing a game. At the start of the game, they are each holding a ball: Alice has a black ball, Bob has a brown ball, Claire has a red ball, Dave has a white ball, and Eve has a green ball. 
+
+As the game progresses, pairs of players trade balls. First, Bob and Alice swap balls. Then, Alice and Claire swap balls. Then, Eve and Alice swap balls. Then, Claire and Bob swap balls. Finally, Claire and Dave swap balls. At the end of the game, Eve has the
+A: Let's think step-by-step.
+
+Alice has a black ball, Bob has a brown ball, Claire has a red ball, Dave has a white ball, and Eve has a green ball. 
+First, Bob and Alice swap balls. So now Alice has a brown ball and Bob has a black ball.
+Then, Alice and Claire swap balls. So now Alice has a red ball and Claire has a brown ball.
+Then, Eve and Alice swap balls. So now Eve has a red ball and Alice has a green ball.
+Then, Claire and Bob swap balls. So now Claire has a brown ball and Bob has a black ball.
+Finally, Claire and Dave swap balls. So now Claire has a white ball and Dave has a brown ball.
+At the end of the game, Alice has the green ball, Bob has the black ball, Claire has the white ball, Dave has the brown ball and Eve has the red ball.
+
+The final answer is red ball.
+----
+(Tracking shuffled objects) You are given a list of persons or objects that sequentially interact with each other in pairs. Track how the pairs change over the course of the interaction and figure out the pair of the final person or object.
+Alice, Bob, Claire, Dave, and Eve are holding a white elephant gift exchange. At the start of the event, they are each holding a present of a different color: Alice has a red present, Bob has a yellow present, Claire has a green present, Dave has a pink ball, and Eve has a white present. 
+
+As the event progresses, pairs of people swap gifts. First, Claire and Alice swap their gifts. Then, Dave and Eve swap their gifts. Then, Bob and Dave swap their gifts. Then, Eve and Dave swap their gifts. Finally, Dave and Alice swap their gifts. At the end of the event, Eve has the
+A: Let's think step-by-step.
+
+Alice has a red present, Bob has a yellow present, Claire has a green present, Dave has a pink ball, and Eve has a white present.
+First, Claire and Alice swap their gifts. This means that Claire now has a red present, and Alice has a green present.
+Next, Dave and Eve swap their gifts. This means that Dave now has a white present, and Eve has a pink ball.
+Then, Bob and Dave swap their gifts. This means that Bob now has a white ball, and Dave has a yellow present.
+Then, Eve and Dave swap their gifts. This means that Eve now has a yellow present, and Dave has a pink present.
+Finally, Dave and Alice swap their gifts. This means that Dave now has a green present, and Alice has a pink present.
+Therefore, at the end of the event, Alice has the pink present, Bob has the white present, Claire has the red present, Dave has the green present and Eve has the yellow present.
+
+The final answer is yellow present.
+----
+(Tracking shuffled objects) You are given a list of persons or objects that sequentially interact with each other in pairs. Track how the pairs change over the course of the interaction and figure out the pair of the final person or object.
+Alice, Bob, Claire, Dave, and Eve are playing a game. At the start of the game, they are each holding a ball: Alice has a brown ball, Bob has a purple ball, Claire has a green ball, Dave has a white ball, and Eve has a blue ball. 
+
+As the game progresses, pairs of players trade balls. First, Alice and Claire swap balls. Then, Dave and Alice swap balls. Then, Bob and Eve swap balls. Then, Claire and Eve swap balls. Finally, Alice and Dave swap balls. At the end of the game, Claire has the
+A: Let's think step-by-step.
+
+Alice has a brown ball, Bob has a purple ball, Claire has a green ball, Dave has a white ball, and Eve has a blue ball. 
+First, Alice and Claire swap balls. This means that Alice now has the green ball, and Claire has the brown ball.
+Then, Dave and Alice swap balls. This means that Dave now has the green ball, and Alice has the white ball.
+Then, Bob and Eve swap balls. This means that Bob now has the blue ball, and Eve has the purple ball.
+Then, Claire and Eve swap balls. This means that Claire now has the purple ball, and Eve has the brown ball.
+Finally, Alice and Dave swap balls. This means that Alice now has the green ball, and Dave has the white ball.
+So at the end of the game, Alice has the green ball, Bob has the blue ball, Claire has the purple ball, Dave has the white ball and Eve has the brown ball.
+
+The final answer is purple ball.
+----
+(Tracking shuffled objects) You are given a list of persons or objects that sequentially interact with each other in pairs. Track how the pairs change over the course of the interaction and figure out the pair of the final person or object.
+Alice, Bob, Claire, Dave, Eve, Fred, and Gertrude are holding a white elephant gift exchange. At the start of the event, they are each holding a present of a different color: Alice has a blue present, Bob has a white present, Claire has a purple present, Dave has a black ball, Eve has a brown present, Fred has a orange ball, and Gertrude has a yellow present. 
+
+As the event progresses, pairs of people swap gifts. First, Gertrude and Alice swap their gifts. Then, Dave and Eve swap their gifts. Then, Alice and Dave swap their gifts. Then, Fred and Dave swap their gifts. Then, Bob and Dave swap their gifts. Then, Claire and Gertrude swap their gifts. Finally, Gertrude and Dave swap their gifts. At the end of the event, Alice has the
+A: Let's think step-by-step.
+
+Alice has a blue present, Bob has a white present, Claire has a purple present, Dave has a black ball, Eve has a brown present, Fred has a orange ball, and Gertrude has a yellow present. 
+Gertrude and Alice swap their gifts. Gertrude now has a blue present, and Alice has a yellow present.
+Dave and Eve swap their gifts. Dave now has a brown present, and Eve has a black ball.
+Alice and Dave swap their gifts. Alice now has a brown ball, and Dave has a yellow present.
+Fred and Dave swap their gifts. Fred now has a yellow ball, and Dave has an orange ball.
+Bob and Dave swap their gifts. Bob now has an orange ball, and Dave has a white present.
+Claire and Gertrude swap their gifts. Claire now has a blue present, and Gertrude has a purple present.
+Gertrude and Dave swap their gifts. Gertrude now has a white present, and Dave has a purple present.
+So, at the end of the event, Alice has the brown present, Bob has the orange present, Claire has the blue present, Dave has the purple present, Eve has the black present, Fred has the yellow present, and Gertrude has the white present.
+
+The final answer is brown present.
+----
+"""
+def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
+    auto_cot_prompt = ""
+    description = """(Tracking shuffled objects) You are given a list of persons or objects that sequentially interact with each other in pairs. Track how the pairs change over the course of the interaction and figure out the pair of the final person or object."""
+    for io_pair in io_pairs:
+        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=0.2, quote='---', n=1)
+        prompt = """%s\n"""%description + io_pair[0] + \
+            """\nA: Let's think step-by-step.\n"""
+        auto_cot_prompt += prompt
+        cot = gpt3(prompt)
+        auto_cot_prompt += cot[0] + "\n----\n"
+    if use_corrected:
+        auto_cot_prompt = auto_cot_corrected_prompt
+    
+    print(auto_cot_prompt)
+    f = open("auto_cot_demonstrations.txt","a+")
+    f.write("Anachronisms\n\n")
+    f.write(auto_cot_prompt)
+
+    if not predict:
+        return
+
+    def predict_self_consistency(description, chunk, n=5):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
+            """%s\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        return gpt3(prompts)
+
+    
+    def predict(chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=0.2, quote='---', n=1)
+        prompts=[auto_cot_prompt + """%s\n""" %description + \
+            """%s\nA: Let's think step-by-step.\n"""%x for x in chunk]
+        return gpt3(prompts)
+
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 20)):
+            answers.extend(predict(x))
+        preds = [x.strip() for x in answers]
+        perf_array.append(substring_match(labels, preds))
+    print("Auto-CoT Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
+
+def affordance():
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=2048, temperature=0.4, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return gpt3(prompts)
+
+    def string_index(sequence, position):
+        char_list = []
+        for word in sequence:
+            character  = word[position]
+            char_list.append(character)
+        return char_list
+
+    def predict_with_affordance(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=2048, temperature=0.4, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return gpt3(prompts)
+
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        new_answers = []
+        for x in tqdm(chunks(inputs, 20)):
+            answers = predict("Take the letters at position 3 of the words in a list of words and concatenate them using a space.", x)
+            pdb.set_trace()
+            affordance_inputs = [json.loads(a.strip().split("\n")[1].replace("#1: ", "")) for a in answers]
+            affordance_outputs = [string_index(inp, 2) for inp in affordance_inputs]
+            x = [ex + a[:re.search("#2: ", a).span(0)[1]] + json.dumps(o) for ex, a, o in zip(x, answers, affordance_outputs)]
+            new_answers.extend(predict_with_affordance("Take the letters at position 3 of the words in a list of words and concatenate them using a space.", x))
+        preds = [[y.strip() for y in x.split("\n")] for x in new_answers]
+        perf_array.append(token_match(labels, preds))
+        print(perf_array)
+    print("Few-shot COT performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
 
 few_shot_cot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use a python code generation and execution function in one or more of your substeps, if required. Other functions like arithmetic and logical operations can also be used. 
 Description: 
@@ -225,92 +411,24 @@ Desciption: %s
 Input: %s
 Q1: """
 
+def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
+    global few_shot_cot_prompt
+    task_name = "Tracking shuffled objects"
+    task_description = """(Tracking shuffled objects) You are given a list of persons or objects that sequentially interact with each other in pairs. Track how the pairs change over the course of the interaction and figure out the pair of the final person or object."""
 
-def auto_cot():
-    auto_cot_prompt = ""
-    description = "TASK: Take the letters at position 3 of the words in a list of words and concatenate them using a space."
-    for io_pair in io_pairs:
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=500, temperature=0.2, quote='---', n=1)
-        prompt = """%s\n"""%description + io_pair[0] + \
-            """\nA: Let's think step-by-step.\n"""
-        auto_cot_prompt += prompt
-        cot = gpt3(prompt)
-        auto_cot_prompt += cot[0] + "\n----\n"
-    print(auto_cot_prompt)
-    def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=500, temperature=0.2, quote='---', n=1)
-        prompts=[auto_cot_prompt + """%s\n""" %description + \
-            """%s\nA: Let's think step-by-step.\n"""%x for x in chunk]
-        return gpt3(prompts)
-
-    perf_array = []
-    runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
-        answers = []
-        for x in tqdm(chunks(inputs, 20)):
-            x = [ex.replace("\nA:", "") for ex in x]
-            answers.extend(predict(x))
-            pdb.set_trace()
-        preds = [x.strip() for x in answers]
-        perf_array.append(substring_match(labels, preds))
-    print("Auto-CoT Performance:")
-    print("Mean", np.mean(perf_array))
-    print("Std. Dev", np.std(perf_array))
-
-
-
-def affordance():
-    def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=2048, temperature=0.4, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
-        return gpt3(prompts)
-
-    def string_index(sequence, position):
-        char_list = []
-        for word in sequence:
-            character  = word[position]
-            char_list.append(character)
-        return char_list
-
-    def predict_with_affordance(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=2048, temperature=0.4, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
-        return gpt3(prompts)
-
-    perf_array = []
-    runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
-        answers = []
-        new_answers = []
-        for x in tqdm(chunks(inputs, 20)):
-            answers = predict("Take the letters at position 3 of the words in a list of words and concatenate them using a space.", x)
-            pdb.set_trace()
-            affordance_inputs = [json.loads(a.strip().split("\n")[1].replace("#1: ", "")) for a in answers]
-            affordance_outputs = [string_index(inp, 2) for inp in affordance_inputs]
-            x = [ex + a[:re.search("#2: ", a).span(0)[1]] + json.dumps(o) for ex, a, o in zip(x, answers, affordance_outputs)]
-            new_answers.extend(predict_with_affordance("Take the letters at position 3 of the words in a list of words and concatenate them using a space.", x))
-        preds = [[y.strip() for y in x.split("\n")] for x in new_answers]
-        perf_array.append(token_match(labels, preds))
-        print(perf_array)
-    print("Few-shot COT performance:")
-    print("Mean", np.mean(perf_array))
-    print("Std. Dev", np.std(perf_array))
-
-def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
-
-    if strategy == "random":
+    if strategy == "fixed":
+        few_shot_cot_prompt = few_shot_cot_prompt
+    elif strategy == "random":
         few_shot_cot_prompt = random_tasks(N=6)
     elif strategy == "similar":
         few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
     elif strategy == "similar_auto_decomp":
         few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
     elif strategy == "llm_similar":
-        few_shot_cot_prompt = llm_similar_tasks(task_description, io_pairs, N=6)
+        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=2048, temperature=temperature, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=0.4, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
@@ -320,16 +438,84 @@ def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
         print("Run %d"%run)
         answers = []
         for x in tqdm(chunks(inputs, 20)):
-            # x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(task_description, x))
         preds = [x.strip() for x in answers]
         perf_array.append(substring_match(labels, preds))
-        print(perf_array)
     print("Few-shot COT performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
 
-# auto_decomp(10, 0.3)
-# affordance(temperature=0.3)
-dynamic_few_shot_cot(temperature=0.3, strategy="random")
+def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+    
+    global few_shot_cot_prompt
+    task_name = "Tracking shuffled objects"
+    task_description = """(Tracking shuffled objects) You are given a list of persons or objects that sequentially interact with each other in pairs. Track how the pairs change over the course of the interaction and figure out the pair of the final person or object."""
+
+    if strategy == "fixed":
+        few_shot_cot_prompt = few_shot_cot_prompt
+    elif strategy == "random":
+        few_shot_cot_prompt = random_tasks(N=6)
+    elif strategy == "similar":
+        few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
+    elif strategy == "similar_auto_decomp":
+        few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
+    elif strategy == "llm_similar":
+        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
+
+    interpreter = TopDownVisitorBeta()
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    perf_array = []
+    runs = 1
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        new_labels = ["Ans: " + label for label in labels]
+        for x in tqdm(chunks(inputs, 10)):
+            x = [ex.replace("\nDoes the preceding sentence contain non-contemporaneous (anachronistic) elements?", "") for ex in x]
+            prompts, answer = predict(task_description, x)
+            new_answer  = interpreter.batch_visit(prompts, answer)
+            answers.extend(new_answer)
+        preds = [x.strip() for x in answers]
+        perf_array.append(substring_match(new_labels, preds))
+        print(perf_array)
+    print("FS-CoT Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
+
+
+if __name__ == "__main__":
+    parser  = argparse.ArgumentParser()
+    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
+    parser.add_argument("--temperature", type=float, default="0.3")
+    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument("--num_train_examples", type=int, default=10)
+    parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
+    parser.add_argument("--self_consistency", default=False, action='store_true')
+
+    args = parser.parse_args()
+
+    print("Dataset statistics")
+    print(task_description)
+    print("Training examples:", len(train_inputs))
+    print("Dev examples:", len(inputs))
+
+    inputs = inputs[:args.num_dev_examples]
+    labels = labels[:args.num_dev_examples]
+
+    if args.inference_strategy == "few_shot":
+        few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=args.num_train_examples)
+        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
+        few_shot(args.num_train_examples, args.temperature, args.model_name)
+    elif args.inference_strategy == "auto_cot":
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
+    elif args.inference_strategy == "few_shot_cot":
+        few_shot_cot(args.temperature, args.model_name)
+    elif args.inference_strategy == "nl_program":
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)

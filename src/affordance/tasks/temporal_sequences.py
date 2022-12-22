@@ -1,15 +1,28 @@
+import argparse
+import ast
+import json
+import pdb
+import re
+import time
 from re import L
 from turtle import pd
-from utils import gpt3, propose_decomposition, propose_instruction, chunks, get_subset, OpenAIModel, cache_dir, substring_match
 
 import datasets
 import numpy as np
 from tqdm import tqdm
-import json, pdb
-import re
-from prompt_library import random_tasks, similar_tasks, llm_similar_tasks, similar_auto_breakdowns
+from transformers import GPT2Tokenizer
+from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+                   get_few_shot_prompt, get_subset, gpt3,
+                   propose_decomposition, propose_instruction, substring_match)
 
+tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+import urllib.request
+from collections import Counter
 
+tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+from prompt_library import (llm_similar_tasks, random_tasks,
+                            similar_auto_breakdowns, similar_tasks)
+from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 
 d = datasets.load_dataset('bigbench', 'temporal_sequences', cache_dir=cache_dir)
 inputs = d['validation']['inputs']
@@ -17,6 +30,9 @@ inputs = d['validation']['inputs']
 labels = d['validation']['targets']
 labels = [l[0] for l in labels]
 # print(len(inputs))
+
+train_inputs = d['train']['inputs']
+train_labels = d['train']['targets']
 
 task_description = """Temporal sequences: Given the daily schedule of activities of a person and a final activity that they need to find time for, choose one of the four provided options when they could do the activity."""
 
@@ -100,9 +116,9 @@ def token_match(labels, predictions):
         count += 1
     return (1.0*correct)/count
 
-def temporal_sequences():
+def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=200, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=200, quote='---', n=1)
         prompts = ["""Today, Elizabeth went to the construction site. Between what times could they have gone?
 We know that: 
 Elizabeth woke up at 5am.
@@ -353,20 +369,137 @@ Desciption: %s
 Input: %s
 Q1: """
 
+auto_cot_corrected_prompt = """TASK: 
+Today, Elizabeth went to the construction site. Between what times could they have gone?
+We know that: 
+Elizabeth woke up at 5am.
+Lisa saw Elizabeth buying a phone at the electronics store from 5am to 10am.
+Mary saw Elizabeth waiting at the train station from 10am to 11am.
+Hannah saw Elizabeth waiting at the airport from 1pm to 3pm.
+William saw Elizabeth reading at the library from 3pm to 9pm.
+The construction site was closed after 9pm.
+Between what times could Elizabeth have gone to the construction site?
+  choice: 11am to 1pm
+  choice: 5am to 10am
+  choice: 10am to 11am
+  choice: 3pm to 9pm
+Possible times:
+A: Let's think step-by-step.
 
-def auto_cot():
+First, we need to find out when Lisa saw Elizabeth. We know that Elizabeth woke up at 5am and Lisa saw Elizabeth from 5am to 10am, so we can eliminate any times before 10am.
+Next, we need to find out when Mary saw Elizabeth. We know that Mary saw Elizabeth from 10am to 11am, so we can eliminate the option 10am to 11am.
+We know that Hannah saw Elizabeth waiting at the airport from 1pm to 3pm and William saw Elizabeth reading at the library from 3pm to 9pm. So we can eliminate any times after 1pm.
+That means the only possible time Elizabeth could have gone to the construction site is from 11am to 1pm.
+
+The best answer choice is 11am to 1pm.
+----
+TASK: 
+Today, Andrew went to the art show. Between what times could they have gone?
+We know that: 
+Andrew woke up at 6am.
+Kimberly saw Andrew waiting at the airport from 10am to 12pm.
+Anthony saw Andrew attending class at the school from 12pm to 7pm.
+John saw Andrew working out at the gym from 7pm to 8pm.
+The art show was closed after 8pm.
+Between what times could Andrew have gone to the art show?
+  choice: 12pm to 7pm
+  choice: 7pm to 8pm
+  choice: 10am to 12pm
+  choice: 6am to 10am
+Possible times:
+A: Let's think step-by-step.
+
+The art show was closed after 8pm. So Andrew can only go to the art show before 8pm. Andrew woke up at 6am.
+Kimberly saw Andrew waiting at the airport from 10am to 12pm. Anthony saw Andrew attending class at the school from 12pm to 7pm. John saw Andrew working out at the gym from 7pm to 8pm.
+So, we know that Andrew was at the airport from 10am to 12pm, at school from 12pm to 7pm, and at the gym from 7pm to 8pm. 
+That means that the only time he could have gone to the art show was between the time he woke up and 10am.
+
+The best answer choice is 6am to 10am.
+----
+TASK: 
+Today, Susan went to the orchestra hall. Between what times could they have gone?
+We know that: 
+Susan woke up at 5am.
+Thomas saw Susan buying cookies at a bakery from 5am to 9am.
+Ashley saw Susan buying a phone at the electronics store from 9am to 10am.
+Betty saw Susan driving to the water park from 10am to 12pm.
+Linda saw Susan watching a movie at the theater from 1pm to 3pm.
+Leslie saw Susan walking towards the Statue of Liberty from 3pm to 8pm.
+The orchestra hall was closed after 8pm.
+Between what times could Susan have gone to the orchestra hall?
+  choice: 12pm to 1pm
+  choice: 5am to 9am
+  choice: 10am to 12pm
+  choice: 3pm to 8pm
+Possible times:
+A: Let's think step-by-step.
+
+We need to find out when Susan went to the orchestra hall. We know that the hall was closed after 8pm, so Susan must have gone before then. We also know that Leslie saw Susan walking towards the Statue of Liberty from 3pm to 8pm. This means that Susan must have gone to the orchestra hall before 3pm.
+Now, we need to find out when Susan could have left the theater. We know that Linda saw Susan watching a movie at the theater from 1pm to 3pm. This means that Susan must have gone to the orchestra hall before 1pm.
+Next, we need to find out when Susan could have gone to the water park. We know that Betty saw Susan driving to the water park from 10am to 12pm. This means that Susan must have gone to the water park from 10am to 12pm.
+We know that Ashley saw Susan buying a phone at the electronics store from 9am to 10am. This means that Susan must have gone to the electronics store from 9am to 10am.
+Putting all of this together, we can see that the earliest Susan could have gone to the orchestra hall is 12pm and the latest she could have gone is 1pm.
+
+The best answer choice is 12pm to 1pm.
+----
+TASK: 
+Today, Jennifer went to the art show. Between what times could they have gone?
+We know that: 
+Jennifer woke up at 5am.
+Ashley saw Jennifer sitting on a rooftop from 7am to 3pm.
+David saw Jennifer buying a bike at the bike shop from 3pm to 5pm.
+Steven saw Jennifer playing tennis at the tennis court from 5pm to 6pm.
+Susan saw Jennifer waiting at the airport from 6pm to 8pm.
+Anthony saw Jennifer stretching at a yoga studio from 8pm to 10pm.
+The art show was closed after 10pm.
+Between what times could Jennifer have gone to the art show?
+  choice: 5am to 7am
+  choice: 6pm to 8pm
+  choice: 3pm to 5pm
+  choice: 5pm to 6pm
+Possible times:
+A: Let's think step-by-step.
+
+Jennifer woke up at 5am. Since the art show was closed after 10pm, she could only go to the art show before 10pm.
+Ashley saw Jennifer sitting on a rooftop from 7am to 3pm. David saw Jennifer buying a bike at the bike shop from 3pm to 5pm. Steven saw Jennifer playing tennis at the tennis court from 5pm to 6pm. Susan saw Jennifer waiting at the airport from 6pm to 8pm. Anthony saw Jennifer stretching at a yoga studio from 8pm to 10pm.
+Jennifer was busy from 7am to 10pm. The only time she could have gone to the art show was before 7am.
+So, Jennifer could have gone to the art show any time between 5am and 7am.
+
+The best answer choice is 5am to 7am.
+----
+"""
+def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
+    global auto_cot_corrected_prompt
     auto_cot_prompt = ""
     description = "TASK: "
     for io_pair in io_pairs:
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=500, temperature=0.2, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=0.2, quote='---', n=1)
         prompt = """%s\n"""%description + io_pair[0] + \
             """\nA: Let's think step-by-step.\n"""
         auto_cot_prompt += prompt
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
+
+    if use_corrected:
+        auto_cot_prompt = auto_cot_corrected_prompt
+    
     print(auto_cot_prompt)
+    f = open("auto_cot_demonstrations.txt","a+")
+    f.write("Anachronisms\n\n")
+    f.write(auto_cot_prompt)
+
+    if not predict:
+        return
+
+    def predict_self_consistency(description, chunk, n=5):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
+            """%s\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        return gpt3(prompts)
+    
+
     def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=500, temperature=0.2, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=0.2, quote='---', n=1)
         prompts=[auto_cot_prompt + """%s\n""" %description + \
             """%s\nA: Let's think step-by-step.\n"""%x for x in chunk]
         return gpt3(prompts)
@@ -377,21 +510,18 @@ def auto_cot():
         print("Run %d"%run)
         answers = []
         for x in tqdm(chunks(inputs, 20)):
-            x = [ex.replace("\nA:", "") for ex in x]
+            x = [ex.replace("\nPossible times:", "") for ex in x]
             answers.extend(predict(x))
-            pdb.set_trace()
         preds = [x.strip() for x in answers]
         perf_array.append(substring_match(labels, preds))
     print("Auto-CoT Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-# auto_cot()
-
 
 def affordance():
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=2048, temperature=0.4, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=2048, temperature=0.4, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
@@ -403,7 +533,7 @@ def affordance():
         return char_list
 
     def predict_with_affordance(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=2048, temperature=0.4, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=2048, temperature=0.4, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
@@ -440,7 +570,7 @@ def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
         few_shot_cot_prompt = llm_similar_tasks(task_description, io_pairs, N=6)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=2048, temperature=temperature, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=2048, temperature=temperature, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
@@ -569,7 +699,22 @@ Input: %s
 Q1:"""
 
 
-def few_shot_pot(temperature=0.3, model_name="text-davinci-002"):
+def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
+    global few_shot_pot_prompt
+    task_name = "Temporal Sequences"
+    task_description = """(Temporal sequences) Given the daily schedule of activities of a person and a final activity that they need to find time for, choose one of the four provided options when they could do the activity."""
+
+    if strategy == "fixed":
+        few_shot_cot_prompt = few_shot_pot_prompt
+    elif strategy == "random":
+        few_shot_cot_prompt = random_tasks(N=6)
+    elif strategy == "similar":
+        few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
+    elif strategy == "similar_auto_decomp":
+        few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
+    elif strategy == "llm_similar":
+        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
+
     def predict(description, chunk):
         gpt3 = OpenAIModel(model=model_name,  max_length=2048, temperature=temperature, quote='---', n=1)
         prompts=[few_shot_pot_prompt% (description, x) for x in chunk]
@@ -629,10 +774,76 @@ def affordance(temperature=0.3, model_name = "text-davinci-002"):
     print("Std. Dev", np.std(perf_array))
 
 
+def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+    
+    global few_shot_cot_prompt
+    task_name = "(Temporal sequences)"
+    task_description = """(Temporal sequences) Given the daily schedule of activities of a person and a final activity that they need to find time for, choose one of the four provided options when they could do the activity."""
 
-# auto_decomp(10, 0.3)
-# affordance(temperature=0.3)
-# dynamic_few_shot_cot(temperature=0.3, strategy="random")
-few_shot_pot(temperature=0.3, model_name="code-davinci-002")
-# few_shot(N=5, temperature=0.3)
-# auto_cot()
+    if strategy == "fixed":
+        few_shot_cot_prompt = few_shot_pot_prompt
+    elif strategy == "random":
+        few_shot_cot_prompt = random_tasks(N=6)
+    elif strategy == "similar":
+        few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
+    elif strategy == "similar_auto_decomp":
+        few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
+    elif strategy == "llm_similar":
+        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
+
+    interpreter = TopDownVisitorBeta()
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    perf_array = []
+    runs = 1
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        new_labels = ["Ans: " + label for label in labels]
+        for x in tqdm(chunks(inputs, 10)):
+            x = [ex.replace("\nPossible times:", "") for ex in x]
+            prompts, answer = predict(task_description, x)
+            new_answer  = interpreter.batch_visit(prompts, answer)
+            answers.extend(new_answer)
+        preds = [x.strip() for x in answers]
+        perf_array.append(substring_match(new_labels, preds))
+        print(perf_array)
+    print("FS-CoT Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
+
+
+if __name__ == "__main__":
+    parser  = argparse.ArgumentParser()
+    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
+    parser.add_argument("--temperature", type=float, default="0.3")
+    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument("--num_train_examples", type=int, default=10)
+    parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
+    parser.add_argument("--self_consistency", default=False, action='store_true')
+
+    args = parser.parse_args()
+
+    print("Dataset statistics")
+    print(task_description)
+    print("Training examples:", len(train_inputs))
+    print("Dev examples:", len(inputs))
+
+    inputs = inputs[:args.num_dev_examples]
+    labels = labels[:args.num_dev_examples]
+
+    if args.inference_strategy == "few_shot":
+        few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=args.num_train_examples)
+        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
+        few_shot(args.num_train_examples, args.temperature, args.model_name)
+    elif args.inference_strategy == "auto_cot":
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
+    elif args.inference_strategy == "few_shot_cot":
+        few_shot_cot(args.temperature, args.model_name)
+    elif args.inference_strategy == "nl_program":
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)

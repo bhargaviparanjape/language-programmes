@@ -1,12 +1,28 @@
+import argparse
+import ast
+import json
+import pdb
+import re
+import time
 from re import L
 from turtle import pd
-from utils import gpt3, propose_decomposition, propose_instruction, chunks, get_subset, OpenAIModel, cache_dir, substring_match, execute_code, edit_code, generate_code
-from sequential_interpreter import TopDownVisitorBeta
+
 import datasets
 import numpy as np
 from tqdm import tqdm
-import json, pdb
-import re
+from transformers import GPT2Tokenizer
+from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+                   get_few_shot_prompt, get_subset, gpt3,
+                   propose_decomposition, propose_instruction, substring_match)
+
+tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+import urllib.request
+from collections import Counter
+
+tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+from prompt_library import (llm_similar_tasks, random_tasks,
+                            similar_auto_breakdowns, similar_tasks)
+from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 
 d = datasets.load_dataset('bigbench', 'auto_debugging', cache_dir=cache_dir)
 inputs = d['train']['inputs'] + d['validation']['inputs']
@@ -15,20 +31,25 @@ labels = d['train']['targets'] + d['validation']['targets']
 labels = [l[0] for l in labels]
 # print(len(inputs))
 
+
+train_inputs = d['train']['inputs']
+train_labels = d['train']['targets']
+
 task_description = "(Auto Debugging) Debug the following code snippets by finding the answer or the error message."
 
-io_pairs = [("""if x < 5:
+io_pairs = [("""```
+if x < 5:
 	pass
 ```
-What error does this program surface?
-NameError: name 'x' is not defined
-----
-```
+What error does this program surface?""",
+"""NameError: name 'x' is not defined"""),
+("""```
 y = list(map(int, ['1', 'hello', '2']))
 ```
 What error does this program produce?""",
 """ValueError: invalid literal for int() with base 10: 'hello'"""),
-("""def sq(x):
+("""```
+def sq(x):
 	return x*x
 y = sq(5)
 x = sq(y)
@@ -63,7 +84,7 @@ def token_match(labels, predictions):
 
 def auto_debugging():
     def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=200, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=200, quote='---', n=1)
         prompts = ["""```
 if x < 5:
 	pass
@@ -111,7 +132,31 @@ What is the output of this program?
     print("Std. Dev", np.std(perf_array))
 
 
-# auto_debugging()
+def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
+
+    few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=N)
+    print(len(tokenizer(few_shot_prompt)['input_ids']))
+
+    def predict(chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=200, temperature=temperature, quote='---', n=1)
+        prompts = ["""%s\
+%s""" % (few_shot_prompt, x) for x in chunk]
+        return gpt3(prompts)
+    
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 20)):
+            answers.extend(predict(x))
+        preds = [x.strip() for x in answers]
+        perf_array.append(exact_match(labels, preds))
+    print("No decomposition Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
+
 
 few_shot_cot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use a python code generation and execution function in one or more of your substeps, if required. Other functions like arithmetic and logical operations can also be used. 
 Description: Auto Debugging: Debug the following code snippets by finding the answer or the error message.
@@ -205,22 +250,99 @@ Desciption: %s
 Input: %s
 Q1:"""
 
+auto_cot_corrected_prompt = """Auto Debugging: Debug the following code snippets by finding the answer or the error message.
+```
+if x < 5:
+	pass
+```
+What error does this program surface?
+A: Let's think step-by-step.
 
-def auto_cot(temperature=0.3):
+First, the program checks if x is less than 5. If it is, then it executes the code inside the if statement (the pass statement in this case). If x is not less than 5, then the program skips over the if statement.
+The error message that this program surfaces is:
+"NameError: name 'x' is not defined"
+This is because the x variable is not defined anywhere in the program.
+
+The final answer is "NameError: name 'x' is not defined"
+----
+Auto Debugging: Debug the following code snippets by finding the answer or the error message.
+```
+y = list(map(int, ['1', 'hello', '2']))
+```
+What error does this program produce?
+A: Let's think step-by-step.
+
+First, we have a list with three elements: `'1'`, `'hello'`, and `'2'`.
+Next, we use the `map` function to apply the `int` function to each element in the list. However, the `int` function can only convert strings that represent numbers into integers. `'hello'` is not a string that represents a number, so this causes an error.
+The error message that this program surfaces is:
+ValueError: invalid literal for int() with base 10: 'hello'
+
+The final answer is ValueError: invalid literal for int() with base 10: 'hello'
+----
+Auto Debugging: Debug the following code snippets by finding the answer or the error message.
+```
+def sq(x):
+	return x*x
+y = sq(5)
+x = sq(y)
+```
+What is the value of x at the end of this program?
+A: Let's think step-by-step.
+
+First, we calculate 5*5 and store the result in y. So y is 25.
+Next, we calculate sq(y), which is 25*25. So x is 625.
+Therefore, the value of x at the end of this program is 625.
+
+The final answer is 625.
+----
+Auto Debugging: Debug the following code snippets by finding the answer or the error message.
+```
+x = [1, 2, 3]
+print(x[2])
+```
+What is the output of this program?
+A: Let's think step-by-step.
+
+First, we create a list x that contains the elements 1, 2, and 3.
+Next, we print out the element at index 2 of list x.
+What is the element at index 2 of list x? It's 3! Therefore, the output of this program is 3.
+
+The final answer is 3.
+----
+"""
+def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
     auto_cot_prompt = ""
     description = "Auto Debugging: Debug the following code snippets by finding the answer or the error message."
     for io_pair in io_pairs:
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=500, temperature=0.7, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=0.7, quote='---', n=1)
         prompt = """%s\n"""%description + io_pair[0] + \
             """\nA: Let's think step-by-step.\n"""
         auto_cot_prompt += prompt
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
+
+    if use_corrected:
+        auto_cot_prompt = auto_cot_corrected_prompt
+    
     print(auto_cot_prompt)
+    f = open("auto_cot_demonstrations.txt","a+")
+    f.write("Anachronisms\n\n")
+    f.write(auto_cot_prompt)
+
+    if not predict:
+        return
+
+    def predict_self_consistency(description, chunk, n=5):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
+            """%s\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        return gpt3(prompts)
+
+    
     def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=500, temperature=temperature, quote='---', n=1)
-        prompts=[auto_cot_prompt + """%s\n""" %description + \
-            """%s\nA: Let's think step-by-step.\n"""%x for x in chunk]
+        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=temperature, quote='---', n=1)
+        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
+            """%s\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
         return gpt3(prompts)
 
     perf_array = []
@@ -229,7 +351,6 @@ def auto_cot(temperature=0.3):
         print("Run %d"%run)
         answers = []
         for x in tqdm(chunks(inputs, 20)):
-            x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
         preds = [x.strip() for x in answers]
         perf_array.append(substring_match(labels, preds))
@@ -238,9 +359,24 @@ def auto_cot(temperature=0.3):
     print("Std. Dev", np.std(perf_array))
 
 
-def few_shot_cot(temperature=0.3):
+def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
+    global few_shot_cot_prompt
+    task_name = "Auto Debugging"
+    task_description = """(Auto Debugging) Debug the following code snippets by finding the answer or the error message."""
+
+    if strategy == "fixed":
+        few_shot_cot_prompt = few_shot_cot_prompt
+    elif strategy == "random":
+        few_shot_cot_prompt = random_tasks(N=6)
+    elif strategy == "similar":
+        few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
+    elif strategy == "similar_auto_decomp":
+        few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
+    elif strategy == "llm_similar":
+        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
+
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=temperature, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
@@ -263,7 +399,7 @@ def few_shot_cot(temperature=0.3):
 
 def affordance(temperature=0.5):
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=2048, temperature=0.4, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=2048, temperature=0.4, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
@@ -307,7 +443,7 @@ def affordance(temperature=0.5):
         return altered_answer
 
     def predict_with_affordance(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=2048, temperature=0.4, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=2048, temperature=0.4, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
@@ -340,12 +476,26 @@ def affordance(temperature=0.5):
 
 
 
-def nl_program(temperature=0.3):
+def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+    global few_shot_cot_prompt
+    task_name = "Auto Debugging"
+    task_description = """(Auto Debugging) Debug the following code snippets by finding the answer or the error message."""
+
+    if strategy == "fixed":
+        few_shot_cot_prompt = few_shot_cot_prompt
+    elif strategy == "random":
+        few_shot_cot_prompt = random_tasks(N=6)
+    elif strategy == "similar":
+        few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
+    elif strategy == "similar_auto_decomp":
+        few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
+    elif strategy == "llm_similar":
+        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
     interpreter = TopDownVisitorBeta()
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=temperature, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
@@ -366,7 +516,33 @@ def nl_program(temperature=0.3):
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-# affordance()
-# auto_cot()
-# few_shot_cot()
-nl_program(temperature=0.3)
+
+if __name__ == "__main__":
+    parser  = argparse.ArgumentParser()
+    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
+    parser.add_argument("--temperature", type=float, default="0.3")
+    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument("--num_train_examples", type=int, default=10)
+    parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
+    parser.add_argument("--self_consistency", default=False, action='store_true')
+
+    args = parser.parse_args()
+
+    print("Dataset statistics")
+    print(task_description)
+    print("Training examples:", len(train_inputs))
+    print("Dev examples:", len(inputs))
+
+    inputs = inputs[:args.num_dev_examples]
+    labels = labels[:args.num_dev_examples]
+
+    if args.inference_strategy == "few_shot":
+        few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=args.num_train_examples)
+        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
+        few_shot(args.num_train_examples, args.temperature, args.model_name)
+    elif args.inference_strategy == "auto_cot":
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
+    elif args.inference_strategy == "few_shot_cot":
+        few_shot_cot(args.temperature, args.model_name)
+    elif args.inference_strategy == "nl_program":
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)

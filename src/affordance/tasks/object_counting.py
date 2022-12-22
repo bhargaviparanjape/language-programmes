@@ -1,12 +1,29 @@
+import argparse
+import ast
+import json
+import pdb
+import re
+import time
 from re import L
 from turtle import pd
-from utils import gpt3, propose_decomposition, propose_instruction, chunks, get_subset, OpenAIModel, cache_dir, substring_match, substring_match_v2
 
 import datasets
 import numpy as np
 from tqdm import tqdm
-import json, pdb
-import re
+from transformers import GPT2Tokenizer
+from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+                   get_few_shot_prompt, get_subset, gpt3,
+                   propose_decomposition, propose_instruction, substring_match,
+                   substring_match_v2)
+
+tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+import urllib.request
+from collections import Counter
+
+tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+from prompt_library import (llm_similar_tasks, random_tasks,
+                            similar_auto_breakdowns, similar_tasks)
+from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 from word2number import w2n
 
 d = datasets.load_dataset('bigbench', 'object_counting', cache_dir=cache_dir)
@@ -15,6 +32,11 @@ inputs = d['validation']['inputs']
 labels = d['validation']['targets']
 labels = [l[0] for l in labels]
 # print(len(inputs))
+
+
+train_inputs = d['train']['inputs']
+train_labels = d['train']['targets']
+
 
 task_description  = "Object counting: You are given a bunch of items and asked to count a specific kind of item."
 
@@ -48,9 +70,9 @@ def token_match(labels, predictions):
         count += 1
     return (1.0*correct)/count
 
-def object_counting():
+def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=200, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name, temperature=temperature, max_length=200, quote='---', n=1)
         prompts = ["""Q: I have a trombone, a flute, an accordion, three violins, four clarinets, a drum, a trumpet, and a piano. How many musical instruments do I have?
 A:
 thirteen
@@ -108,24 +130,140 @@ six
     print("Std. Dev", np.std(perf_array))
 
 
-# object_counting()
+auto_cot_corrected_prompt = """Object counting: You are given a bunch of items and asked to count a specific kind of item.
+Q: I have a trombone, a flute, an accordion, three violins, four clarinets, a drum, a trumpet, and a piano. How many musical instruments do I have?
+The final answer is the count of requested items in words, like "six" or "ten".
+A: Let's think step-by-step.
 
+I have a trombone.
+I have a flute.
+I have an accordion.
+I have three violins.
+I have four clarinets.
+I have a drum.
+I have a trumpet.
+I have a piano.
+I have thirteen musical instruments in total.
 
+The final answer is thirteen.
+----
+Object counting: You are given a bunch of items and asked to count a specific kind of item.
+Q: I have a mouse, a goat, and two fish. How many animals do I have?
+The final answer is the count of requested items in words, like "six" or "ten".
+A: Let's think step-by-step.
 
-def auto_cot(temperature=0.3):
+First, we need to identify what kind of item we're looking for. In this case, the question is asking for animals, so we're looking for anything that's classified as an animal.
+We have a mouse, which is an animal, and a goat, which is also an animal. So far, we have two animals.
+But wait! Fish are also animals. So we have two fish, which means we have a total of four animals.
+
+The final answer is four.
+----
+Object counting: You are given a bunch of items and asked to count a specific kind of item.
+Q: I have a strawberry, a grape, an apple, an orange, a plum, two nectarines, two bananas, and a peach. How many fruits do I have?
+The final answer is the count of requested items in words, like "six" or "ten".
+A: Let's think step-by-step.
+
+First, we need to identify what kind of item we're looking for. In this case, the question is asking for fruits, so we're looking for anything that's classified as an fruit.
+There is a strawberry, a grape, an apple, an orange, a plum, two nectarines, two bananas, and a peach. All these items are fuits. There are a total of ten fruits.
+
+The final answer is ten.
+----
+Object counting: You are given a bunch of items and asked to count a specific kind of item.
+Q: I have a violin, two nectarines, a flute, a banana, an accordion, two strawberries, a clarinet, a drum, a trumpet, a piano, and a trombone. How many musical instruments do I have?
+The final answer is the count of requested items in words, like "six" or "ten".
+A: Let's think step-by-step.
+
+There are a lot of items, so it might be helpful to make a list.
+The list of items is:
+violin
+two nectarines
+flute
+banana
+accordion
+two strawberries
+clarinet
+drum
+trumpet
+piano
+trombone
+
+The list of musical instruments is:
+violin
+flute
+accordion
+clarinet
+drum
+trumpet
+piano
+trombone
+
+There are a total of eight musical instruments.
+
+The final answer is eight.
+----
+Object counting: You are given a bunch of items and asked to count a specific kind of item.
+Q: I have three bananas, a trumpet, a clarinet, a piano, a nectarine, a trombone, a blackberry, and a violin. How many musical instruments do I have?
+The final answer is the count of requested items in words, like "six" or "ten".
+A: Let's think step-by-step.
+
+First, we need to identify which items are musical instruments. We see that the trumpet, clarinet, piano, trombone, and violin are all musical instruments.
+Next, we need to count how many musical instruments there are. We see that there are five musical instruments.
+Finally, we need to write the answer in words. We see that there are five musical instruments, so we would say "five."
+
+The final answer is five.
+----
+Object counting: You are given a bunch of items and asked to count a specific kind of item.
+Q: I have a cabbage, a stalk of celery, a carrot, a lettuce head, a yam, three heads of broccoli, three potatoes, and two cauliflowers. How many vegetables do I have?
+The final answer is the count of requested items in words, like "six" or "ten".
+A: Let's think step-by-step.
+
+There are three potatoes, so we can say "three" or "3".
+There are two cauliflowers, so we can say "two" or "2".
+Adding the potatoes and cauliflowers together, we get "five" or "5".
+Now let's think about the broccoli.
+There are three heads of broccoli, so we can say "three" or "3".
+Adding the potatoes, cauliflowers, and broccoli together, we get "eight" or "8".
+Now let's add the rest of the vegetables.
+There is one cabbage, so we can say "one" or "1".
+There is one stalk of celery, so we can say "one" or "1".
+There is one carrot, so we can say "one" or "1".
+There is one lettuce head, so we can say "one" or "1".
+There is one yam, so we can say "one" or "1".
+
+Adding all of the vegetables together, we get "thirteen" or "13".
+
+The final answer is thirteen.
+----
+"""
+def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
     auto_cot_prompt = ""
-    for io_pair in io_pairs[:3]:
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=0.7, quote='---', n=1)
+    for io_pair in io_pairs:
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=0.7, quote='---', n=1)
         prompt = """%s\n"""% task_description + io_pair[0] + \
             """\nThe final answer is the count of requested items in words, like "six" or "ten".\nA: Let's think step-by-step.\n""" 
         auto_cot_prompt += prompt
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
         # Add the final answer with special format so evaluation is easier.
+    if use_corrected:
+        auto_cot_prompt = auto_cot_corrected_prompt
+    
     print(auto_cot_prompt)
+    f = open("auto_cot_demonstrations.txt","a+")
+    f.write("Anachronisms\n\n")
+    f.write(auto_cot_prompt)
+
+    if not predict:
+        return
+
+    def predict_self_consistency(description, chunk, n=5):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
+            """%s\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        return gpt3(prompts)
 
     def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=500, temperature=temperature, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=temperature, quote='---', n=1)
         prompts=[auto_cot_prompt + """%s\n"""%task_description + \
             """%s\nThe final answer is the count of requested items in words, like "six" or "ten".\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
         return gpt3(prompts)
@@ -268,9 +406,26 @@ Input: %s
 Q1: """
 
 
-def few_shot_cot(temperature=0.3):
+def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
+
+    global few_shot_cot_prompt
+    task_name = "Object counting"
+    task_description = "(Object counting) You are given a bunch of items and asked to count a specific kind of item."
+
+    if strategy == "fixed":
+        few_shot_cot_prompt = few_shot_cot_prompt
+    elif strategy == "random":
+        few_shot_cot_prompt = random_tasks(N=6)
+    elif strategy == "similar":
+        few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
+    elif strategy == "similar_auto_decomp":
+        few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
+    elif strategy == "llm_similar":
+        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
+
+    
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1024, temperature=temperature, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=1024, temperature=temperature, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description + """The final answer is the count of requested items in words, like "six" or "ten".""", x) for x in chunk]
         return gpt3(prompts)
 
@@ -293,6 +448,78 @@ def few_shot_cot(temperature=0.3):
     print("Std. Dev", np.std(perf_array))
 
 
-# few_shot_cot(temperature=0.7)
-auto_cot(temperature=0.3)
-# navigate()
+
+
+def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+    
+    global few_shot_cot_prompt
+    task_name = "Object counting"
+    task_description = "(Object counting) You are given a bunch of items and asked to count a specific kind of item."
+
+    if strategy == "fixed":
+        few_shot_cot_prompt = few_shot_cot_prompt
+    elif strategy == "random":
+        few_shot_cot_prompt = random_tasks(N=6)
+    elif strategy == "similar":
+        few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
+    elif strategy == "similar_auto_decomp":
+        few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
+    elif strategy == "llm_similar":
+        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
+
+    interpreter = TopDownVisitorBeta()
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    perf_array = []
+    runs = 1
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        new_labels = ["Ans: " + label for label in labels]
+        for x in tqdm(chunks(inputs, 10)):
+            x = [ex.replace("\nDoes the preceding sentence contain non-contemporaneous (anachronistic) elements?", "") for ex in x]
+            prompts, answer = predict(task_description, x)
+            new_answer  = interpreter.batch_visit(prompts, answer)
+            answers.extend(new_answer)
+        preds = [x.strip() for x in answers]
+        perf_array.append(substring_match(new_labels, preds))
+        print(perf_array)
+    print("FS-CoT Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
+
+
+if __name__ == "__main__":
+    parser  = argparse.ArgumentParser()
+    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
+    parser.add_argument("--temperature", type=float, default="0.3")
+    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument("--num_train_examples", type=int, default=10)
+    parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
+    parser.add_argument("--self_consistency", default=False, action='store_true')
+
+    args = parser.parse_args()
+
+    print("Dataset statistics")
+    print(task_description)
+    print("Training examples:", len(train_inputs))
+    print("Dev examples:", len(inputs))
+
+    inputs = inputs[:args.num_dev_examples]
+    labels = labels[:args.num_dev_examples]
+
+    if args.inference_strategy == "few_shot":
+        few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=args.num_train_examples)
+        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
+        few_shot(args.num_train_examples, args.temperature, args.model_name)
+    elif args.inference_strategy == "auto_cot":
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
+    elif args.inference_strategy == "few_shot_cot":
+        few_shot_cot(args.temperature, args.model_name)
+    elif args.inference_strategy == "nl_program":
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)

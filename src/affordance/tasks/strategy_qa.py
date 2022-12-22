@@ -1,12 +1,28 @@
+import argparse
+import ast
+import json
+import pdb
+import re
+import time
 from re import L
 from turtle import pd
-from utils import gpt3, propose_decomposition, propose_instruction, chunks, get_subset, OpenAIModel, cache_dir, cache_dir, search, substring_match
 
 import datasets
 import numpy as np
 from tqdm import tqdm
-import json, pdb
-import re
+from transformers import GPT2Tokenizer
+from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+                   get_few_shot_prompt, get_subset, gpt3,
+                   propose_decomposition, propose_instruction, substring_match)
+
+tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+import urllib.request
+from collections import Counter
+
+tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+from prompt_library import (llm_similar_tasks, random_tasks,
+                            similar_auto_breakdowns, similar_tasks)
+from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 
 
 d = datasets.load_dataset('bigbench', 'strategyqa', cache_dir=cache_dir)
@@ -14,7 +30,12 @@ inputs = d['validation']['inputs']
 # inputs = [x.split('\n')[0] for x in inputs]
 labels = d['validation']['targets']
 labels = [l[0] for l in labels]
-print(len(inputs))
+
+
+train_inputs = d['train']['inputs']
+train_labels = d['train']['targets']
+
+task_description = """Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or if the question is implausible."""
 
 io_pairs = [
 ("Q: Has Johns Hopkins University always treated subjects ethically?",
@@ -48,9 +69,9 @@ def token_match(labels, predictions):
         count += 1
     return (1.0*correct)/count
 
-def strategyqa():
+def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=200, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name, temperature=temperature, max_length=200, quote='---', n=1)
         prompts = ["""Q: Has Johns Hopkins University always treated subjects ethically?
 A:
 No. Henrietta Lacks' DNA was used and replicated by Johns Hopkins University without her family's knowledge or approval. Henrietta Lacks' family medical history was released by Johns Hopkins University without their knowledge.
@@ -89,6 +110,30 @@ No. Alice's Adventures in Wonderland was published in 1865. Macbeth was first pe
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
+
+def strategyqa(N=10, temperature=0.3, model_name="text-davinci-002"):
+
+    few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=N)
+    print(len(tokenizer(few_shot_prompt)['input_ids']))
+
+    def predict(chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=200, temperature=temperature, quote='---', n=1)
+        prompts = ["""%s\
+%s""" % (few_shot_prompt, x) for x in chunk]
+        return gpt3(prompts)
+    
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 20)):
+            answers.extend(predict(x))
+        preds = [x.strip() for x in answers]
+        perf_array.append(exact_match(labels, preds))
+    print("No decomposition Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
 
 
 few_shot_cot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use search functions like Google search in one or more of your substeps, if there in insufficient information. Other functions like arithmetic and logical operations can also be used.  
@@ -189,42 +234,136 @@ Desciption: %s
 Input: %s
 Q1:"""
 
+auto_cot_corrected_prompt = """Strategy QA: Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or the question is implausible.
+Q: Has Johns Hopkins University always treated subjects ethically?
+The final answer should be "Yes" or "No" only.
+A: Let's think step-by-step.
 
-def auto_cot(temperature=0.3):
+On Feb. 6, 1951, a poor African American tobacco farmer named Henrietta Lacks entered the ward for colored women at Johns Hopkins Hospital to begin treatment for invasive cervical cancer. While she was unconscious on the operating table, the surgeon on duty, Dr. Lawrence Wharton Jr., shaved a dime-sized piece of tissue from her tumor and another from the healthy part of her cervix.
+Those tissues went on to generate the first “immortal” cell line, endlessly reproduced, studied, experimented with and passed around, still today, by scientists worldwide.
+But Lacks — who died later that year — was never told why her cells were taken and never gave permission for them to be used as they have been. In addition, more than two decades passed before her family learned, by accident, about HeLa’s significance.
+In this instance, Johns Hopkins University may not have treated thier subject ethically.
+
+The final answer is No.
+----
+Strategy QA: Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or the question is implausible.
+Q: Could Carl Friedrich Gauss speak to someone 100 miles away?
+The final answer should be "Yes" or "No" only.
+A: Let's think step-by-step.
+
+Johann Carl Friedrich Gauss (/ɡaʊs/; German: Gauß [kaʁl ˈfʁiːdʁɪç ˈɡaʊs] (listen);[2][3] Latin: Carolus Fridericus Gauss; 30 April 1777 – 23 February 1855) was a German mathematician and physicist who made significant contributions to many fields in mathematics and science.
+Speaking to someone 100 miles away requires a telephone. On 7 March 1876, Bell was granted US patent 174465A, for a method of transmitting speech by telegraphy—the telephone.
+Gauss died before the telephone was invented and popularly used. Thus, its unlikely for him to have used a telephone to speak to someone 100 miles away.
+
+The final answer is No.
+----
+Strategy QA: Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or the question is implausible.
+Q: Is calling ABBA the Swedish Beatles a preposterous claim?
+The final answer should be "Yes" or "No" only.
+A: Let's think step-by-step.
+
+No, ABBA doesn’t deserves that sort of adoration. Abba produced well crafted Euro-pop, but that was it. 
+ABBA was a Swedish band that had 1 Billboard number 1 hit and 4 top 10 hits. The Beatles had 20 Billboard number 1 hits and 34 top 10 hits.
+The Beatles took the world by storm and reached all capillaries of society. They affected the world philosophically, politically, in terms of fashion and musically.
+Calling ABBA the Swedish Beatles maybe a preposterous claim.
+
+The final answer is Yes.
+----
+Strategy QA: Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or the question is implausible.
+Q: Did compact discs make computer gaming more popular?
+The final answer should be "Yes" or "No" only.
+A: Let's think step-by-step.
+
+First, we need to understand what is meant by "computer gaming." In this context, computer gaming refers to video games that are played on a computer.
+The largest storage available on commercial floppy disks was about 2.8MB. Whereas even relatively early Optical Discs had capacities in the hundreds of MB. Without significantly increased cost.
+Gaming studios were therefore able to significantly improve the graphics, sounds, and features of their games to make them more immersive. The better games led to a massive increase in popularity for computer gaming.
+
+The final answer is Yes.
+----
+Strategy QA: Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or the question is implausible.
+Q: Did Alice's Adventures in Wonderland inspire Macbeth?
+The final answer should be "Yes" or "No" only.
+A: Let's think step-by-step.
+
+First, we need to establish whether Alice's Adventures in Wonderland was published before or after Macbeth. If it was published after, then it's implausible that it could have inspired Macbeth. However, if it was published before, it's possible that it could have inspired Macbeth.
+Alice's Adventures in Wonderland was published in 1865.
+Macbeth was written in 1606.
+Since Alice's Adventures in Wonderland was published befafterore Macbeth, it's impossible that it inspired Macbeth.
+
+The final answer is No.
+----
+"""
+def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
+    global auto_cot_corrected_prompt
     auto_cot_prompt = ""
     description = """Strategy QA: Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or the question is implausible."""
     for io_pair in io_pairs:
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=500, temperature=0.7, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=0.7, quote='---', n=1)
         prompt = """%s\n"""%description + io_pair[0] + \
             """\nThe final answer should be "Yes" or "No" only.\nA: Let's think step-by-step.\n"""
         auto_cot_prompt += prompt
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
+    
+    if use_corrected:
+        auto_cot_prompt = auto_cot_corrected_prompt
+    
     print(auto_cot_prompt)
-    def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=500, temperature=temperature, quote='---', n=1)
-        prompts=[auto_cot_prompt + """%s\n""" %description + \
-            """%s\nThe final answer should be "Yes" or "No" only.\nA: Let's think step-by-step.\n"""%x for x in chunk]
+    f = open("auto_cot_demonstrations.txt","a+")
+    f.write("Anachronisms\n\n")
+    f.write(auto_cot_prompt)
+
+    if not predict:
+        return
+
+    def predict_self_consistency(description, chunk, n=5):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
+            """%s\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
         return gpt3(prompts)
 
+    
+    def predict(chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=temperature, quote='---', n=1)
+        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
+            """%s\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        return gpt3(prompts)
+    
     perf_array = []
     runs = 5
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
+        processed_labels = [l.split()[0] for l in labels]
         for x in tqdm(chunks(inputs, 20)):
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
         preds = [x.strip() for x in answers]
-        perf_array.append(substring_match(labels, preds))
+        perf_array.append(substring_match(processed_labels, preds))
         print(perf_array)
     print("Auto-CoT Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-def few_shot_cot(temperature=0.3):
+
+def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
+    global few_shot_cot_prompt
+    task_name = "Strategy QA"
+    task_description = """(Strategy QA) Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or if the question is implausible."""
+
+    if strategy == "fixed":
+        few_shot_cot_prompt = few_shot_cot_prompt
+    elif strategy == "random":
+        few_shot_cot_prompt = random_tasks(N=6)
+    elif strategy == "similar":
+        few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
+    elif strategy == "similar_auto_decomp":
+        few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
+    elif strategy == "llm_similar":
+        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
+
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=0.4, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=0.4, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
@@ -233,19 +372,17 @@ def few_shot_cot(temperature=0.3):
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
+        processed_labels = [l.split()[0] for l in labels]
         for x in tqdm(chunks(inputs, 20)):
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict("""Strategy QA: Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or if the question is implausible.""", x))
         preds = [x.strip() for x in answers]
-        perf_array.append(substring_match(labels, preds))
+        perf_array.append(substring_match(processed_labels, preds))
         print(perf_array)
     print("Few-shot COT performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-
-from prompt_library import random_tasks, similar_tasks, llm_similar_tasks, similar_auto_breakdowns
-task_description = """Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or if the question is implausible."""
 
 def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
 
@@ -259,7 +396,7 @@ def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
         few_shot_cot_prompt = llm_similar_tasks(task_description, io_pairs, N=6)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1024, temperature=temperature, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=1024, temperature=temperature, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
@@ -279,13 +416,76 @@ def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
     print("Std. Dev", np.std(perf_array))
 
 
-# auto_decomp(10, 0.3)
-# affordance(temperature=0.3)
-dynamic_few_shot_cot(temperature=0.3, strategy="random")
-# few_shot_cot()
-# few_shot(N=5, temperature=0.3)
-# auto_cot()
+def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+    
+    global few_shot_cot_prompt
+    task_name = "Strategy QA"
+    task_description = """(Strategy QA) Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or if the question is implausible."""
+
+    if strategy == "fixed":
+        few_shot_cot_prompt = few_shot_cot_prompt
+    elif strategy == "random":
+        few_shot_cot_prompt = random_tasks(N=6)
+    elif strategy == "similar":
+        few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
+    elif strategy == "similar_auto_decomp":
+        few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
+    elif strategy == "llm_similar":
+        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
+        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
+
+    interpreter = TopDownVisitorBeta()
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    perf_array = []
+    runs = 1
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        new_labels = ["Ans: " + label for label in labels]
+        for x in tqdm(chunks(inputs, 10)):
+            x = [ex.replace("\nDoes the preceding sentence contain non-contemporaneous (anachronistic) elements?", "") for ex in x]
+            prompts, answer = predict(task_description, x)
+            new_answer  = interpreter.batch_visit(prompts, answer)
+            answers.extend(new_answer)
+        preds = [x.strip() for x in answers]
+        perf_array.append(substring_match(new_labels, preds))
+        print(perf_array)
+    print("FS-CoT Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
 
 
-# strategyqa()
-# auto_cot(temperature=0.3)
+if __name__ == "__main__":
+    parser  = argparse.ArgumentParser()
+    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
+    parser.add_argument("--temperature", type=float, default="0.3")
+    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument("--num_train_examples", type=int, default=10)
+    parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
+    parser.add_argument("--self_consistency", default=False, action='store_true')
+
+    args = parser.parse_args()
+
+    print("Dataset statistics")
+    print(task_description)
+    print("Training examples:", len(train_inputs))
+    print("Dev examples:", len(inputs))
+
+    inputs = inputs[:args.num_dev_examples]
+    labels = labels[:args.num_dev_examples]
+
+    if args.inference_strategy == "few_shot":
+        few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=args.num_train_examples)
+        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
+        few_shot(args.num_train_examples, args.temperature, args.model_name)
+    elif args.inference_strategy == "auto_cot":
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
+    elif args.inference_strategy == "few_shot_cot":
+        few_shot_cot(args.temperature, args.model_name)
+    elif args.inference_strategy == "nl_program":
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)

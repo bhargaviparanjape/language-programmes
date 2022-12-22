@@ -1,13 +1,28 @@
+import argparse
+import ast
+import json
+import pdb
+import re
+import time
 from re import L
 from turtle import pd
-from utils import gpt3, propose_decomposition, propose_instruction, chunks, get_subset, OpenAIModel, cache_dir, substring_match, parse_program
-from pot_tools import safe_execute
 
 import datasets
 import numpy as np
 from tqdm import tqdm
-import json, pdb
-import re
+from transformers import GPT2Tokenizer
+from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+                   get_few_shot_prompt, get_subset, gpt3,
+                   propose_decomposition, propose_instruction, substring_match)
+
+tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+import urllib.request
+from collections import Counter
+
+tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+from prompt_library import (llm_similar_tasks, random_tasks,
+                            similar_auto_breakdowns, similar_tasks)
+from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 
 d = datasets.load_dataset('bigbench', 'unit_interpretation', cache_dir=cache_dir)
 inputs = d['train']['inputs'] + d['validation']['inputs']
@@ -15,6 +30,9 @@ inputs = d['train']['inputs'] + d['validation']['inputs']
 labels = d['train']['targets'] + d['validation']['targets']
 labels = [l[0] for l in labels]
 # print(len(inputs))
+
+train_inputs = d['train']['inputs']
+train_labels = d['train']['targets']
 
 task_description = "Select the option that best replaces '()' in each text input given the chocies presented, by solving the arithmetic word problem in the text input. Solving the problem will require reasoning about units of measurement."
 
@@ -73,9 +91,9 @@ def token_match(labels, predictions):
         count += 1
     return (1.0*correct)/count
 
-def unit_interpretation():
+def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=200, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=200, quote='---', n=1)
         prompts = ["""Please select the option that best replaces '()' in each text input given the chocies presented.
 
 Q: 27 eggs divided by 9 eggs per hen per day is ().
@@ -148,22 +166,114 @@ A:
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-# unit_interpretation()
+auto_cot_corrected_prompt = """Select the option that best replaces '()' in each text input given the chocies presented, by solving the arithmetic word problem in the text input. Solving the problem will require reasoning about units of measurement.
+Q: 27 eggs divided by 9 eggs per hen per day is ().
+  choice: 243 hen-days
+  choice: 3 hen-days
+  choice: 3 days
+  choice: 243 eggs
+  choice: 3 eggs
+The final answer is one of the five choices.
+A: Let's think step-by-step.
 
-def auto_cot(temperature=0.3):
+There are 27 eggs. We want to know how many hens this is equivalent to, given that each hen lays 9 eggs per day.
+27 eggs divided by 9 eggs per hen per day is 3 hen-days.
+
+The final answer is 3 hen-days.
+----
+Select the option that best replaces '()' in each text input given the chocies presented, by solving the arithmetic word problem in the text input. Solving the problem will require reasoning about units of measurement.
+Q: A newsstand sells 5 newspapers every 2 weeks. It will sell () newspapers in 60 weeks.
+  choice: 120
+  choice: 300
+  choice: 150
+  choice: 12
+  choice: 24
+The final answer is one of the five choices.
+A: Let's think step-by-step.
+
+A newsstand sells 5 newspapers every 2 weeks. 
+That means it sells 10 newspapers every 4 weeks, or 2.5 newspapers every week. 
+If we multiply 2.5 by 60, we get 150. 
+Therefore, the newsstand will sell 150 newspapers in 60 weeks.
+
+The final answer is 150.
+----
+Select the option that best replaces '()' in each text input given the chocies presented, by solving the arithmetic word problem in the text input. Solving the problem will require reasoning about units of measurement.
+Q: A bell rings one time every 5 hours. It will ring 20 times in () hours.
+  choice: 20
+  choice: 50
+  choice: 25
+  choice: 100
+  choice: 4
+The final answer is one of the five choices.
+A: Let's think step-by-step.
+
+One bell rings every 5 hours. To ring 20 times, it will take 5 times 20 that is 100 hours.
+
+The final answer is 100.
+----
+Select the option that best replaces '()' in each text input given the chocies presented, by solving the arithmetic word problem in the text input. Solving the problem will require reasoning about units of measurement.
+Q: It takes 2 sausages and 5 buns to make 40 hotdogs. It will take 10 sausages and () buns to make 200 hotdogs.
+  choice: 25
+  choice: 50
+  choice: 4
+  choice: 10
+  choice: 5
+The final answer is one of the five choices.
+A: Let's think step-by-step.
+
+There are two sausages and five buns to make 40 hotdogs. In other words, we can say that there is a ratio of two sausages to five buns.
+We can use this ratio to figure out how many sausages we need for 200 hotdogs, which is 5 times as many hotdogs.
+So, for 200 hot dogs, we need 5 times 5 i.e. 25 buns.
+
+The final answer is 25.
+----
+Select the option that best replaces '()' in each text input given the chocies presented, by solving the arithmetic word problem in the text input. Solving the problem will require reasoning about units of measurement.
+Q: It takes 3 men and 3 hours to cut down 9 trees. It will take 2 men and 4 hours to cut down () trees.
+  choice: 18
+  choice: 8
+  choice: 3
+  choice: 12
+  choice: 6
+The final answer is one of the five choices.
+A: Let's think step-by-step.
+
+3 men and 3 hours can cut down 9 trees.
+That means 1 man and 1 hour can cut down 1 trees.
+2 men and 4 hours can cut down (8) trees.
+
+The final answer is 8.
+----
+"""
+def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
     auto_cot_prompt = ""
-    for io_pair in io_pairs[:3]:
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=0.7, quote='---', n=1)
+    for io_pair in io_pairs:
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=0.7, quote='---', n=1)
         prompt = """%s\n"""% task_description + io_pair[0] + \
             """\nThe final answer is one of the five choices.\nA: Let's think step-by-step.\n""" 
         auto_cot_prompt += prompt
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
         # Add the final answer with special format so evaluation is easier.
+    if use_corrected:
+        auto_cot_prompt = auto_cot_corrected_prompt
+    
     print(auto_cot_prompt)
+    f = open("auto_cot_demonstrations.txt","a+")
+    f.write("Anachronisms\n\n")
+    f.write(auto_cot_prompt)
+
+    if not predict:
+        return
+
+    def predict_self_consistency(description, chunk, n=5):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
+            """%s\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        return gpt3(prompts)
 
     def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=500, temperature=temperature, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=temperature, quote='---', n=1)
         prompts=[auto_cot_prompt + """%s\n"""%task_description + \
             """%s\nThe final answer is one of the five choices.\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
         return gpt3(prompts)
@@ -174,8 +284,6 @@ def auto_cot(temperature=0.3):
         print("Run %d"%run)
         answers = []
         for x in tqdm(chunks(inputs, 20)):
-            x = [ex.replace("""Please select the option that best replaces '()' in each text input given the chocies presented.\n\n""", "") for ex in x]
-            x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
         preds = [x.strip() for x in answers]
         perf_array.append(substring_match(labels, preds))
@@ -307,9 +415,136 @@ Input: %s
 Q1: """
 
 
-def few_shot_cot(temperature=0.3):
+
+few_shot_pot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can generate python code to solve arithmetic and algebra equations in using functions from sympy.
+from sympy import Symbol
+from sympy import simplify
+import math
+from sympy import solve_it
+# solve_it(equations, variable): solving the equations and return the variable value.
+
+Description: Solve the following arithmetic problems on ratios and fractions, writing out intermediate arithmetic calculations as python code. Store your result as a variable named 'ans'.
+Input:  In a flight of 600 km, an aircraft was slowed down due to bad weather. Its average speed for the trip was reduced by 200 km/hr and the time of flight increased by 30 minutes. The duration of the flight is:  A)1 hour B)2 hours C)3 hours D)4 hours E)5 hours
+Q1: [generate python code] write python code to solve the problem, using math and sympy.
+#1:
+duration = Symbol('duration', positive=True)
+delay = 30 / 60
+total_disntace = 600
+original_speed = total_disntace / duration
+reduced_speed = total_disntace / (duration + delay)
+solution = solve_it(original_speed - reduced_speed - 200, duration)
+ans = solution[duration]
+print(ans)
+Q2: [code execute] Execute the python code in #1 and get the value of "ans"
+#2:
+1.0
+Q3: [compare] Which of the options among A)1 hour B)2 hours C)3 hours D)4 hours E)5 hours is most similar to the answer? 
+#3: A
+Q4: [EOQ]
+Ans: A
+----
+Description: Solve the following arithmetic problems on ratios and fractions, writing out intermediate arithmetic calculations as python code. Store your result as a variable named 'ans'.
+Input: M men agree to purchase a gift for Rs. D. If 3 men drop out how much more will each have to contribute towards the purchase of the gift?  A)D/(M-3) B)MD/3 C)M/(D-3) D)3D/(M**2-3M) E)None of these
+Q1: [generate python code] write python code to solve the problem, using math and sympy.
+#1:
+M = Symbol('M')
+D = Symbol('D')
+cost_before_dropout = D / M
+cost_after_dropout = D / (M - 3)
+ans=simplify(cost_after_dropout - cost_before_dropout)
+print(ans)
+Q2: [code execute] Execute the python code in #1 and get the value of "ans"
+#2: 3*D/(M*(M - 3))
+Q3: [compare] Which of the options among A)D/(M-3) B)MD/3 C)M/(D-3) D)3D/(M**2-3M) E)None of these is most similar to the answer? 
+#3: D
+Q4: [EOQ]
+Ans: D
+----
+Description: Solve the following middle-school arithmetic problems, writing out intermediate arithmetic calculations as python code. Store your result as a variable named 'ans'.
+Input: Janet’s ducks lay 16 eggs per day. She eats three for breakfast every morning and bakes muffins for her friends every day with four. She sells the remainder at the farmers' market daily for $2 per fresh duck egg. How much in dollars does she make every day at the farmers' market?
+Q1: [generate python code] write down the arithmetic or algebra equations as python code
+#1:
+total_eggs = 16
+eaten_eggs = 3
+baked_eggs = 4
+sold_eggs = total_eggs - eaten_eggs - baked_eggs
+dollars_per_egg = 2
+ans = sold_eggs * dollars_per_egg
+print(ans)
+Q2: [code execute] Execute the python code in #1 and get the value of "ans"
+#2: 18
+Q3: [EOQ]
+Ans:18
+----
+Description: Solve the following middle-school arithmetic problems, writing out intermediate arithmetic calculations as python code. Store your result as a variable named 'ans'.
+Input: Every day, Wendi feeds each of her chickens three cups of mixed chicken feed, containing seeds, mealworms and vegetables to help keep them healthy.  She gives the chickens their feed in three separate meals. In the morning, she gives her flock of chickens 15 cups of feed.  In the afternoon, she gives her chickens another 25 cups of feed.  How many cups of feed does she need to give her chickens in the final meal of the day if the size of Wendi's flock is 20 chickens?
+Q1: [generate python code] write down the arithmetic or algebra equations as python code
+#1:
+numb_of_chickens = 20
+cups_for_each_chicken = 3
+cups_for_all_chicken = num_of_chickens * cups_for_each_chicken
+cups_in_the_morning = 15
+cups_in_the_afternoon = 25
+ans = cups_for_all_chicken - cups_in_the_morning - cups_in_the_afternoon
+print(ans)
+Q2: [code execute] Execute the python code in #1 and get the value of "ans"
+#2: 20
+Q3: [EOQ]
+Ans: 20
+----
+Description: Solve the following middle-school arithmetic problems, writing out intermediate arithmetic calculations as python code. Store your result as a variable named 'ans'.
+Input: Joseph and Getty went to buy ice creams, they together bought 36 ice creams. On the way back, Joseph ate 12 of the ice creasm, and he has 2 ice creams left now. 
+Q1: [generate python code] write down the arithmetic or algebra equations as python code
+#1:
+num_ice_creams_bought_by_joseph = 2 + 12
+total_ice_creams = 36
+ans = total_ice_creams - num_ice_creams_bought_by_joseph
+print(ans)
+Q2: [code execute] Execute the python code in #1 and get the value of "ans"
+#2: 22
+Q3: [EOQ]
+Ans: 22
+----
+Description: Solve the following problems on financial data in the form of text and tables, writing out intermediate calculations as python code. Store your result as a variable named 'ans'.
+Input: american tower corporation and subsidiaries notes to consolidated financial statements ( 3 ) consists of customer-related intangibles of approximately $75.0 million and network location intangibles of approximately $72.7 million. the customer-related intangibles and network location intangibles are being amortized on a straight-line basis over periods of up to 20 years. For acquired customer-related and network location intangibles, what is the expected annual amortization expenses, in millions?
+Q1: [generate python code] write down the arithmetic or algebra equations as python code
+#1:
+customer_related_intangibles = 75
+network_location_intangibles = 72.7
+straight_line_basis = 20
+amortization_expenses = ( customer_related_intangibles + network_location_intangibles ) / straight_line_basis
+ans = amortization_expenses
+print(ans)
+Q2: [code execute] Execute the python code and get the value of "ans"
+#2: 7.385
+Q3: [EOQ]
+Ans: 7.385
+----
+Descripton: %s
+Input: %s
+Q1:"""
+
+
+
+def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
+    global few_shot_cot_prompt
+    global few_shot_pot_prompt
+    task_name = "Unit interpretation"
+    task_description = "(Unit interpretation) Select the option that best replaces '()' in each text input given the chocies presented, by solving the arithmetic word problem in the text input. Solving the problem will require reasoning about units of measurement."
+
+    if strategy == "fixed":
+        few_shot_cot_prompt = few_shot_cot_prompt
+    elif strategy == "random":
+        few_shot_cot_prompt = random_tasks(N=6)
+    elif strategy == "similar":
+        few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
+    elif strategy == "similar_auto_decomp":
+        few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
+    elif strategy == "llm_similar":
+        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
+
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=2048, temperature=temperature, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=2048, temperature=temperature, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description + """The final answer is the count of requested items in words, like "six" or "ten".""", x) for x in chunk]
         return gpt3(prompts)
 
@@ -330,39 +565,6 @@ def few_shot_cot(temperature=0.3):
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-
-from prompt_library import random_tasks, similar_tasks, llm_similar_tasks, similar_auto_breakdowns
-
-def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
-
-    if strategy == "random":
-        few_shot_cot_prompt = random_tasks(N=6)
-    elif strategy == "similar":
-        few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
-    elif strategy == "similar_auto_decomp":
-        few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
-    elif strategy == "llm_similar":
-        few_shot_cot_prompt = llm_similar_tasks(task_description, io_pairs, N=6)
-
-    def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=2048, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
-        return gpt3(prompts)
-
-    perf_array = []
-    runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
-        answers = []
-        for x in tqdm(chunks(inputs, 20)):
-            # x = [ex.replace("\nA:", "") for ex in x]
-            answers.extend(predict(task_description, x))
-        preds = [x.strip() for x in answers]
-        perf_array.append(substring_match(labels, preds))
-        print(perf_array)
-    print("Few-shot COT performance:")
-    print("Mean", np.mean(perf_array))
-    print("Std. Dev", np.std(perf_array))
 
 few_shot_pot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can generate python code to solve arithmetic and algebra equations in using functions from sympy.
 from sympy import Symbol
@@ -534,10 +736,77 @@ def affordance(temperature=0.3, model_name = "text-davinci-002"):
     print("Std. Dev", np.std(perf_array))
 
 
-# auto_decomp(10, 0.3)
-affordance(temperature=0.3, model_name="code-davinci-002")
-# dynamic_few_shot_cot(temperature=0.3, strategy="random")
-# few_shot_cot()
-# few_shot(N=5, temperature=0.3)
-# auto_cot()
-# few_shot_pot(temperature=0.3, model_name="code-davinci-002")
+
+def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+    
+    global few_shot_cot_prompt
+    task_name = "Unit interpretation"
+    task_description = "(Unit interpretation) Select the option that best replaces '()' in each text input given the chocies presented, by solving the arithmetic word problem in the text input. Solving the problem will require reasoning about units of measurement."
+
+    if strategy == "fixed":
+        few_shot_cot_prompt = few_shot_cot_prompt
+    elif strategy == "random":
+        few_shot_cot_prompt = random_tasks(N=6)
+    elif strategy == "similar":
+        few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
+    elif strategy == "similar_auto_decomp":
+        few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
+    elif strategy == "llm_similar":
+        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
+
+    interpreter = TopDownVisitorBeta()
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    perf_array = []
+    runs = 1
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        new_labels = ["Ans: " + label for label in labels]
+        for x in tqdm(chunks(inputs, 10)):
+            x = [ex.replace("\nDoes the preceding sentence contain non-contemporaneous (anachronistic) elements?", "") for ex in x]
+            prompts, answer = predict(task_description, x)
+            new_answer  = interpreter.batch_visit(prompts, answer)
+            answers.extend(new_answer)
+        preds = [x.strip() for x in answers]
+        perf_array.append(substring_match(new_labels, preds))
+        print(perf_array)
+    print("FS-CoT Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
+
+
+if __name__ == "__main__":
+    parser  = argparse.ArgumentParser()
+    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
+    parser.add_argument("--temperature", type=float, default="0.3")
+    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument("--num_train_examples", type=int, default=10)
+    parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
+    parser.add_argument("--self_consistency", default=False, action='store_true')
+
+    args = parser.parse_args()
+
+    print("Dataset statistics")
+    print(task_description)
+    print("Training examples:", len(train_inputs))
+    print("Dev examples:", len(inputs))
+
+    inputs = inputs[:args.num_dev_examples]
+    labels = labels[:args.num_dev_examples]
+
+    if args.inference_strategy == "few_shot":
+        few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=args.num_train_examples)
+        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
+        few_shot(args.num_train_examples, args.temperature, args.model_name)
+    elif args.inference_strategy == "auto_cot":
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
+    elif args.inference_strategy == "few_shot_cot":
+        few_shot_cot(args.temperature, args.model_name)
+    elif args.inference_strategy == "nl_program":
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)

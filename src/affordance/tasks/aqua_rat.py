@@ -1,19 +1,37 @@
+import argparse
+import ast
+import json
+import pdb
+import re
+import time
 from re import L
 from turtle import pd
-from utils import gpt3, propose_decomposition, propose_instruction, chunks, get_subset, OpenAIModel, cache_dir, substring_match
 
 import datasets
 import numpy as np
 from tqdm import tqdm
-import json, pdb
-import func_timeout
-import re
-from pot_tools import safe_execute, simplify_ans
+from transformers import GPT2Tokenizer
+from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+                   get_few_shot_prompt, get_subset, gpt3,
+                   propose_decomposition, propose_instruction, substring_match)
+
+tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+import urllib.request
+from collections import Counter
+
+tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+from prompt_library import (llm_similar_tasks, random_tasks,
+                            similar_auto_breakdowns, similar_tasks)
+from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 
 data = datasets.load_dataset('aqua_rat', 'raw', cache_dir=cache_dir)['validation']
 inputs = [d['question'] + " " + " ".join(d['options']) for d in data]
 labels = [d['correct'] for d in data]
 print(len(inputs))
+
+data = datasets.load_dataset('aqua_rat', 'raw', cache_dir=cache_dir)['train']
+train_inputs = [d['question'] + " " + " ".join(d['options']) for d in data]
+train_labels = [d['correct'] for d in data]
 
 task_description="Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer."
 
@@ -59,9 +77,9 @@ def token_match(labels, predictions):
     return (1.0*correct)/count
 
 
-def aqua_rat():
+def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=200, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name, temperature=temperature, max_length=200, quote='---', n=1)
         prompts = ["""What is the sum of 100 consecutive integers from -49 inclusive, in a increasing order? A)-29 B)50 C)-30 D)30 E)60
 B
 ----
@@ -109,20 +127,133 @@ E
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-def auto_cot(temperature=0.3):
+auto_cot_corrected_prompt = """Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer.
+Ramu bought an old car for Rs. 42000. He spent Rs. 13000 on repairs and sold it for Rs. 64900. What is his profit percent? A)16%% B)88%% C)18%% D)14%% E)28%%
+The final answer one of the five options.
+A: Let's think step-by-step.
+
+Ramu bought an old car for Rs. 42000.
+He spent Rs. 13000 on repairs.
+That means he paid Rs. 42000 + 13000 = 55000 for the car.
+He sold it for Rs. 64900.
+His profit was Rs. 64900 - Rs. 55000, or Rs. 9900.
+His profit percent was Rs. 9900 / Rs. 55000, which is 18%.
+The answer is 18%, or option B.
+
+The final answer is C.
+----
+Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer.
+C and D started a business investing Rs. 49,000 and Rs. 35,000 respectively. In what ratio the profit earned after 4 years be divided between C and D respectively? A)7:4 B)7:5 C)6:4 D)5:5 E)None of these
+The final answer one of the five options.
+A: Let's think step-by-step.
+
+The first step is to calculate the total profit earned after 4 years. We know that the total investment is Rs. 49,000 + Rs. 35,000 = Rs. 84,000. With no loss of generality, lets assume profit earned is 10%.
+10%% of Rs. 84,000 is Rs. 8,400.
+This means that the total profit earned is Rs. 8,400.
+The next step is to calculate the ratio of profit earned by C and D. We know that C invested Rs. 49,000 and D invested Rs. 35,000.
+The ratio of profit earned by C and D is Rs. 8,400 : Rs. 8,400 = 49,000 : 35,000.
+This means that the ratio of profit earned by C and D is 7:5.
+The final answer is option B: 7:5.
+
+The final answer is C.
+----
+Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer.
+What is the area M of the square with the following coordinates: (x, y), (20, 20), (20, 5), (x, 5)? A)60. B)85. C)125. D)225. E)It cannot be determined from the information given
+The final answer one of the five options.
+A: Let's think step-by-step.
+
+First, we need to calculate the length of one side of the square. We can do this by finding the difference between the x-coordinates or y-coordinates of the two points on that side. 
+There are two consecutive coordinates that we know make a side: (20, 20), (20, 5).
+In this case, the difference between the y-coordinates of the points (20, 20) and (20, 5) is 20 - 5 = 15.
+Next, we need to find the area of the square. The area of a square is equal to the length of one side squared. In this case, that would be 15^2.
+Therefore, the answer is D: 225.
+
+The final answer is D.
+----
+Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer.
+Shobha's Mathematics Test had 75 problems i.e. 10 arithmetic, 30 algebra and 35 geometry problems. Although she answered 70%% of the arithmetic, 40%% of the algebra and 60%% 0f the geometry problems correctly, she did not pass the test because she got less than 60%% of the problems right. How many more questions she would have needed to answer correctly to earn a 60%% passing grade? A)5 B)10 C)15 D)20 E)25
+The final answer one of the five options.
+A: Let's think step-by-step.
+
+Shobha's Mathematics Test had 75 problems in total.
+10 arithmetic problems + 30 algebra problems + 35 geometry problems = 75 problems
+Shobha answered 70%% of the arithmetic problems correctly.
+70%% of 10 arithmetic problems = 7 arithmetic problems
+Shobha answered 40%% of the algebra problems correctly.
+40%% of 30 algebra problems = 12 algebra problems
+Shobha answered 60%% of the geometry problems correctly.
+60%% of 35 geometry problems = 21 geometry problems
+Shobha needed a 60% passing grade, which would be 45 problems.
+7 arithmetic problems + 12 algebra problems + 21 geometry problems = 45 problems
+Shobha answered a total of 40 problems correctly.
+40 problems < 45 problems
+Shobha would need to answer 5 more problems correctly to earn a 60% passing grade.
+
+The final answer is A.
+----
+Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer.
+If a, b, and c are consecutive even integers and a < b < c, all of the following must be divisible by 4 EXCEPT A)a + c B)b + c C)ac D)(bc)/2 E)(abc)/4
+The final answer one of the five options.
+A: Let's think step-by-step.
+
+a, b, and c are consecutive even integers and a < b < c. Thus b is a+2 and c is a+4. Since a it even, it is divisible by 2. Therefore, we can write a as 2x for some integer x.
+Therefore a is 2x, b is 2x + 2, and c is 2x + 4
+Let's consider each option.
+a + c is 2x + 2x + 4 which is 2x + 4. 4x + 4 is divisible by 4. This eliminates option A.
+b + c is 2x + 2 + 2x + 4 which is 4x + 6. 4x is divisible by 4 but 6 is not. Thus, this option is not divisible by 4. 
+ac is 2x*(2x+4), which is 4x^2 + 8x. 4x^2 + 8x is divisible by 4. This eliminates option C.
+bc/2 is (2x + 2)*(2x + 4)/2. This evaluates to 2x^2 + 6x + 4. For both even and odd values of x, this expression is divisible by 4. This eliminates option D.
+(abc)/4 is 2x*(2x + 2)*(2x + 4)/4. This evaluates to 2x^3 + 6x^2 + 4x. divisible by 4. As before, for both even and odd values of x, this expression is divisible by 4. This eliminates option E.
+
+The final answer is B.
+----
+Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer.
+Two trains, each 160 m long, moving in opposite directions, cross other in 8 sec. If one is moving twice as fast the other, then the speed of the faster train is? A)26 km/hr B)17 km/hr C)60 km/hr D)77 km/hr E)48 km/hr
+The final answer one of the five options.
+A: Let's think step-by-step.
+
+We're told that two trains cross each other in 8 seconds.
+We're told that one train is moving twice as fast as the other train.
+That means the speed of the slower train is 1/2 the speed of the faster train.
+We're asked to find the speed of the faster train.
+The speed of the faster train is twice the speed of the faster train. Therefore, it covers twice the distance as the slower train.
+Since the trains are moving in opposite directions and pass each other, 160 meters is the distance covered by both trains in 8 seconds.
+2/3 of this distance is covered by the faster train. Therefore the faster train covers 160*2/3m in 8 seconds. Thus, it covers 320/3m in 8s. Its speed is (320/3)/8, which is 40/3 m/s.
+Converting to kilometers per hour, we get 40/3*(18/5). This is 48 km/hr, or option E.
+
+The final answer is E.
+----
+"""
+def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
     auto_cot_prompt = ""
-    for io_pair in io_pairs[:5]:
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=0.7, quote='---', n=1)
+    for io_pair in io_pairs:
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=0.7, quote='---', n=1)
         prompt = """%s\n"""% task_description + io_pair[0] + \
             """\nThe final answer one of the five options.\nA: Let's think step-by-step.\n""" 
         auto_cot_prompt += prompt
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
         # Add the final answer with special format so evaluation is easier.
+
+    if use_corrected:
+        auto_cot_prompt = auto_cot_corrected_prompt
+    
     print(auto_cot_prompt)
+    f = open("auto_cot_demonstrations.txt","a+")
+    f.write("Anachronisms\n\n")
+    f.write(auto_cot_prompt)
+
+    if not predict:
+        return
+
+    def predict_self_consistency(description, chunk, n=5):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
+            """%s\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        return gpt3(prompts)
 
     def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=500, temperature=temperature, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=temperature, quote='---', n=1)
         prompts=[auto_cot_prompt + """%s\n"""%task_description + \
             """%s\nThe final answer one of the five options.\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
         return gpt3(prompts)
@@ -267,9 +398,26 @@ Desciption: %s
 Input: %s
 Q1: """
 
-def few_shot_cot(temperature=0.3):
+def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
+
+    global few_shot_cot_prompt
+    global few_shot_pot_prompt
+    task_name = "Arithmetic about ratios"
+    task_description = """(Arithmetic about ratios) Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer."""
+
+    if strategy == "fixed":
+        few_shot_cot_prompt = few_shot_pot_prompt
+    elif strategy == "random":
+        few_shot_cot_prompt = random_tasks(N=6)
+    elif strategy == "similar":
+        few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
+    elif strategy == "similar_auto_decomp":
+        few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
+    elif strategy == "llm_similar":
+        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
+
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1024, temperature=temperature, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=1024, temperature=temperature, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
@@ -285,7 +433,7 @@ def few_shot_cot(temperature=0.3):
             answers.extend(predict(task_description, x))
         # preds = [[y.strip() for y in x.split("\n")] for x in answers]
         preds = [x.strip() for x in answers]
-        perf_array.append(substring_match(new_labels, preds))
+        perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("FS-CoT performance:")
     print("Mean", np.mean(perf_array))
@@ -440,4 +588,215 @@ Closest Option: """
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-PoT(0.3, 'code-davinci-002')
+few_shot_pot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can generate python code to solve arithmetic and algebra equations in using functions from sympy.
+from sympy import Symbol
+from sympy import simplify
+import math
+from sympy import solve_it
+# solve_it(equations, variable): solving the equations and return the variable value.
+
+Description: Solve the following arithmetic problems on ratios and fractions, writing out intermediate arithmetic calculations as python code. Store your result as a variable named 'ans'.
+Input:  In a flight of 600 km, an aircraft was slowed down due to bad weather. Its average speed for the trip was reduced by 200 km/hr and the time of flight increased by 30 minutes. The duration of the flight is:  A)1 hour B)2 hours C)3 hours D)4 hours E)5 hours
+Q1: [generate python code] write python code to solve the problem, using math and sympy.
+#1:
+duration = Symbol('duration', positive=True)
+delay = 30 / 60
+total_disntace = 600
+original_speed = total_disntace / duration
+reduced_speed = total_disntace / (duration + delay)
+solution = solve_it(original_speed - reduced_speed - 200, duration)
+ans = solution[duration]
+print(ans)
+Q2: [code execute] Execute the python code in #1 and get the value of "ans"
+#2:
+1.0
+Q3: [compare] Which of the options among A)1 hour B)2 hours C)3 hours D)4 hours E)5 hours is most similar to the answer? 
+#3: A
+Q4: [EOQ]
+Ans: A
+----
+Description: Solve the following arithmetic problems on ratios and fractions, writing out intermediate arithmetic calculations as python code. Store your result as a variable named 'ans'.
+Input: M men agree to purchase a gift for Rs. D. If 3 men drop out how much more will each have to contribute towards the purchase of the gift?  A)D/(M-3) B)MD/3 C)M/(D-3) D)3D/(M**2-3M) E)None of these
+Q1: [generate python code] write python code to solve the problem, using math and sympy.
+#1:
+M = Symbol('M')
+D = Symbol('D')
+cost_before_dropout = D / M
+cost_after_dropout = D / (M - 3)
+ans=simplify(cost_after_dropout - cost_before_dropout)
+print(ans)
+Q2: [code execute] Execute the python code in #1 and get the value of "ans"
+#2: 3*D/(M*(M - 3))
+Q3: [compare] Which of the options among A)D/(M-3) B)MD/3 C)M/(D-3) D)3D/(M**2-3M) E)None of these is most similar to the answer? 
+#3: D
+Q4: [EOQ]
+Ans: D
+----
+Description: Solve the following middle-school arithmetic problems, writing out intermediate arithmetic calculations as python code. Store your result as a variable named 'ans'.
+Input: Janet’s ducks lay 16 eggs per day. She eats three for breakfast every morning and bakes muffins for her friends every day with four. She sells the remainder at the farmers' market daily for $2 per fresh duck egg. How much in dollars does she make every day at the farmers' market?
+Q1: [generate python code] write down the arithmetic or algebra equations as python code
+#1:
+total_eggs = 16
+eaten_eggs = 3
+baked_eggs = 4
+sold_eggs = total_eggs - eaten_eggs - baked_eggs
+dollars_per_egg = 2
+ans = sold_eggs * dollars_per_egg
+print(ans)
+Q2: [code execute] Execute the python code in #1 and get the value of "ans"
+#2: 18
+Q3: [EOQ]
+Ans:18
+----
+Description: Solve the following middle-school arithmetic problems, writing out intermediate arithmetic calculations as python code. Store your result as a variable named 'ans'.
+Input: Every day, Wendi feeds each of her chickens three cups of mixed chicken feed, containing seeds, mealworms and vegetables to help keep them healthy.  She gives the chickens their feed in three separate meals. In the morning, she gives her flock of chickens 15 cups of feed.  In the afternoon, she gives her chickens another 25 cups of feed.  How many cups of feed does she need to give her chickens in the final meal of the day if the size of Wendi's flock is 20 chickens?
+Q1: [generate python code] write down the arithmetic or algebra equations as python code
+#1:
+numb_of_chickens = 20
+cups_for_each_chicken = 3
+cups_for_all_chicken = num_of_chickens * cups_for_each_chicken
+cups_in_the_morning = 15
+cups_in_the_afternoon = 25
+ans = cups_for_all_chicken - cups_in_the_morning - cups_in_the_afternoon
+print(ans)
+Q2: [code execute] Execute the python code in #1 and get the value of "ans"
+#2: 20
+Q3: [EOQ]
+Ans: 20
+----
+Description: Solve the following middle-school arithmetic problems, writing out intermediate arithmetic calculations as python code. Store your result as a variable named 'ans'.
+Input: Joseph and Getty went to buy ice creams, they together bought 36 ice creams. On the way back, Joseph ate 12 of the ice creasm, and he has 2 ice creams left now. 
+Q1: [generate python code] write down the arithmetic or algebra equations as python code
+#1:
+num_ice_creams_bought_by_joseph = 2 + 12
+total_ice_creams = 36
+ans = total_ice_creams - num_ice_creams_bought_by_joseph
+print(ans)
+Q2: [code execute] Execute the python code in #1 and get the value of "ans"
+#2: 22
+Q3: [EOQ]
+Ans: 22
+----
+Description: Solve the following problems on financial data in the form of text and tables, writing out intermediate calculations as python code. Store your result as a variable named 'ans'.
+Input: american tower corporation and subsidiaries notes to consolidated financial statements ( 3 ) consists of customer-related intangibles of approximately $75.0 million and network location intangibles of approximately $72.7 million. the customer-related intangibles and network location intangibles are being amortized on a straight-line basis over periods of up to 20 years. For acquired customer-related and network location intangibles, what is the expected annual amortization expenses, in millions?
+Q1: [generate python code] write down the arithmetic or algebra equations as python code
+#1:
+customer_related_intangibles = 75
+network_location_intangibles = 72.7
+straight_line_basis = 20
+amortization_expenses = ( customer_related_intangibles + network_location_intangibles ) / straight_line_basis
+ans = amortization_expenses
+print(ans)
+Q2: [code execute] Execute the python code and get the value of "ans"
+#2: 7.385
+Q3: [EOQ]
+Ans: 7.385
+----
+Descripton: %s
+Input: %s
+Q1:"""
+
+def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+    global few_shot_cot_prompt
+    global few_shot_pot_prompt
+    task_name = "Arithmetic about ratios"
+    task_description = """(Arithmetic about ratios) Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer."""
+
+    if strategy == "fixed":
+        few_shot_cot_prompt = few_shot_pot_prompt
+    elif strategy == "random":
+        few_shot_cot_prompt = random_tasks(N=6)
+    elif strategy == "similar":
+        few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
+    elif strategy == "similar_auto_decomp":
+        few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
+    elif strategy == "llm_similar":
+        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
+
+    interpreter = TopDownVisitorBeta(model_name=model_name)
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    def predict_self_consistency(description, chunk, n=5):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    if self_consistency:
+        perf_array = []
+        runs = 5
+        batch_size = 10
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = [] # List of counters
+            for x in tqdm(chunks(inputs, batch_size)):
+                prompts, answer_set = predict_self_consistency(task_description, x)
+                result_counter = [Counter() for i in range(batch_size)]
+                for ans in answer_set:
+                    new_answer = interpreter.batch_visit(prompts, ans)
+                    new_answer = [get_answer(program) for program in new_answer]
+                    for enum, pred in enumerate(new_answer):
+                        if pred is not None:
+                            result_counter[enum].update([pred])
+                answers.extend(result_counter)
+            preds = [x.most_common(1)[0][0] for x in answers]
+            perf_array.append(substring_match(labels, preds))
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+
+    perf_array = []
+    runs = 1
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        label_dict = ["ABCDE".index(l) for l in labels]
+        new_labels = [re.split('[ABCDE]\)', inp[re.search("A\)", inp).span(0)[0]:])[1:][label_dict[i]].strip() for i, inp in enumerate(inputs)]
+        for x in tqdm(chunks(inputs, 10)):
+            x = [ex.replace("\nA:", "") for ex in x]
+            prompts, answer = predict(task_description, x)
+            new_answer  = interpreter.batch_visit(prompts, answer)
+            answers.extend(new_answer)
+        preds = [get_answer(x.strip()) for x in answers]
+        perf_array.append(substring_match(labels, preds))
+        print(perf_array)
+    print("FS-CoT Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
+
+if __name__ == "__main__":
+    parser  = argparse.ArgumentParser()
+    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
+    parser.add_argument("--temperature", type=float, default="0.3")
+    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument("--num_train_examples", type=int, default=10)
+    parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
+    parser.add_argument("--self_consistency", default=False, action='store_true')
+
+    args = parser.parse_args()
+
+    print("Dataset statistics")
+    print(task_description)
+    print("Training examples:", len(train_inputs))
+    print("Dev examples:", len(inputs))
+
+    inputs = inputs[:args.num_dev_examples]
+    labels = labels[:args.num_dev_examples]
+
+    if args.inference_strategy == "few_shot":
+        few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=args.num_train_examples)
+        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
+        few_shot(args.num_train_examples, args.temperature, args.model_name)
+    elif args.inference_strategy == "auto_cot":
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
+    elif args.inference_strategy == "few_shot_cot":
+        few_shot_cot(args.temperature, args.model_name)
+    elif args.inference_strategy == "nl_program":
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)
+
+
+

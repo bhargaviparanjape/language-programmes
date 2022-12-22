@@ -1,15 +1,28 @@
+import argparse
+import ast
+import json
+import pdb
+import re
+import time
 from re import L
 from turtle import pd
-from utils import gpt3, propose_decomposition, propose_instruction, chunks, get_subset, OpenAIModel, cache_dir, substring_match, parse_program, get_answer
 
 import datasets
 import numpy as np
 from tqdm import tqdm
-import json, pdb
-import re
-from sequential_interpreter import TopDownVisitorBeta, TopDownVisitor
-from pot_tools import safe_execute
-import time
+from transformers import GPT2Tokenizer
+from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+                   get_few_shot_prompt, get_subset, gpt3,
+                   propose_decomposition, propose_instruction, substring_match)
+
+tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+import urllib.request
+from collections import Counter
+
+tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+from prompt_library import (llm_similar_tasks, random_tasks,
+                            similar_auto_breakdowns, similar_tasks)
+from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 
 d = datasets.load_dataset('bigbench', 'operators', cache_dir=cache_dir)
 inputs = d['train']['inputs'] + d['validation']['inputs']
@@ -17,6 +30,11 @@ inputs = d['train']['inputs'] + d['validation']['inputs']
 labels = d['train']['targets'] + d['validation']['targets']
 labels = [l[0] for l in labels]
 # print(len(inputs))
+
+
+train_inputs = d['train']['inputs']
+train_labels = d['train']['targets']
+
 
 task_description = "Given the definition of the op operator, compute the result."
 
@@ -54,9 +72,10 @@ def token_match(labels, predictions):
         count += 1
     return (1.0*correct)/count
 
-def operators():
+
+def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=200, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=200, quote='---', n=1)
         prompts = ["""Given the definition of the op operator, compute the result.
 i op j subtracts j from i.
 7 op 3 =
@@ -99,20 +118,37 @@ op 16 0 10 6 =
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-def auto_cot(temperature=0.3):
+
+auto_cot_corrected_prompt = """"""
+def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
     auto_cot_prompt = ""
     for io_pair in io_pairs[:3]:
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=0.7, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=0.7, quote='---', n=1)
         prompt = """%s\n"""% task_description + io_pair[0] + \
             """\nThe final answer is the result of the operation.\nA: Let's think step-by-step.\n""" 
         auto_cot_prompt += prompt
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
         # Add the final answer with special format so evaluation is easier.
+    if use_corrected:
+        auto_cot_prompt = auto_cot_corrected_prompt
+    
     print(auto_cot_prompt)
+    f = open("auto_cot_demonstrations.txt","a+")
+    f.write("Anachronisms\n\n")
+    f.write(auto_cot_prompt)
+
+    if not predict:
+        return
+
+    def predict_self_consistency(description, chunk, n=5):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
+            """%s\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        return gpt3(prompts)
 
     def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=500, temperature=temperature, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=temperature, quote='---', n=1)
         prompts=[auto_cot_prompt + """%s\n"""%task_description + \
             """%s\nThe final answer is the result of the operation.\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
         return gpt3(prompts)
@@ -254,6 +290,7 @@ Desciption: %s
 Input: %s
 Q1: """
 
+
 few_shot_pot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can generate python code to solve arithmetic and algebra equations in using functions from sympy.
 from sympy import Symbol
 from sympy import simplify
@@ -362,67 +399,53 @@ Descripton: %s
 Input: %s
 Q1:"""
 
-def few_shot_cot(temperature=0.3):
-    def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=2048, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
-        return gpt3(prompts)
 
-    perf_array = []
-    runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
-        answers = []
-        for x in tqdm(chunks(inputs, 20)):
-            x = [ex.replace("\nA:", "") for ex in x]
-            answers.extend(predict(task_description, x))
-        # preds = [[y.strip() for y in x.split("\n")] for x in answers]
-        preds = [x.strip() for x in answers]
-        perf_array.append(substring_match(labels, preds))
-        print(perf_array)
-    print("FS-CoT performance:")
-    print("Mean", np.mean(perf_array))
-    print("Std. Dev", np.std(perf_array))
+# def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
+#     def predict(description, chunk):
+#         gpt3 = OpenAIModel(model=model_name,  max_length=2048, temperature=temperature, quote='---', n=1)
+#         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+#         return gpt3(prompts)
 
-from prompt_library import random_tasks, similar_tasks, llm_similar_tasks, similar_auto_breakdowns
+#     perf_array = []
+#     runs = 5
+#     for run in range(runs): 
+#         print("Run %d"%run)
+#         answers = []
+#         for x in tqdm(chunks(inputs, 20)):
+#             x = [ex.replace("\nA:", "") for ex in x]
+#             answers.extend(predict(task_description, x))
+#         # preds = [[y.strip() for y in x.split("\n")] for x in answers]
+#         preds = [x.strip() for x in answers]
+#         perf_array.append(substring_match(labels, preds))
+#         print(perf_array)
+#     print("FS-CoT performance:")
+#     print("Mean", np.mean(perf_array))
+#     print("Std. Dev", np.std(perf_array))
 
-def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
 
-    if strategy == "random":
+def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
+
+    global few_shot_cot_prompt
+    global few_shot_pot_prompt
+    task_name = "Operators"
+    task_description = "(Operators) Given the definition of the op operator, compute the result."
+
+    if strategy == "fixed":
+        few_shot_cot_prompt = few_shot_pot_prompt
+    elif strategy == "random":
         few_shot_cot_prompt = random_tasks(N=6)
     elif strategy == "similar":
         few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
     elif strategy == "similar_auto_decomp":
         few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
     elif strategy == "llm_similar":
-        few_shot_cot_prompt = llm_similar_tasks(task_description, io_pairs, N=6)
+        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=2048, temperature=temperature, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=2048, temperature=temperature, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
-    perf_array = []
-    runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
-        answers = []
-        for x in tqdm(chunks(inputs, 20)):
-            # x = [ex.replace("\nA:", "") for ex in x]
-            answers.extend(predict(task_description, x))
-        preds = [x.strip() for x in answers]
-        perf_array.append(substring_match(labels, preds))
-        print(perf_array)
-    print("Few-shot COT performance:")
-    print("Mean", np.mean(perf_array))
-    print("Std. Dev", np.std(perf_array))
-
-
-def few_shot_pot(temperature=0.3, model_name="text-davinci-002"):
-    def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=2048, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_pot_prompt% (description, x) for x in chunk]
-        return gpt3(prompts)
 
     perf_array = []
     runs = 5
@@ -479,12 +502,13 @@ def affordance(temperature=0.3, model_name = "text-davinci-002"):
 
 
 def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+    global few_shot_cot_prompt
     global few_shot_pot_prompt
-    task_name = "Arithmetic operators"
-    task_description = "Given the definition of the op operator, compute the result. Write out intermediate arithmetic operations as python code. Store your result as a variable named 'ans'."
+    task_name = "Operators"
+    task_description = "(Operators) Given the definition of the op operator, compute the result."
 
     if strategy == "fixed":
-        few_shot_cot_prompt = few_shot_pot_prompt
+        few_shot_cot_prompt = few_shot_cot_prompt
     elif strategy == "random":
         few_shot_cot_prompt = random_tasks(N=6)
     elif strategy == "similar":
@@ -545,11 +569,32 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     print("Std. Dev", np.std(perf_array))
 
 
-# auto_decomp(10, 0.3)
-# affordance(temperature=0.3, model_name="code-davinci-002")
-# dynamic_few_shot_cot(temperature=0.3, strategy="random")
-# few_shot_cot()
-# few_shot(N=5, temperature=0.3)
-# auto_cot()
-# few_shot_pot(temperature=0.2, model_name="code-davinci-002")
-nl_program(temperature=0.3, model_name="text-davinci-002")
+if __name__ == "__main__":
+    parser  = argparse.ArgumentParser()
+    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
+    parser.add_argument("--temperature", type=float, default="0.3")
+    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument("--num_train_examples", type=int, default=10)
+    parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
+    parser.add_argument("--self_consistency", default=False, action='store_true')
+
+    args = parser.parse_args()
+
+    print("Dataset statistics")
+    print(task_description)
+    print("Training examples:", len(train_inputs))
+    print("Dev examples:", len(inputs))
+
+    inputs = inputs[:args.num_dev_examples]
+    labels = labels[:args.num_dev_examples]
+
+    if args.inference_strategy == "few_shot":
+        few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=args.num_train_examples)
+        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
+        few_shot(args.num_train_examples, args.temperature, args.model_name)
+    elif args.inference_strategy == "auto_cot":
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
+    elif args.inference_strategy == "few_shot_cot":
+        few_shot_cot(args.temperature, args.model_name)
+    elif args.inference_strategy == "nl_program":
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)

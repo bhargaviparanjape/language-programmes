@@ -1,15 +1,28 @@
+import argparse
+import ast
+import json
+import pdb
+import re
+import time
 from re import L
 from turtle import pd
-from utils import gpt3, propose_decomposition, propose_instruction, chunks, get_subset, OpenAIModel, cache_dir, substring_match, search, get_few_shot_prompt
 
 import datasets
 import numpy as np
 from tqdm import tqdm
-import json, pdb
-import re
-from utils import get_few_shot_prompt
 from transformers import GPT2Tokenizer
+from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+                   get_few_shot_prompt, get_subset, gpt3,
+                   propose_decomposition, propose_instruction, substring_match)
+
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+import urllib.request
+from collections import Counter
+
+tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+from prompt_library import (llm_similar_tasks, random_tasks,
+                            similar_auto_breakdowns, similar_tasks)
+from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 
 # Startegies for unknown questions
 # predictions about future times from present day
@@ -24,6 +37,9 @@ d = datasets.load_dataset('bigbench', 'known_unknowns', cache_dir=cache_dir)
 inputs = d['train']['inputs'] + d['validation']['inputs']
 labels = d['train']['targets']  + d['validation']['targets']
 labels = [l[0] for l in labels]
+
+train_inputs = d['train']['inputs']
+train_labels = d['train']['targets']
 
 # Instructions that Flipped learning comes up with (not known)
 task_description = """Answer the question by choosing one of the two options provided. If the answer can't be found, the final answer should be the string "Unknown"."""
@@ -83,18 +99,18 @@ def token_match(labels, predictions):
         count += 1
     return (1.0*correct)/count
 
-def few_shot(N=10, temperature=0.3):
+def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     few_shot_prompt = get_few_shot_prompt(inputs, [[d] for d in labels], n=N)
     print(len(tokenizer(few_shot_prompt)['input_ids']))
 
     def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=200, temperature=temperature, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=200, temperature=temperature, quote='---', n=1)
         prompts = ["""%s\
 %s""" % (few_shot_prompt, x) for x in chunk]
         return gpt3(prompts)
 
     perf_array = []
-    runs = 20
+    runs = 5
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
@@ -238,7 +254,7 @@ Output: Unknown"""
         last_n = int(re.findall(r'(\d+)\.', decomposition)[-1])
     #     decomposition += '\n%s. Output YES if there is an anachronism, and NO otherwise' % (last_n + 1)
         def decomposition_fn(sentences):
-            gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, quote='---', n=1)
+            gpt3 = OpenAIModel(model=model_name,  max_length=1000, quote='---', n=1)
             out = []
             for chunk in chunks(sentences, batch_size):
                 prompts = ['''The task is to answer the question or figure out if the answer is unknown. Using the following steps will help.
@@ -371,14 +387,30 @@ Input: %s
 Q1:"""
 
 
-def few_shot_cot(temperature=0.3):
+def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
+    global few_shot_cot_prompt
+    task_name = "Known Unknown"
+    task_description = """(Known Unknown) Answer the question by choosing one of the two options provided. If the answer can't be found, the final answer should be the string "Unknown"."""
+
+    if strategy == "fixed":
+        few_shot_cot_prompt = few_shot_cot_prompt
+    elif strategy == "random":
+        few_shot_cot_prompt = random_tasks(N=6)
+    elif strategy == "similar":
+        few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
+    elif strategy == "similar_auto_decomp":
+        few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
+    elif strategy == "llm_similar":
+        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
+
+        
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=0.4, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=0.4, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
     perf_array = []
-    runs = 20
+    runs = 5
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
@@ -392,26 +424,110 @@ def few_shot_cot(temperature=0.3):
     print("Std. Dev", np.std(perf_array))
 
 
-def auto_cot(temperature=0.3):
+auto_cot_corrected_prompt = """Answer the question by choosing one of the two options provided. If the answer can't be found, the final answer should be the string "Unknown".
+Q: Who is a famous whistler?
+  choice: Unknown
+  choice: Ronnie Ronalde
+The final answer is either the answer phrase or the word "Unknown".
+A: Let's think step-by-step.
+
+First, we need to identify what is being asked. In this case, the question is asking for a famous whistler.
+Second, we need to look at the choices provided. We see that one of the choices is Ronnie Ronalde, so we can infer that he is a famous whistler.
+
+The final answer is Ronnie Ronalde
+----
+Answer the question by choosing one of the two options provided. If the answer can't be found, the final answer should be the string "Unknown".
+Q: What type of hat did Charlie Chaplin wear?
+  choice: Unknown
+  choice: Bowler hat
+The final answer is either the answer phrase or the word "Unknown".
+A: Let's think step-by-step.
+
+First, we need to find out what type of hat Charlie Chaplin wore. To do this, we can either search for pictures of him online, or look for information in a biography or other source.
+The bowler hat and cane were Charlie Chaplin's trademarks and indispensable props to his famous Tramp guise.
+
+The final answer is Bowler hat.
+----
+Answer the question by choosing one of the two options provided. If the answer can't be found, the final answer should be the string "Unknown".
+Q: How many people in Cheyenne, Wyoming were eating during the last solar eclipse?
+  choice: Unknown
+  choice: 156
+The final answer is either the answer phrase or the word "Unknown".
+A: Let's think step-by-step.
+
+First, we need to find out how many people were living in Cheyenne, Wyoming during the last solar eclipse.
+According to the US Census Bureau, the population of Cheyenne, Wyoming was 59,466 in 2010.
+Next, we need to find out how many of those people were eating during the last solar eclipse.
+We don't have any data on that.
+
+The final answer is Unknown.
+----
+Answer the question by choosing one of the two options provided. If the answer can't be found, the final answer should be the string "Unknown".
+Q: How many legs do ants have?
+  choice: Unknown
+  choice: 6
+The final answer is either the answer phrase or the word "Unknown".
+A: Let's think step-by-step.
+
+First, we need to find out how many legs ants have. We can look this up in a reference book, or we can ask someone who knows.
+From what we can tell, ants have six legs. Therefore, the answer to the question is six.
+
+The final answer is six.
+----
+Answer the question by choosing one of the two options provided. If the answer can't be found, the final answer should be the string "Unknown".
+Q: How much food does the cat Tinyman Zhengel eat every day?
+  choice: Unknown
+  choice: 250 calories
+The final answer is either the answer phrase or the word "Unknown".
+A: Let's think step-by-step.
+
+First, we need to establish what we know. We know that Tinyman Zhengel is a cat, and that he eats food every day. However, we don't know how much food he eats every day.
+Next, we need to consider our options. We can either estimate how much food Tinyman Zhengel eats every day, or we can ask him directly.
+If we ask Tinyman Zhengel directly, he will be able to tell us exactly how much food he eats every day. However, since we don't have the ability to communicate with Tinyman Zhengel, we will not be able to get an accurate answer.
+Therefore, the best answer is "Unknown".
+
+The final answer is Unknown.
+----
+"""
+
+def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
+    global auto_cot_corrected_prompt
     auto_cot_prompt = ""
-    for io_pair in io_pairs[:5]:
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=0.7, quote='---', n=1)
+    for io_pair in io_pairs:
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=0.7, quote='---', n=1)
         prompt = """%s\n"""% task_description + io_pair[0] + \
             """\nThe final answer is either the answer phrase or the word "Unknown".\nA: Let's think step-by-step.\n""" 
         auto_cot_prompt += prompt
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
         # Add the final answer with special format so evaluation is easier.
+    
+    if use_corrected:
+        auto_cot_prompt = auto_cot_corrected_prompt
+    
     print(auto_cot_prompt)
+    f = open("auto_cot_demonstrations.txt","a+")
+    f.write("Anachronisms\n\n")
+    f.write(auto_cot_prompt)
 
-    def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=500, temperature=temperature, quote='---', n=1)
+    if not predict:
+      return
+
+    def predict_self_consistency(description, chunk, n=5):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
         prompts=[auto_cot_prompt + """%s\n"""%task_description + \
             """%s\nThe final answer is either the answer phrase or the word "Unknown".\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
         return gpt3(prompts)
 
+    def predict(chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=temperature, quote='---', n=1)
+        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
+            """%s\nThe final answer is either the answer phrase or the word "Unknown".\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        return gpt3(prompts)
+
+
     perf_array = []
-    runs = 20
+    runs = 5
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
@@ -425,7 +541,6 @@ def auto_cot(temperature=0.3):
     print("Perf Array", perf_array)
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
-
 
 
 def affordance(temperature=0.3):
@@ -458,7 +573,7 @@ def affordance(temperature=0.3):
         return "\n".join(new_lines)
 
     def predict_with_affordance(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=temperature, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
@@ -505,7 +620,75 @@ def affordance(temperature=0.3):
     print("Std. Dev", np.std(perf_array))
 
 
-# few_shot(N=5, temperature=0.3)
-affordance(temperature=0.4)
-# few_shot_cot(temperature=0.3)
-# auto_cot(temperature=0.7)
+def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+    
+    global few_shot_cot_prompt
+    task_name = "Known Unknown"
+    task_description = """(Known Unknown) Answer the question by choosing one of the two options provided. If the answer can't be found, the final answer should be the string "Unknown"."""
+
+    if strategy == "fixed":
+        few_shot_cot_prompt = few_shot_cot_prompt
+    elif strategy == "random":
+        few_shot_cot_prompt = random_tasks(N=6)
+    elif strategy == "similar":
+        few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
+    elif strategy == "similar_auto_decomp":
+        few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
+    elif strategy == "llm_similar":
+        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
+
+    interpreter = TopDownVisitorBeta()
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    perf_array = []
+    runs = 1
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        new_labels = ["Ans: " + label for label in labels]
+        for x in tqdm(chunks(inputs, 10)):
+            x = [ex.replace("\nDoes the preceding sentence contain non-contemporaneous (anachronistic) elements?", "") for ex in x]
+            prompts, answer = predict(task_description, x)
+            new_answer  = interpreter.batch_visit(prompts, answer)
+            answers.extend(new_answer)
+        preds = [x.strip() for x in answers]
+        perf_array.append(substring_match(new_labels, preds))
+        print(perf_array)
+    print("FS-CoT Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
+
+if __name__ == "__main__":
+    parser  = argparse.ArgumentParser()
+    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
+    parser.add_argument("--temperature", type=float, default="0.3")
+    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument("--num_train_examples", type=int, default=10)
+    parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
+    parser.add_argument("--self_consistency", default=False, action='store_true')
+
+    args = parser.parse_args()
+
+    print("Dataset statistics")
+    print(task_description)
+    print("Training examples:", len(train_inputs))
+    print("Dev examples:", len(inputs))
+
+    inputs = inputs[:args.num_dev_examples]
+    labels = labels[:args.num_dev_examples]
+
+    if args.inference_strategy == "few_shot":
+        few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=args.num_train_examples)
+        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
+        few_shot(args.num_train_examples, args.temperature, args.model_name)
+    elif args.inference_strategy == "auto_cot":
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
+    elif args.inference_strategy == "few_shot_cot":
+        few_shot_cot(args.temperature, args.model_name)
+    elif args.inference_strategy == "nl_program":
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)

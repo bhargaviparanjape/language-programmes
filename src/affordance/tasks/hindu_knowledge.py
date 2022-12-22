@@ -1,25 +1,38 @@
+import argparse
+import ast
+import json
+import pdb
+import re
+import time
 from re import L
 from turtle import pd
-from utils import gpt3, propose_decomposition, propose_instruction, chunks, get_subset, OpenAIModel, cache_dir, search, substring_match
 
 import datasets
 import numpy as np
 from tqdm import tqdm
-import json, pdb
-import re
-import time
-import ast
-from utils import get_few_shot_prompt
 from transformers import GPT2Tokenizer
+from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+                   get_few_shot_prompt, get_subset, gpt3,
+                   propose_decomposition, propose_instruction, substring_match)
+
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+import urllib.request
+from collections import Counter
+
+tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+from prompt_library import (llm_similar_tasks, random_tasks,
+                            similar_auto_breakdowns, similar_tasks)
+from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 
 
 d = datasets.load_dataset('bigbench', 'hindu_knowledge', cache_dir=cache_dir)
 inputs = d['train']['inputs'] + d['validation']['inputs']
 # inputs = [x.split('\n')[0] for x in inputs]
 labels = d['train']['targets'] + d['validation']['targets']
-
 labels = [l[0] for l in labels]
+
+train_inputs = d['train']['inputs']
+train_labels = d['train']['targets']
 
 task_description = "Hindu Knowledge: Answer these multiple-choice questions about Hindu mythology."
 
@@ -61,9 +74,9 @@ def token_match(labels, predictions):
     return (1.0*correct)/count
 
 
-def hindu_knowledge():
+def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-001",  max_length=200, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name, temperature=temperature, max_length=200, quote='---', n=1)
         prompts = ["""Q: In Hinduism, which musical instrument is most associated with the god Krishna?
   choice: Sitar
   choice: Veena
@@ -105,9 +118,8 @@ Shatrughna
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-# hindu_knowledge()
 
-few_shot_cot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use search functions like Google search in one or more of your substeps, if there in insufficient information. Other functions like arithmetic and logical operations can also be used.  
+few_shot_cot_prompt = """In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use search functions like Google search in one or more of your substeps, if there in insufficient information. Other functions like arithmetic and logical operations can also be used.  
 Description: Choose the option that best answers the question. If the question does not have a known answer, choose "Unknown". 
 Input: How many hairs were on Neil Armstrong's head when he landed on the moon?
   choice: Unknown
@@ -116,14 +128,14 @@ Q1: [search] How many hairs were on Neil Armstrong's head when he landed on the 
 #1: 
 Apollo 11 (July 16–24, 1969) was the American spaceflight that first landed humans on the Moon. Commander Neil Armstrong and lunar module pilot Buzz Aldri...
 Neil Alden Armstrong (August 5, 1930 – August 25, 2012) was an American astronaut and aeronautical engineer who became the first person to walk on the Moon ...
-Q2: Does the information help answer the question? There could be no definitive answer because the question is too specific, about personal details not in public record, because the answer is not yet known, or the question is opinion-based.
+Q2: [subquestion] Does the information help answer the question? There could be no definitive answer because the question is too specific, about personal details not in public record, because the answer is not yet known, or the question is opinion-based.
 #2: No. The question is too specific
-Q3: What is the final answer?
+Q3: [compare] What is the final answer?
 Unknown
-Q4: [EOC]
-Unknown
+Q4: [EOQ]
+Ans: Unknown
 ----
-Description: An anachronism is a mistake in chronology, or a person, thing, or event that is out of its proper time. Does the sentence contain an anachrornism?
+Description: An anachronism is a mistake in chronology, or a person, thing, or event that is out of its proper time. Figure out whether a sentence contains anachronisms or not, and answer 'Yes' or 'No'."
 Input: President George H. W. Bush called his generals to the Oval Office at the outset of the Gulf War.
 Q1: [tag] What are the entities in this sentence?
 #1: 
@@ -133,14 +145,14 @@ Q2: [search] When was President George H. W. Bush president?
 #2: George H. W. Bush's tenure as the 41st president of the United States began with his inauguration on January 20, 1989, and ended on January 20, 1993.
 Q3: [search] When was the Gulf War fought?
 #3: The Gulf War[b] was a 1990–1991 armed campaign waged by a 35-country military coalition in response to the Iraqi invasion of Kuwait.
-#4: Could these entities have co-existed based on thier time periods alone?
+#4: [subquestion] Could these entities have co-existed and interacted based on this information?
 Yes. Their time periods intersect.
-Q5: Is this an anachronism?
+Q5: [generate answer] Is this an anachronism?
 #5: No
-Q6: [EOC]
-No
+Q6: [EOQ]
+Ans: No
 ----
-Description: An anachronism is a mistake in chronology, or a person, thing, or event that is out of its proper time. Does the sentence contain an anachrornism?
+Description: An anachronism is a mistake in chronology, or a person, thing, or event that is out of its proper time. Figure out whether a sentence contains anachronisms or not, and answer 'Yes' or 'No'."
 Input: Kurt Cobain starred in the 1980 television show "Twin Peaks".
 Q1: [tag] What are the entities in this sentence?
 #1: 
@@ -150,12 +162,12 @@ Q2: [search] When did television show "Twin Peaks" air?
 #2: Twin Peaks is an American mystery serial drama television series created by Mark Frost and David Lynch. It premiered on ABC on April 8, 1990, and originally ran for two seasons until its cancellation in 1991.
 Q3: [search] When did Kurt Cobain live?
 #3: Kurt Donald Cobain (February 20, 1967 – c. April 5, 1994) was an American musician, best known as the lead vocalist, guitarist and primary songwriter of the ...
-Q4: Could these entities have co-existed based on this information?
+Q4: [subquestion] Could these entities have co-existed and interacted based on this information?
 No. Musician  Kurt Cobain could not have starred in Twin Peaks.
-Q5: Is this an anachronism?
+Q5: [generate answer] Is this an anachronism?
 #5: Yes
-Q6: [EOC]
-Yes
+Q6: [EOQ]
+Ans: Yes
 ----
 Description: Answer questions about Hindu mythology by choosing the option that best answers the question.
 Input: In the Mahabharata, Karna is cursed to forget the incantations needed to use which weapon?
@@ -163,12 +175,14 @@ Input: In the Mahabharata, Karna is cursed to forget the incantations needed to 
   choice: Narayanastra
   choice: Agneyastra
   choice: Brahmastra
-Q1: [search] In the Hindu epic Ramayana, who is the main villain? 
-#1: As a result, he cursed Karna, saying that HIS MARTIAL SKILLS, including the use of BRAHMASTRA, would abandon him when he needed them most. Indra, the King of Gods, stung Karna in the form of a bee to get him cursed by Parshuram. Karna walked through the woods in despair, feeling dejected by the curse. A skilled & devoted warrior...
-Q2: [compare] Which option is the answer in #3 most similar to?
-#2: Brahmastra
-Q3: [EOC]
-Brahmastra
+Q1: [subquestion] In the Mahabharata, Karna is cursed to forget the incantations needed to use which weapon?
+#1: No.
+Q2: [search] In the Hindu epic Ramayana, who is the main villain? 
+#2: As a result, he cursed Karna, saying that HIS MARTIAL SKILLS, including the use of BRAHMASTRA, would abandon him when he needed them most. Indra, the King of Gods, stung Karna in the form of a bee to get him cursed by Parshuram. Karna walked through the woods in despair, feeling dejected by the curse. A skilled & devoted warrior...
+Q3: [compare] Which option is the answer in #3 most similar to?
+#3: Brahmastra
+Q4: [EOQ]
+Ans: Brahmastra
 ----
 Description: Choose the option that best answers the question. If the question does not have a known answer, choose "Unknown". 
 Input: Where was Mark Twain born?
@@ -177,36 +191,36 @@ Input: Where was Mark Twain born?
 Q1: [search] Where was Mark Twain born?
 #1: 
 Mark Twain. Samuel Langhorne Clemens was born in Florida, Missouri, and later moved with his family to Hannibal, Missouri, where he grew up.
-Q2: Does the information help answer the question? There could be no definitive answer because the question is too specific, about personal details not in public record, because the answer is not yet known, or the question is opinion-based.
+Q2: [subquestion] Does the information help answer the question? There could be no definitive answer because the question is too specific, about personal details not in public record, because the answer is not yet known, or the question is opinion-based.
 #2: Yes. The answer is Florida, Missouri
-Q3: What is the final answer?
+Q3: [generate answer] What is the final answer?
 Florida, Missouri
-Q4: [EOC]
-Florida, Missouri
-----
-Description: Answer questions about Hindu mythology by choosing the option that best answers the question.
-Input: In the Hindu epic Ramayana, the main villain was a devotee of which deity?
-  choice: Indra
-  choice: Vishnu
-  choice: Brahma
-  choice: Shiva
-Q1: [subquestion] Can this question be answered step-by-step?
-#1: Yes.
-Q2: [search] In the Hindu epic Ramayana, who is the main villain? 
-#2: Ravana is the main antagonist of the Hindu Epic, the Ramayana. 
-Q3: [search] Ravana was a devotee of which deity?
-#3: Ravana, was an ardent devotee of Lord Shiva, is depicted and described as a great scholar,a brahman,a capable ruler and a maestro of the Veena.
-Q4: [compare] Which option is the answer in #3 most similar to?
-#4: Shiva
-Q5: [EOC]
-Shiva
+Q4: [EOQ]
+Ans: Florida, Missouri
 ----
 Desciption: %s 
 Input: %s
 Q1:"""
 
 
-def few_shot_cot(temperature=0.3, model_name="text-davinci-002"):
+def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
+    
+    global few_shot_cot_prompt
+    task_name = "Hindu Knowledge"
+    task_description = "(Hindu Knowledge) Answer these multiple-choice questions about Hindu mythology."
+
+    if strategy == "fixed":
+        few_shot_cot_prompt = few_shot_cot_prompt
+    elif strategy == "random":
+        few_shot_cot_prompt = random_tasks(N=6)
+    elif strategy == "similar":
+        few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
+    elif strategy == "similar_auto_decomp":
+        few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
+    elif strategy == "llm_similar":
+        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
+    
+
     def predict(description, chunk):
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=0.4, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
@@ -226,8 +240,55 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002"):
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
+auto_cot_corrected_prompt = """Hindu Knowledge: Answer these multiple-choice questions about Hindu mythology.
+Q: In Hinduism, which musical instrument is most associated with the god Krishna?
+  choice: Sitar
+  choice: Veena
+  choice: Flute
+  choice: Tabla (drum)
+The final answer should be one of the provided choices.
+A: Let's think step-by-step.
 
-def auto_cot(temperature=0.3):
+First, we need to recall what Hinduism is. Hinduism is a religion that originated in India. It is based on the belief in reincarnation and the principle of karma.
+
+Next, we need to think about the god Krishna. Krishna is a popular god in Hinduism. He is known as the "god of love" and is often portrayed playing a flute.
+
+Based on this information, we can conclude that the most likely answer is "flute."
+
+The final answer is "Flute".
+----
+Hindu Knowledge: Answer these multiple-choice questions about Hindu mythology.
+Q: In the Hindu epic Ramayana, which character killed Lavanasura?
+  choice: Lakshmana
+  choice: Shatrughna
+  choice: Bharata
+  choice: Rama
+The final answer should be one of the provided choices.
+A: Let's think step-by-step.
+
+First, we need to identify the Hindu epic Ramayana. This is an ancient Indian epic poem that tells the story of Rama, an avatar of the god Vishnu.
+
+Next, we need to identify the character Lavanasura. This is a demon king who is defeated by Rama in the story.
+
+Finally, we need to identify the character who killed Lavanasura. This was Shatrughna, Rama's brother.
+
+The final answer is "Shatrughna".
+----
+Hindu Knowledge: Answer these multiple-choice questions about Hindu mythology.
+Q: In Hinduism, the era known as Dvapara Yuga is preceded by which era?
+  choice: Krita Yuga
+  choice: Treta Yuga
+  choice: Kali Yuga
+  choice: Satya Yuga
+The final answer should be one of the provided choices.
+A: Let's think step-by-step.
+
+The Dvapara Yuga is the third era in the Hindu cosmology, and it is preceded by the second era. The second era is called Treta Yuga.
+
+The final answer is "Treta Yuga"."""
+
+def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
+    global auto_cot_corrected_prompt
     auto_cot_prompt = ""
     for io_pair in io_pairs[:5]:
         gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=0.7, quote='---', n=1)
@@ -237,27 +298,72 @@ def auto_cot(temperature=0.3):
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
         # Add the final answer with special format so evaluation is easier.
+    
+    if use_corrected:
+        auto_cot_prompt = auto_cot_corrected_prompt
+    
     print(auto_cot_prompt)
+    f = open("auto_cot_demonstrations.txt","a+")
+    f.write("Hindu Knowledge\n\n")
+    f.write(auto_cot_prompt)
 
-    def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=500, temperature=temperature, quote='---', n=1)
+    if not predict:
+        return
+
+    def predict_self_consistency(description, chunk, n=5):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
         prompts=[auto_cot_prompt + """%s\n"""%task_description + \
             """%s\nThe final answer should be one of the provided choices.\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
         return gpt3(prompts)
 
-    perf_array = []
-    runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
-        answers = []
-        for x in tqdm(chunks(inputs, 20)):
-            x = [ex.replace("\nA:", "") for ex in x]
-            answers.extend(predict(x))
-        preds = [x.strip() for x in answers]
-        perf_array.append(substring_match(labels, preds))
-    print("Auto-CoT Performance:")
-    print("Mean", np.mean(perf_array))
-    print("Std. Dev", np.std(perf_array))
+    def predict(chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=temperature, quote='---', n=1)
+        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
+            """%s\nThe final answer should be one of the provided choices.\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        return gpt3(prompts)
+    
+    if self_consistency:
+        perf_array = []
+        runs = 1
+        batch_size = 2
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = [] # List of counters
+            for x in tqdm(chunks(inputs, batch_size)):
+                x = [ex.replace("\nA:", "") for ex in x]
+                answer_set = predict_self_consistency(task_description, x)
+                result_counter = [Counter() for i in range(batch_size)]
+                for chunk_no, ans_chunk in enumerate(chunks(answer_set, 5)):
+                    preds = []
+                    for x in ans_chunk:
+                        if re.search("""The final answer is """, x):
+                            preds.append(x[re.search("""The final answer is """, x).span(0)[-1]:])
+                        else:
+                            preds.append(x.strip())
+                    for enum, pred in enumerate(ans_chunk):
+                        # Only add to the counter if there is a legitimate answer
+                        if re.search("""The final answer is """, pred):
+                            result_counter[chunk_no].update([pred[re.search("""The final answer is """, x).span(0)[-1]:]])
+                answers.extend(result_counter)
+            preds = [x.most_common(1)[0][0] for x in answers]
+            perf_array.append(substring_match(labels, preds))
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+    else:
+        perf_array = []
+        runs = 5
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = []
+            for x in tqdm(chunks(inputs, 20)):
+                x = [ex.replace("\nA:", "") for ex in x]
+                answers.extend(predict(x))
+            preds = [x.strip() for x in answers]
+            perf_array.append(substring_match(labels, preds))
+        print("Auto-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
 
 
 def affordance(temperature = 0.3):
@@ -459,7 +565,111 @@ def notebook(temperature=0.3, model_name="text-davinci-002"):
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-# auto_cot(temperature=0.3)
-few_shot_cot(temperature=0.3, model_name="code-davinci-002")
-# affordance(temperature=0.3)
-# notebook(temperature=0.3, model_name="code-davinci-002")
+
+def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+    global few_shot_cot_prompt
+    task_name = "Hindu Knowledge"
+    task_description = "(Hindu Knowledge) Answer these multiple-choice questions about Hindu mythology."
+
+    if strategy == "fixed":
+        few_shot_cot_prompt = few_shot_cot_prompt
+    elif strategy == "random":
+        few_shot_cot_prompt = random_tasks(N=6)
+    elif strategy == "similar":
+        few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
+    elif strategy == "similar_auto_decomp":
+        few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
+    elif strategy == "llm_similar":
+        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
+
+    interpreter = TopDownVisitorBeta(model_name=model_name)
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    def predict_self_consistency(description, chunk, n=5):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    if self_consistency:
+        perf_array = []
+        runs = 1
+        batch_size = 2
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = [] # List of counters
+            for x in tqdm(chunks(inputs, batch_size)):
+                x = [ex.replace("\nA:", "") for ex in x]
+                prompts, answer_set = predict_self_consistency(task_description, x)
+                result_counter = [Counter() for i in range(batch_size)]
+                for chunk_no, ans_chunk in enumerate(chunks(answer_set, 5)):
+                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*5, ans_chunk)
+                    new_answer = [get_answer(program) for program in new_answer]
+                    for enum, pred in enumerate(new_answer):
+                        if pred is not None:
+                            result_counter[chunk_no].update([pred])
+                time.sleep(60)
+                answers.extend(result_counter)
+            preds = [x.most_common(1)[0][0] for x in answers]
+            perf_array.append(substring_match(labels, preds))
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+
+    else:
+        perf_array = []
+        runs = 1
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = []
+            for x in tqdm(chunks(inputs, 10)):
+                x = [ex.replace("\nA:", "") for ex in x]
+                prompts, answer = predict(task_description, x)
+                new_answer  = interpreter.batch_visit(prompts, answer)
+                answers.extend(new_answer)
+                time.sleep(30)
+            preds = [x.strip() for x in answers]
+            perf_array.append(substring_match(labels, preds))
+
+            # Report on interpreter performance
+            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+            positive_rate = sum(positive_calls)/len(interpreter.execution_details)
+            
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+        print("Rate of affordance call", positive_rate)
+
+
+if __name__ == "__main__":
+    parser  = argparse.ArgumentParser()
+    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
+    parser.add_argument("--temperature", type=float, default="0.3")
+    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument("--num_train_examples", type=int, default=10)
+    parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
+    parser.add_argument("--self_consistency", default=False, action='store_true')
+
+    args = parser.parse_args()
+
+    print("Dataset statistics")
+    print(task_description)
+    print("Training examples:", len(train_inputs))
+    print("Dev examples:", len(inputs))
+
+    inputs = inputs[:args.num_dev_examples]
+    labels = labels[:args.num_dev_examples]
+
+    if args.inference_strategy == "few_shot":
+        few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=args.num_train_examples)
+        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
+        few_shot(args.num_train_examples, args.temperature, args.model_name)
+    elif args.inference_strategy == "auto_cot":
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
+    elif args.inference_strategy == "few_shot_cot":
+        few_shot_cot(args.temperature, args.model_name)
+    elif args.inference_strategy == "nl_program":
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)

@@ -151,6 +151,12 @@ class Command:
     @classmethod
     def convert_to_nlprogram(cls, rank, command, input_only=False):
         # TODO: Add feature for multiline (not all multiline inputs and outputs are in new lines in the retrieval)
+
+        if not command.command_input:
+            # The program parse identified a command name but no command input or command output.
+            # Based on strict grammer parsing rules, this command node is [EOQ]
+            return "Q{0}: {1}".format(rank, command.command_name)
+
         input_sep = "\n" if "\n" in command.command_input else " "
         output_sep = "\n" if "\n" in command.command_output else " "
         if not input_only:
@@ -215,6 +221,31 @@ class Node:
     def __str__(self):
         return json.dumps({"expr_name": self.expr_name, "text": self.text}, indent=2)
 
+
+def parse_incomplete_program(program=None):
+    import parsimonious
+
+
+    incomplete_grammar = parsimonious.grammar.Grammar(
+r"""
+program = program_start*node*partial_node
+program_start = input_start~r"( |\n)"text~r"\n"
+input_start = ~r"Input:"
+text = ~r"(?<=Input:( |\n))(.|\n|\t)*?(?=\nQ[0-9]+:)"
+node = command_node~r"\n"output_node~r"\n"
+command_node = command_start~r"( |\n)"command_instruction
+output_node = begin_answer~r"( |\n)"output
+command_instruction = ~r"(?<=\]( |\n))(.|\n|\t)*?(?=\n\#[0-9]+)"
+command_start = ~r"Q[0-9]+: \[[A-Za-z_ ]+\]"
+begin_answer = ~r"\#[0-9]+:"
+output = ~r"(?<=\#[0-9]+:( |\n))(.|\n|\t)*?(?=\nQ[0-9]+:)"
+partial_node = partial_command_answer / partial_command
+partial_command = command_start~r"( |\n)"~r"(?<=\]( |\n))(.|\n|\t)*?$"
+partial_command_answer = command_node~r"\n"partial_answer
+partial_answer = begin_answer~r"( |\n)"~r"(?<=\#[0-9]+:( |\n))(.|\n|\t)*?$"
+""")
+    incomplete_parsed_program = incomplete_grammar.parse(program)
+    return incomplete_parsed_program
 
 
 def parse_program(program=None):
@@ -289,9 +320,14 @@ final_answer = ~r"Ans:( |\n)(.|\n)*$"
     nl_program = Program(input_text, command_node_list, answer)
     return nl_program
 
+def fix_program(program):
+    # Given various incomplete program parses, figure out a few common mistakes GPT-3 makes and fix them. 
+    # This is a more all-encompassing version of complete_program
+    pass
+
 import re
 # as per recommendation from @freylis, compile once only
-CLEANR = re.compile('<.*?>') 
+CLEANR = re.compile('<.*?>')
 
 def cleanhtml(raw_html):
   cleantext = re.sub(CLEANR, '', raw_html)
@@ -409,10 +445,14 @@ try:
 except:
     print "enter integer values only"
 Q5: [compare]
-Which of the generated code snippets are most like the original one?
-#5: prints sum of two input numbers only if they are integers otherwise raises error
+Which of the generated code snippets are most like the original one?"""
+
+#5: prints sum of two input numbers only if they are integers otherwise raises error"""
+
+"""
 Q6: [EOC]
 Ans:
-prints sum of two input numbers only if they are integers otherwise raises error"""
+prints sum of two input numbers only if they are integers otherwise raises error
+"""
 
-# print(parse_program(program))
+# print(parse_incomplete_program(program))
