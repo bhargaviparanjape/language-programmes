@@ -667,7 +667,7 @@ if __name__ == "__main__":
         print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
-        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name)
     elif args.inference_strategy == "nl_program":
