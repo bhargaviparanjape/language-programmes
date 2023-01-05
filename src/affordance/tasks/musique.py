@@ -87,7 +87,7 @@ def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
         answers = []
         for x in tqdm(chunks(dev_inputs, 10)):
             answers.extend(predict(x))
-            time.sleep(10)
+            # time.sleep(10)
         preds = [x.strip() for x in answers]
         perf_array.append(exact_match(dev_labels, preds))
         print(perf_array)
@@ -203,64 +203,56 @@ Question: When did the country where Beterverwagting is located become a member 
 A: Let's think step-by-step.
 
 1) What is the country where Beterverwagting is located?
-A:
-
-The country where Beterverwagting is located is Guyana.
-
+A: The country where Beterverwagting is located is Guyana.
 2) When did Guyana become a member of caricom?
-A:
+A: Guyana became a member of caricom in 1973.
 
-Guyana became a member of caricom in 1973.
+The final answer is 1973.
 ----
 Multi-hop question answering: Answer complex questions that require decompositions into sub-questions and composing intermediate answers.
 Question: When did the roof gardens above the district where George Palao is born, open to the public
 A: Let's think step-by-step.
 
 First, we need to find out when the roof gardens were built. George Palao was born in 1892, so the roof gardens must have been built after that. A quick Google search reveals that the gardens were built in 1898.
-
 Next, we need to find out when the gardens were open to the public. Again, a quick Google search reveals that the gardens were open to the public in 1900.
-
 Therefore, the answer to the question is that the roof gardens were open to the public in 1900, two years after they were built.
+
+The final answer is 1900.
 ----
 Multi-hop question answering: Answer complex questions that require decompositions into sub-questions and composing intermediate answers.
 Question: Who was ordered to force a Tibetan assault into the birthplace of Li Shuoxun
 A: Let's think step-by-step.
 
 Who was ordered to force a Tibetan assault?
-
 The Chinese government.
-
 Who was the Chinese government ordered to force a Tibetan assault on?
-
 The Tibetan people.
-
 Why was the Chinese government ordered to force a Tibetan assault?
-
 To quell a Tibetan uprising.
-
 Where did the Tibetan uprising take place?
-
 The birthplace of Li Shuoxun.
+
+The final answer is The Chinese government.
 ----
 Multi-hop question answering: Answer complex questions that require decompositions into sub-questions and composing intermediate answers.
 Question: Where does the Merrimack River start in the state where the Washington University in the city where A City Decides takes place is located
 A: Let's think step-by-step.
 
 First, we need to identify the state in which the Washington University is located. According to the story, it is located in the city of A City Decides. A quick Google search tells us that A City Decides is located in the state of Missouri.
-
 Now that we know the state, we can find out where the Merrimack River starts in Missouri. A quick search tells us that the Merrimack River starts in the town of Monticello.
+
+The final answer is Monticello.
 ----
 Multi-hop question answering: Answer complex questions that require decompositions into sub-questions and composing intermediate answers.
 Question: Who was the first president of the country whose southwestern portion is crossed by National Highway 6
 A: Let's think step-by-step.
 
 1) Which country has National Highway 6 crossing its southwestern portion?
-
 2) Who was the first president of that country?
-
 1) National Highway 6 crosses the southwestern portion of India.
-
 2) The first president of India was Rajendra Prasad.
+
+The final answer is Rajendra Prasad.
 ----
 """
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
@@ -337,7 +329,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
             answers = []
             for x in tqdm(chunks(dev_inputs, 10)):
                 answers.extend(predict(x))
-                time.sleep(10)
+                # time.sleep(10)
             preds = [get_autocot_answer(x) for x in answers]
             perf_array.append(substring_match(dev_labels, preds))
             print(perf_array)
@@ -624,8 +616,8 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         print("Run %d"%run)
         answers = []
         for x in tqdm(chunks(dev_inputs, 10)):
-            answers.extend(predict("Answer complex questions that require decompositions into sub-questions and composing intermediate answers.", x))
-            time.sleep(10)
+            answers.extend(predict_complete("Answer complex questions that require decompositions into sub-questions and composing intermediate answers.", x))
+            # time.sleep(10)
         preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(dev_labels, preds))
         print(perf_array)

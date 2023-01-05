@@ -423,10 +423,11 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
+        processed_labels = [l.replace('.', '') for l in labels]
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
         preds = [get_autocot_answer(x) for x in answers]
-        perf_array.append(substring_match(labels, preds))
+        perf_array.append(substring_match(processed_labels, preds))
         print(perf_array)
     print("Auto-CoT Performance:")
     print("Mean", np.mean(perf_array))
@@ -600,11 +601,12 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
+        processed_labels = [l.replace('.', '') for l in labels]
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict_complete(task_description, x))
-            # time.sleep(10)
+            time.sleep(5)
         preds = [get_answer(x) for x in answers]
-        perf_array.append(substring_match(labels, preds))
+        perf_array.append(substring_match(processed_labels, preds))
         print(perf_array)
     print("Few-shot COT performance:")
     print("Mean", np.mean(perf_array))

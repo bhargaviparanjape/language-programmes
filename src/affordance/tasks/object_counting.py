@@ -125,7 +125,7 @@ six
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
-            time.sleep(10)
+            # time.sleep(10)
         preds = [x.strip() for x in answers]
         perf_array.append(exact_match(labels, preds))
         print(perf_array)
@@ -254,8 +254,9 @@ I have a trombone, a flute, an accordion, three violins, four clarinets, a drum,
 I have a trombone, a flute, an accordion, three violins, four clarinets, a drum, a trumpet, and a piano.
 I have a trombone, a flute, an accordion, three violins, four clarinets, a drum, a trumpet, and a piano.
 I have a trombone, a flute, an accordion, three violins, four clarinets, a drum, a trumpet, and a piano.
-
 I have ten musical instruments.
+
+The final answer is ten
 ----
 Object counting: You are given a bunch of items and asked to count a specific kind of item.
 Q: I have a mouse, a goat, and two fish. How many animals do I have?
@@ -263,6 +264,8 @@ The final answer is the count of requested items in words, like "six" or "ten".
 A: Let's think step-by-step.
 
 We can see that we have three animals- a mouse, a goat, and two fish. So, we have a total of three animals.
+
+The final answer is three
 ----
 Object counting: You are given a bunch of items and asked to count a specific kind of item.
 Q: I have a strawberry, a grape, an apple, an orange, a plum, two nectarines, two bananas, and a peach. How many fruits do I have?
@@ -272,6 +275,8 @@ A: Let's think step-by-step.
 There are a total of nine items.
 Of those nine items, there are seven fruits.
 Therefore, there are seven fruits.
+
+The final answer is seven
 ----
 Object counting: You are given a bunch of items and asked to count a specific kind of item.
 Q: I have a violin, two nectarines, a flute, a banana, an accordion, two strawberries, a clarinet, a drum, a trumpet, a piano, and a trombone. How many musical instruments do I have?
@@ -279,12 +284,11 @@ The final answer is the count of requested items in words, like "six" or "ten".
 A: Let's think step-by-step.
 
 There are a lot of items, so it might be helpful to make a list.
-
 I have a violin, two nectarines, a flute, a banana, an accordion, two strawberries, a clarinet, a drum, a trumpet, a piano, and a trombone.
-
 The question is asking for a count of musical instruments, so we need to identify which items are musical instruments. A violin, flute, accordion, clarinet, drum, trumpet, piano, and trombone are all musical instruments.
-
 There are eight musical instruments.
+
+The final answer is eight
 ----
 Object counting: You are given a bunch of items and asked to count a specific kind of item.
 Q: I have three bananas, a trumpet, a clarinet, a piano, a nectarine, a trombone, a blackberry, and a violin. How many musical instruments do I have?
@@ -295,6 +299,8 @@ There are three bananas, a trumpet, a clarinet, a piano, a nectarine, a trombone
 We are looking for musical instruments, so we can ignore the bananas and the nectarine.
 That leaves us with a trumpet, a clarinet, a piano, a trombone, a violin.
 All of these except for the blackberry are musical instruments, so the answer is four.
+
+The final answer is four
 ----
 Object counting: You are given a bunch of items and asked to count a specific kind of item.
 Q: I have five stoves, a fridge, a lamp, a microwave, a table, and an oven. How many objects do I have?
@@ -302,41 +308,14 @@ The final answer is the count of requested items in words, like "six" or "ten".
 A: Let's think step-by-step.
 
 There are five stoves, so the count is "five."
-
 There is one fridge, so the count is "one."
-
 There is one lamp, so the count is "one."
-
 There is one microwave, so the count is "one."
-
 There is one table, so the count is "one."
-
 There is one oven, so the count is "one."
-
 The total count is "five," "one," "one," "one," "one," and "one," which adds up to twelve.
-----
-Object counting: You are given a bunch of items and asked to count a specific kind of item.
-Q: I have a cabbage, a stalk of celery, a carrot, a lettuce head, a yam, three heads of broccoli, three potatoes, and two cauliflowers. How many vegetables do I have?
-The final answer is the count of requested items in words, like "six" or "ten".
-A: Let's think step-by-step.
 
-There are three heads of broccoli, so we can say "three" right away.
-
-There are two cauliflowers, so we can say "two" right away.
-
-There is one cabbage, so we can say "one" right away.
-
-There is one stalk of celery, so we can say "one" right away.
-
-There is one carrot, so we can say "one" right away.
-
-There is one lettuce head, so we can say "one" right away.
-
-There are three potatoes, so we can say "three" right away.
-
-There is one yam, so we can say "one" right away.
-
-This gives us a total of "twelve" vegetables.
+The final answer is twelve
 ----
 Object counting: You are given a bunch of items and asked to count a specific kind of item.
 Q: I have a donkey, a cat, two bears, a pig, and a goat. How many animals do I have?
@@ -345,18 +324,16 @@ A: Let's think step-by-step.
 
 There are a bunch of items.
 You are asked to count a specific kind of item.
-
 In this case, you are asked to count animals.
-
 So, you need to look at each item and decide if it is an animal or not.
-
 The donkey is an animal.
 The cat is an animal.
 The bears are animals.
 The pig is an animal.
 The goat is an animal.
-
 That means there are five animals in total.
+
+The final answer is five
 ----
 """
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
@@ -405,7 +382,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
-            time.sleep(10)
+            # time.sleep(10)
         preds = [get_autocot_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
@@ -579,7 +556,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict_complete(task_description, x))
-            time.sleep(10)
+            # time.sleep(10)
         # preds = [[y.strip() for y in x.split("\n")] for x in answers]
         preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match_v2(new_labels, preds))

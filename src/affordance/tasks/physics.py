@@ -105,7 +105,7 @@ def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
-            time.sleep(10)
+            # time.sleep(10)
         preds = [x.strip() for x in answers]
         perf_array.append(exact_match(labels, preds))
         print(perf_array)
@@ -289,7 +289,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
             x = [ex.replace("\nA:", "") for ex in x]
             x = [ex.replace("Identify the physics formula that would be most useful for finding the answer to each of the following word problems.\n\n\n", "") for ex in x]
             answers.extend(predict_complete(task_description, x))
-            time.sleep(10)
+            # time.sleep(10)
         preds = [get_answer(x.strip()) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
@@ -385,10 +385,10 @@ The final answer should be one of the choices.
 A: Let's think step-by-step.
 
 First, we need to figure out what quantity we're trying to solve for. In this case, it's the charge on the oil droplet.
-
 Next, we need to identify which formula would be most useful for solving for that quantity. In this case, it's the formula for electric force, which is equal to the charge on an object times the electric field strength.
-
 So, we can solve for the charge on the oil droplet by plugging in the given values for the electric field strength and the weight of the oil droplet, and solving for q.
+
+The best answer choice is F = q * E.
 ----
 Physics: Identify the physics formula that would be most useful for finding the answer to each of the following word problems.
 Q: A 3.0 kg ball rolls down from the top of a ramp as shown. If the ball is moving at 10.0 m/sat the bottom, how much energy was lost due to friction (thermal energy)?
@@ -402,6 +402,8 @@ A: Let's think step-by-step.
 1. We want to find the energy lost due to friction, so we're looking for a formula that deals with energy.
 2. We know the mass of the ball, the velocity of the ball, and the change in temperature.
 3. Q = m * c * dT is the formula we want!
+
+The best answer choice is Q = m * c * dT
 ----
 Physics: Identify the physics formula that would be most useful for finding the answer to each of the following word problems.
 Q: A 1200 kg car rounds a flat circular section of road at 20 m/s as shown in the diagram. The coefficient of friction between the car tires and the road surface is 0.65. What minimum friction force is required for the car to follow this curve?
@@ -413,18 +415,14 @@ The final answer should be one of the choices.
 A: Let's think step-by-step.
 
 First, we need to calculate the force required to keep the car moving at 20 m/s. We can use the equation F = ma for this. We know the mass of the car (1200 kg) and the acceleration (20 m/s), so we just need to solve for F.
-
 F = 1200 kg * 20 m/s
-
 F = 24000 kg * m/s^2
-
 Now that we know the force required to keep the car moving, we need to calculate the friction force. We know that the friction force is equal to the coefficient of friction times the normal force. Since this is a flat surface, the normal force is just equal to the weight of the car. We also know the coefficient of friction (0.65). So we just need to solve for the friction force.
-
 Friction force = 0.65 * weight of the car
-
 Friction force = 0.65 * (1200 kg * 9.8 m/s^2)
-
 Friction force = 7824 N
+
+The best answer choice is F = m * a.
 ----
 Physics: Identify the physics formula that would be most useful for finding the answer to each of the following word problems.
 Q: A 6.6 N object is traveling at a velocity of 3.0 m/s north. What is the object’s momentum?
@@ -436,8 +434,9 @@ The final answer should be one of the choices.
 A: Let's think step-by-step.
 
 We want to find the object's momentum, so we'll need a formula that includes both mass and velocity. That narrows it down to either p = m * v or v = v_0 + a * t.
-
 But since we're only given the object's velocity and not its acceleration, we'll use p = m * v.
+
+The best answer choice is p = m * v.
 ----
 Physics: Identify the physics formula that would be most useful for finding the answer to each of the following word problems.
 Q: A 1250 W electric motor is used to lift an 80.0 kg weight to a height of 4.0 m in 3.00 s. What is the efficiency of the motor?
@@ -449,20 +448,15 @@ The final answer should be one of the choices.
 A: Let's think step-by-step.
 
 What are we trying to find? The efficiency of the motor.
-
 What formula would give us efficiency?
-
 Efficiency = work output / work input
-
 For work output, we can use the formula:
-
 Work output = force * distance
-
 For work input, we can use the formula:
-
 Work input = power * time
-
 Now we just need to plug in the given values and solve for efficiency.
+
+The best answer choice is U = m * g * h.
 ----
 """
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
@@ -537,10 +531,10 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
             answers = []
             for x in tqdm(chunks(inputs, 10)):
                 x = [ex.replace("Identify the physics formula that would be most useful for finding the answer to each of the following word problems.", "") for ex in x]
-                x = [ex.replace("\nA:", "") for ex in x]
+                x = [ex.replace("\nA:", "The best answer choice is") for ex in x]
                 answers.extend(predict(x))
-                time.sleep(10)
-            preds = [get_autocot_answer(x) for x in answers]
+                # time.sleep(10)
+            preds = [get_autocot_answer(x, answer_prompt="") for x in answers]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)
         print("Auto-CoT Performance:")

@@ -451,11 +451,11 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         return completed_outputs
 
     perf_array = []
-    runs = 5
+    runs = 3
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        processed_labels = [l.split()[0] for l in labels]
+        processed_labels = [l.split()[0].replace('.', '') for l in labels]
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict_complete("""Strategy QA: Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or if the question is implausible.""", x))

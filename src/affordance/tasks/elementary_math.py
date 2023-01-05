@@ -266,8 +266,9 @@ The final answer is one of the five choices.
 A: Let's think step-by-step.
 
 12 * 1.6 * 1000 = 19200
-
 19200 / 48 = 400
+
+The best answer choice is 400 m.
 ----
 Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer.
 What is the result of the following arithmetic operations?:multiply(divide(divide(400, 4), 8), 7)
@@ -280,12 +281,11 @@ The final answer is one of the five choices.
 A: Let's think step-by-step.
 
 400 divided by 4 equals 100.
-
 100 divided by 8 equals 12.5.
-
 12.5 multiplied by 7 equals 87.5.
-
 So, the final answer is 87.5.
+
+The best answer choice is 87.5.
 ----
 Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer.
 What is the answer to the following math word problem?:a sporting goods store sold 64 frisbees in one week , some for $ 3 and the rest for $ 4 each . if receipts from frisbee sales for the week totaled $ 196 what is the fewest number of $ 4 frisbees that could have been sold ?
@@ -302,12 +302,11 @@ Some were sold for $3, and the rest were sold for $4.
 This means that the total number of frisbees sold for $4 must be equal to or greater than the total number of frisbees sold for $3.
 
 We can set up the following equation:
-
 3x + 4y = 196
-
 y must be at least 8 in order for the equation to be true.
-
 This means that the fewest number of $4 frisbees that could have been sold is 8.
+
+The best answer choice is 8.
 ----
 Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer.
 What is the answer to the following math word problem, with the given hint?:what decimal fraction is 20 ml of a litre ?
@@ -321,8 +320,9 @@ The final answer is one of the five choices.
 A: Let's think step-by-step.
 
 First, we need to understand what the question is asking. It is asking what decimal fraction is 20 ml of a litre. In other words, we need to convert 20 ml into a decimal fraction of a litre.
-
 To do this, we need to divide 20 by 1000. This gives us 0.02, which is the answer.
+
+The best answer choice is 0.02.
 ----
 Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer.
 What is the answer to the following math word problem, with the given hint?:united telephone charges a base rate of $ 6.00 for service , plus an additional charge of $ 0.25 per minute . atlantic call charges a base rate of $ 12.00 for service , plus an additional charge of $ 0.20 per minute . for what number of minutes would the bills for each telephone company be the same ?
@@ -336,102 +336,64 @@ The final answer is one of the five choices.
 A: Let's think step-by-step.
 
 The bills for each telephone company will be the same when the charges for each company are the same. So we want to find out when the charges for each company are equal.
-
 We can set up the equation:
-
 (6.00 + 0.25x) = (12.00 + 0.20x)
-
 Then we can solve for x:
-
 0.25x = 6.00 - 12.00
-
 0.25x = -6.00
-
 x = -24.00
-
 So the bills for each company will be the same when the number of minutes is equal to -24.00.
-
 This doesn't make sense, because the number of minutes can't be negative. So the answer must be one of the other choices.
 
 B: Let's think step-by-step.
 
 The bills for each telephone company will be the same when the charges for each company are the same. So we want to find out when the charges for each company are equal.
-
 We can set up the equation:
-
 (6.00 + 0.25x) = (12.00 + 0.20x)
-
 Then we can solve for x:
-
 0.25x = 6.00 - 12.00
-
 0.25x = -6.00
-
 x = -24.00
-
 So the bills for each company will be the same when the number of minutes is equal to -24.00.
-
 This doesn't make sense, because the number of minutes can't be negative. So the answer must be one of the other choices.
 
 C: Let's think step-by-step.
 
 The bills for each telephone company will be the same when the charges for each company are the same. So we want to find out when the charges for each company are equal.
-
 We can set up the equation:
-
 (6.00 + 0.25x) = (12.00 + 0.20x)
-
 Then we can solve for x:
-
 0.25x = 6.00 - 12.00
-
 0.25x = -6.00
-
 x = -24.00
-
 So the bills for each company will be the same when the number of minutes is equal to -24.00.
-
 This doesn't make sense, because the number of minutes can't be negative. So the answer must be one of the other choices.
 
 D: Let's think step-by-step.
 
 The bills for each telephone company will be the same when the charges for each company are the same. So we want to find out when the charges for each company are equal.
-
 We can set up the equation:
-
 (6.00 + 0.25x) = (12.00 + 0.20x)
-
 Then we can solve for x:
-
 0.25x = 6.00 - 12.00
-
 0.25x = -6.00
-
 x = -24.00
-
 So the bills for each company will be the same when the number of minutes is equal to -24.00.
-
 This doesn't make sense, because the number of minutes can't be negative. So the answer must be one of the other choices.
 
 E: Let's think step-by-step.
 
 The bills for each telephone company will be the same when the charges for each company are the same. So we want to find out when the charges for each company are equal.
-
 We can set up the equation:
-
 (6.00 + 0.25x) = (12.00 + 0.20x)
-
 Then we can solve for x:
-
 0.25x = 6.00 - 12.00
-
 0.25x = -6.00
-
 x = -24.00
-
 So the bills for each company will be the same when the number of minutes is equal to -24.00.
-
 This doesn't make sense, because the number of minutes can't be negative. So the answer must be one of the other choices.
+
+The best answer choice is none of these.
 ----
 """
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
@@ -481,7 +443,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
             time.sleep(10)
-        preds = [get_autocot_answer(x) for x in answers]
+        preds = [get_autocot_answer(x, answer_prompt="The best answer choice is ") for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("Auto-CoT Performance:")

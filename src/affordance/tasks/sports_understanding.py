@@ -73,7 +73,7 @@ def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
-            time.sleep(10)
+            # time.sleep(10)
         preds = [x.strip() for x in answers]
         perf_array.append(exact_match(labels, preds))
         print(perf_array)
@@ -398,7 +398,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         for x in tqdm(chunks(inputs, 10)):
             # x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
-            time.sleep(10)
+            # time.sleep(10)
         preds = [get_autocot_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
@@ -444,8 +444,8 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             # x = [ex.replace("\nA:", "") for ex in x]
-            answers.extend(predict(task_description, x))
-            time.sleep(10)
+            answers.extend(predict_complete(task_description, x))
+            # time.sleep(10)
         preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)

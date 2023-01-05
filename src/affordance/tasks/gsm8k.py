@@ -166,18 +166,19 @@ Mason is cleaning out all the junk in his attic. 20%% of the items are useful, 1
 A: Let's think step-by-step.
 
 20% of 8 is 1.6, so we know there are 8 - 1.6 = 6.4 junk items in the attic.
+
+The final answer is 6.4.
 ----
 Answer the following middle school math word problems, which require multi-step arithmetic reasoning.
 A gecko eats 70 crickets every three days.  The first day she eats 30%% of the crickets.  The second day she eats 6 less than the first, and the third day she finishes up the remaining crickets.  How many crickets does she eat on the third day?
 A: Let's think step-by-step.
 
 The gecko eats 70 crickets every three days.
-
 The first day, she eats 30% of 70, which is 21 crickets.
-
 The second day, she eats 6 less than the first, so she eats 15 crickets.
-
 The third day, she finishes up the remaining crickets, so she eats 34 crickets.
+
+The final answer is 34 crickets.
 ----
 Answer the following middle school math word problems, which require multi-step arithmetic reasoning.
 My new house has 12 medium ceiling lights but I have seen small and large ceiling lights in other rooms. The small ones require 1 bulb, the medium ones require 2, and the large ones need 3 bulbs. How many bulbs should I buy if my wife says she saw twice as many large ceiling lights as medium ceiling lights and ten more small lights than medium ones?
@@ -186,40 +187,35 @@ A: Let's think step-by-step.
 There are 12 medium ceiling lights, so that's 24 bulbs right there.
 There are twice as many large ceiling lights as medium ceiling lights. That's 24 more bulbs, for a total of 48.
 There are ten more small ceiling lights than medium ceiling lights. That's 20 more bulbs, for a total of 68.
-
 So, you should buy 68 light bulbs.
+
+The final answer is 68 light bulbs.
 ----
 Answer the following middle school math word problems, which require multi-step arithmetic reasoning.
 Tim buys a cabinet for $1200 and gets a 15%% discount.  How much did he pay?
 A: Let's think step-by-step.
 
 First, we need to calculate the 15% discount, which would be $1200 * 0.15 = $180.
-
 Then, we subtract the discount from the original price of the cabinet, so $1200 - $180 = $1020.
-
 This means that Tim paid $1020 for the cabinet.
+
+The final answer is $1020.
 ----
 Answer the following middle school math word problems, which require multi-step arithmetic reasoning.
 Grant scored 10 points higher on his math test than John.  John received twice as many points as Hunter who scored a 45 on his math test.  What was Grant's test score?
 A: Let's think step-by-step.
 
 Grant scored 10 points higher than John. So, if we know John's score, we can find Grant's. John received twice as many points as Hunter, who scored a 45. So, we can set up the following equation:
-
 2(Hunter's score) = John's score
-
 Solving for Hunter's score, we get:
-
 2(45) = John's score
-
 John's score = 90
-
 Now we can plug John's score into our original equation:
-
 Grant's score = 10 + John's score
-
 Grant's score = 10 + 90
-
 Grant's score = 100
+
+The final answer is 100.
 ----
 """
 
@@ -236,7 +232,6 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         auto_cot_prompt += cot[0] + "\n----\n"
         # Add the final answer with special format so evaluation is easier.
 
-    pdb.set_trace()
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
     else:

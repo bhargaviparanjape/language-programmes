@@ -228,12 +228,11 @@ The final answer is "True" or "False".
 A: Let's think step-by-step.
 
 Turn left. Take 4 steps.
-
 You are now facing the opposite direction.
-
 Turn around. Take 4 steps.
-
 You have returned to the original starting point. Therefore, the answer is True.
+
+The final answer is True.
 ----
 If you follow these instructions, do you return to the starting point?
 Q: Take 7 steps. Take 8 steps. Take 10 steps. Turn around. Turn around. Take 5 steps. Turn around.
@@ -247,8 +246,9 @@ You turn around.
 You turn around again.
 You take 5 steps.
 You turn around one final time.
-
 Now, let's think about where you are in relation to the starting point. You are 7 + 8 + 10 = 25 steps away from the starting point. However, you've turned around twice, so you've effectively walked back two steps for each turn around. This means you are now only 25 - 4 = 21 steps away from the starting point. Finally, you turn around one last time and take 5 steps. This puts you 21 + 5 = 26 steps away from the starting point, which is exactly where you started, so the answer is "True".
+
+The final answer is True.
 ----
 If you follow these instructions, do you return to the starting point?
 Q: Always face forward. Take 8 steps left. Take 2 steps right. Take 6 steps right.
@@ -259,8 +259,9 @@ Always face forward. This means that if you're facing north, you'll stay facing 
 Take 8 steps left. This means that if you're facing north, you'll end up facing west.
 Take 2 steps right. This means that if you're facing west, you'll end up facing north.
 Take 6 steps right. This means that if you're facing north, you'll end up facing east.
-
 So in the end, you'll be back where you started, facing the same direction. Therefore, the answer is True.
+
+The final answer is True.
 ----
 If you follow these instructions, do you return to the starting point?
 Q: Take 3 steps. Turn right. Turn left. Take 5 steps. Take 10 steps. Take 7 steps. Turn left.
@@ -275,7 +276,7 @@ You take 10 steps. Now you are 18 steps away from the starting point.
 You take 7 steps. Now you are 25 steps away from the starting point.
 You turn left. Now you are 25 steps away from the starting point, but facing a different direction.
 
-The final answer is "False".
+The final answer is False.
 ----
 If you follow these instructions, do you return to the starting point?
 Q: Take 5 steps. Turn right. Turn left.
@@ -285,8 +286,9 @@ A: Let's think step-by-step.
 You take 5 steps. This moves you 5 units forward.
 You turn right. This changes your direction by 90 degrees.
 You turn left. This changes your direction by 90 degrees.
-
 Now, let's consider your final position and direction. You are 5 units forward, and your direction is the same as it was at the start. Therefore, the answer is True.
+
+The final answer is True.
 ----
 If you follow these instructions, do you return to the starting point?
 Q: Always face forward. Take 7 steps left. Take 10 steps right. Take 1 step right. Take 4 steps left. Take 1 step backward. Take 3 steps backward.
@@ -300,8 +302,9 @@ Take 1 step right.
 Take 4 steps left. 
 Take 1 step backward. 
 Take 3 steps backward.
-
 After taking all of these steps, you will be back at the starting point. Therefore, the answer is True.
+
+The final answer is True.
 ----
 """
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
@@ -351,7 +354,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
             # x = [ex.replace("If you follow these instructions, do you return to the starting point?\n", "") for ex in x]
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
-            time.sleep(10)
+            # time.sleep(10)
         preds = [get_autocot_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
@@ -635,7 +638,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
             # x = [ex.replace("If you follow these instructions, do you return to the starting point?\n", "") for ex in x]
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict_complete(task_description, x))
-            time.sleep(10)
+            # time.sleep(10)
         # preds = [[y.strip() for y in x.split("\n")] for x in answers]
         preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))

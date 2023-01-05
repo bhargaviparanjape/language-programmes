@@ -344,14 +344,12 @@ The final answer is one of the choices.
 A: Let's think step-by-step.
 
 First, we have a try statement. This means that the code inside the try block will be executed first.
-
 Inside the try block, we have two variables, n and m. We are trying to convert them into integers using the int() function.
-
 Then, we are adding the two integers and storing the result in a variable called integer_sum.
-
 Finally, we are printing the value of integer_sum.
-
 If the input values are not integers, then the code inside the except block will be executed. The except block will print the string 'error'.
+
+The best answer choice is prints sum of two input numbers only if they are integers otherwise raises error
 ----
 (Code Description) Which of the following choices best describes the functionality of the given python code snippet.
 Python code:
@@ -367,12 +365,11 @@ The final answer is one of the choices.
 A: Let's think step-by-step.
 
 The first line creates a list called numbers_list.
-
 The second line uses the filter function to filter out numbers that are greater than 7.
-
 The third line prints the filtered_list.
-
 Therefore, the code snippet prints a list of numbers greater than 7 from numbers_list.
+
+The best answer choice is prints a list of numbers greater than 7 from numbers_list.
 ----
 (Code Description) Which of the following choices best describes the functionality of the given python code snippet.
 Python code:
@@ -392,24 +389,21 @@ A: Let's think step-by-step.
 
 sum_of_numbers = 0
 num = 10
-
 The code sets up a variable called sum_of_numbers, which starts at 0, and a variable called num, which starts at 10.
 
 while(num > 0):
-
 This while loop will keep going as long as num is greater than 0.
 
 sum_of_numbers += num
-
 This line adds the value of num to sum_of_numbers.
 
 num -= 1
-
 This line decreases the value of num by 1.
 
 print('The sum is', sum_of_numbers)
-
 Finally, the code prints the sum of the numbers from 1 to 10.
+
+The best answer choice is prints the sum of the numbers from 1 to 10.
 ----
 (Code Description) Which of the following choices best describes the functionality of the given python code snippet.
 Python code:
@@ -424,10 +418,10 @@ The final answer is one of the choices.
 A: Let's think step-by-step.
 
 The for loop iterates over a range of numbers from 0 to 23.
-
 For each number in the range, the code prints the number to the screen.
-
 So, the code will print values from 0 to 22 to the screen.
+
+The best answer choice is print values from 0 to 22 to the screen.
 ----
 (Code Description) Which of the following choices best describes the functionality of the given python code snippet.
 Python code:
@@ -442,12 +436,11 @@ The final answer is one of the choices.
 A: Let's think step-by-step.
 
 def sum_two(a,b):
-
 This defines a function that takes two parameters, a and b.
-
 return a+b
-
 This line tells the function to return the sum of a and b.
+
+The best answer choice is returns the sum of two numbers.
 ----
 """
 
@@ -526,7 +519,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
                 x = [ex.replace("\n\nEnglish language description:", "") for ex in x]
                 answers.extend(predict(x))
                 time.sleep(10)
-            preds = [x.strip() for x in answers]
+            preds = [get_autocot_answer(x, answer_prompt="The best answer choice is ") for x in answers]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)
         print("Auto-CoT Performance:")

@@ -131,7 +131,7 @@ A:
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
-            time.sleep(10)
+            # time.sleep(10)
         preds = [x.strip() for x in answers]
         perf_array.append(exact_match(labels, preds))
         print(perf_array)
@@ -202,10 +202,10 @@ The final answer is a color (eg. teal, blue), a number (eg. 1,4) or the words "y
 A: Let's think step-by-step.
 
 The teal thing is the bracelet.
-
 The bracelet is to the right of the silver stress ball.
-
 So the thing directly to the right of the bracelet is the silver stress ball.
+
+The final answer is silver.
 ----
 Given a collection of colored objects in the text input, answer the question at the end of the input. THis question requires logical, spatial and arithmetic reasoning about colored objects.
 Q: On the floor, you see a pink jug, a magenta mug, and a teal scrunchiephone charger. Is the jug pink?
@@ -215,6 +215,8 @@ First, we see that there are three objects on the floor.
 Second, we see that the objects are colored pink, magenta, and teal.
 Third, we see that the question is asking if the jug is pink.
 From this, we can infer that the answer is yes, the jug is pink.
+
+The final answer is yes.
 ----
 Given a collection of colored objects in the text input, answer the question at the end of the input. THis question requires logical, spatial and arithmetic reasoning about colored objects.
 Q: On the table, you see the following items arranged in a row: a purple pair of sunglasses, a black teddy bear, an orange fidget spinner, a teal scrunchiephone charger, a mauve paperclip, and a fuchsia sheet of paper. What is the color of the right-most item?
@@ -222,6 +224,8 @@ The final answer is a color (eg. teal, blue), a number (eg. 1,4) or the words "y
 A: Let's think step-by-step.
 
 The right-most item is a fuchsia sheet of paper.
+
+The final answer is fuchsia.
 ----
 Given a collection of colored objects in the text input, answer the question at the end of the input. THis question requires logical, spatial and arithmetic reasoning about colored objects.
 Q: On the desk, I see two brown mugs, one brown sheet of paper, one fuchsia sheet of paper, one brown pen, three grey mugs, one grey pen, two fuchsia paperclips, one fuchsia mug, and three grey sheets of paper. If I remove all the grey items from the desk, how many mugs remain on it?
@@ -229,14 +233,12 @@ The final answer is a color (eg. teal, blue), a number (eg. 1,4) or the words "y
 A: Let's think step-by-step.
 
 There are two brown mugs, one brown sheet of paper, one fuchsia sheet of paper, one brown pen, three grey mugs, one grey pen, two fuchsia paperclips, one fuchsia mug, and three grey sheets of paper.
-
 We want to remove all the grey items from the desk.
-
 This means we would remove the three grey mugs, one grey pen, and three grey sheets of paper.
-
 This would leave us with two brown mugs, one brown sheet of paper, one fuchsia sheet of paper, one brown pen, two fuchsia paperclips, and one fuchsia mug.
-
 So, the answer is that there would be five mugs remaining on the desk.
+
+The final answer is five.
 ----
 Given a collection of colored objects in the text input, answer the question at the end of the input. THis question requires logical, spatial and arithmetic reasoning about colored objects.
 Q: On the table, there is a red dog leash, a brown teddy bear, a silver pencil, and a teal paperclip. What color is the paperclip?
@@ -244,19 +246,21 @@ The final answer is a color (eg. teal, blue), a number (eg. 1,4) or the words "y
 A: Let's think step-by-step.
 
 First, we see that there are four objects on the table. Two of the objects are different shades of brown, and two of the objects are different shades of blue.
-
 We also see that the brown teddy bear is next to the red dog leash. This means that the paperclip must be next to the silver pencil.
-
 Now, we know that the silver pencil is to the left of the teal paperclip. This means that the teal paperclip is to the right of the silver pencil.
-
 Therefore, the teal paperclip is to the right of the silver pencil and to the left of the red dog leash. The only object that meets this criteria is the teal paperclip.
+
+The final answer is teal.
 ----
 Given a collection of colored objects in the text input, answer the question at the end of the input. THis question requires logical, spatial and arithmetic reasoning about colored objects.
 Q: On the floor, you see a bunch of items arranged in a row: a teal keychain, a turquoise scrunchiephone charger, a blue bracelet, and a pink fidget spinner. What is the color of the item furthest from the bracelet?
 The final answer is a color (eg. teal, blue), a number (eg. 1,4) or the words "yes" or "no".
 A: Let's think step-by-step.
+
 First, we need to find the bracelet. It's the only blue item, so it must be in the middle. That means the keychain is to the left, and the charger is to the right.
 Now, we need to find the furthest item from the bracelet. The keychain is one item to the left, and the charger is two items to the right. So the charger is further away and the answer is turquoise.
+
+The final answer is turquoise.
 ----
 """
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
@@ -305,7 +309,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
-            time.sleep(10)
+            # time.sleep(10)
         preds = [get_autocot_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
@@ -476,8 +480,8 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
-            answers.extend(predict(task_description, x))
-            time.sleep(10)
+            answers.extend(predict_complete(task_description, x))
+            # time.sleep(10)
         # preds = [[y.strip() for y in x.split("\n")] for x in answers]
         preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))

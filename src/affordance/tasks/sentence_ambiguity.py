@@ -115,7 +115,7 @@ True
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
-            time.sleep(10)
+            # time.sleep(10)
         preds = [x.strip() for x in answers]
         perf_array.append(exact_match(labels, preds))
         print(perf_array)
@@ -208,10 +208,10 @@ True or False?
 A: Let's think step-by-step.
 
 First, we need to establish what "universally considered" means. This is a pretty strong claim, so we're going to need to see evidence that literally everyone believes LeBron James is the best football player of all time.
-
 Next, we need to consider the evidence. Even if everyone believes LeBron James is the best football player of all time, is there any actual evidence to support this claim?
-
 Based on these two considerations, it seems fair to say that the claim is false.
+
+The final answer is false.
 ----
 (Sentence ambiguity) Determine if the claim is true or false based on whether facts stated in the sentence have evidence.
 Claim: The cornea of your eye is likely where the light receptors are.
@@ -219,6 +219,8 @@ True or False?
 A: Let's think step-by-step.
 
 The cornea of your eye is the outermost layer of your eye. The light receptors are located in the retina, which is the innermost layer of your eye. So, the claim that the cornea of your eye is likely where the light receptors are is false.
+
+The final answer is false.
 ----
 (Sentence ambiguity) Determine if the claim is true or false based on whether facts stated in the sentence have evidence.
 Claim: Few animals live more than 200 years, but none of these have fins.
@@ -231,8 +233,9 @@ Based on this information, we can say that the claim that "few animals live more
 Now, we'll look at the claim that "none of these have fins." We'll need to find evidence of whether or not the bowhead whale and the greenland shark have fins.
 According to this website, the bowhead whale does have fins. This website says that the greenland shark does not have fins.
 Based on this information, we can say that the claim that "none of these have fins" is also false - at least one of the animals that can live over 200 years (the bowhead whale) does have fins.
-
 In conclusion, both claims in the sentence are false.
+
+The final answer is false.
 ----
 (Sentence ambiguity) Determine if the claim is true or false based on whether facts stated in the sentence have evidence.
 Claim: The United States has never had a unanimously elected president.
@@ -240,10 +243,10 @@ True or False?
 A: Let's think step-by-step.
 
 First, what does it mean for a president to be "unanimously elected"? This means that every single person who voted, voted for that one president.
-
 Now, has the United States ever had a president who was elected with every single vote?
-
 The answer is no. The United States has never had a unanimously elected president.
+
+The final answer is true.
 ----
 (Sentence ambiguity) Determine if the claim is true or false based on whether facts stated in the sentence have evidence.
 Claim: The North Pole is likely not located on a continent.
@@ -251,6 +254,8 @@ True or False?
 A: Let's think step-by-step.
 
 There are seven continents: Europe, Asia, Africa, North and South America, Australia, and Antarctica. The North Pole is located in the Arctic Ocean, which is adjacent to Europe, Asia, and North America. So, the North Pole is not on a continent.
+
+The final answer is true.
 ----
 (Sentence ambiguity) Determine if the claim is true or false based on whether facts stated in the sentence have evidence.
 Claim: Earth's oceans may include the Pacific, Atlantic, Indian, and Arctic.
@@ -258,10 +263,10 @@ True or False?
 A: Let's think step-by-step.
 
 The first part of the claim is that Earth has oceans. This is a fact that is widely accepted and supported by evidence.
-
 The second part of the claim is that the oceans may include the Pacific, Atlantic, Indian, and Arctic. This is also a fact that is widely accepted and supported by evidence.
-
 Therefore, the entire claim is true.
+
+The final answer is true.
 ----
 (Sentence ambiguity) Determine if the claim is true or false based on whether facts stated in the sentence have evidence.
 Claim: Australia had more Cricket World Cup wins than the West Indies as of 2021.
@@ -269,6 +274,8 @@ True or False?
 A: Let's think step-by-step.
 
 Australia has won the Cricket World Cup 5 times as of 2021. The West Indies have won the Cricket World Cup 2 times as of 2021. 5 is greater than 2, so the claim is true.
+
+The final answer is true.
 ----
 """
 
@@ -346,7 +353,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
             for x in tqdm(chunks(inputs, 10)):
                 # x = [ex.replace("\nA:", "") for ex in x]
                 answers.extend(predict(x))
-                time.sleep(10)
+                # time.sleep(10)
             preds = [get_autocot_answer(x) for x in answers]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)
@@ -478,8 +485,8 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             # x = [ex.replace("\nA:", "") for ex in x]
-            answers.extend(predict("""Determine if the claim is true or false based on whether facts stated in the sentence have evidence. The final answer should be one of "True" or "False".""", x))
-            time.sleep(10)
+            answers.extend(predict_complete("""Determine if the claim is true or false based on whether facts stated in the sentence have evidence. The final answer should be one of "True" or "False".""", x))
+            # time.sleep(10)
         preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)

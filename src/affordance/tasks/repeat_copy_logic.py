@@ -98,7 +98,7 @@ can you draw squiggly line squiggly line
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
-            time.sleep(10)
+            # time.sleep(10)
         preds = [x.strip() for x in answers]
         perf_array.append(exact_match(labels, preds))
         print(perf_array)
@@ -153,10 +153,9 @@ A: Let's think step-by-step.
 
 Pick up a pound of green beans.
 
+The final answer is
 Pick up a bunch of green beans.
-
 Pick up a handful of green beans.
-
 Pick up a pound of green beans.
 ----
 (Repeat with logic) Repeat the given phrase following logical constraints provided in the question.
@@ -166,8 +165,8 @@ A: Let's think step-by-step.
 
 A woodchuck chucks lots of wood.
 
+The final answer is
 A woodchuck chucks five pounds of wood.
-
 A woodchuck chucks two tons of wood.
 ----
 (Repeat with logic) Repeat the given phrase following logical constraints provided in the question.
@@ -177,7 +176,7 @@ A: Let's think step-by-step.
 
 Squiggly line can you draw
 
-Squiggly line can you draw squiggly line
+The final answer is Squiggly line can you draw squiggly line
 ----
 """
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
@@ -258,8 +257,8 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
                 x = [ex.replace("repeat with logic:\n\n", "") for ex in x]
                 x = [ex.replace("\nA:", "") for ex in x]
                 answers.extend(predict(x))
-                time.sleep(10)
-            preds = [get_autocot_answer(x) for x in answers]
+                # time.sleep(10)
+            preds = [get_autocot_answer(x, answer_prompt="The final answer is") for x in answers]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)
         print("Auto-CoT Performance:")
@@ -378,8 +377,8 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("repeat with logic:\n\n", "") for ex in x]
             x = [ex.replace("\nA:", "") for ex in x]
-            answers.extend(predict(task_description, x))
-            time.sleep(10)
+            answers.extend(predict_complete(task_description, x))
+            # time.sleep(10)
         preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)

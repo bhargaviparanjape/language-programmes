@@ -278,10 +278,10 @@ The final answer should be in the MM/DD/YYYY format.
 A: Let's think step-by-step.
 
 Yesterday was April 30, 2021.
-
 The day before yesterday was April 29, 2021.
-
 Today is April 30, 2021.
+
+The final answer is April 30, 2021.
 ----
 (Date understanding task) Find the required date in MM/DD/YYYY using information about related events and dates in the input.
 Q: Today's meeting is rescheduled to 11 am tomorrow, 10/16/1924. What is the date today in MM/DD/YYYY?
@@ -289,8 +289,9 @@ The final answer should be in the MM/DD/YYYY format.
 A: Let's think step-by-step.
 
 First, we need to find out how many days have passed since the original meeting. We know the meeting was rescheduled to tomorrow, which means that one day has passed.
-
 Therefore, the current date is 10/17/1924.
+
+The final answer is 10/17/1924.
 ----
 (Date understanding task) Find the required date in MM/DD/YYYY using information about related events and dates in the input.
 Q: Jane visits the bookstore on the 16th of each month starting from the October of 2009. It is her 5th visit to the bookstore today. What is the date today in MM/DD/YYYY?
@@ -299,8 +300,9 @@ A: Let's think step-by-step.
 
 Jane's first visit to the bookstore was on October 16th, 2009. 
 5 visits later would be January 16th, 2010.
-
 Therefore, the answer is 01/16/2010.
+
+The final answer is 01/16/2010.
 ----
 (Date understanding task) Find the required date in MM/DD/YYYY using information about related events and dates in the input.
 Q: May 6, 1992 is like yesterday to Jane, but that is actually ten years ago. What is the date a month ago in MM/DD/YYYY?
@@ -309,7 +311,7 @@ A: Let's think step-by-step.
 
 A month ago from May 6, 1992 would be April 6, 1992.
 
-The answer is 04/06/1992.
+The final answer is 04/06/1992.
 ----
 (Date understanding task) Find the required date in MM/DD/YYYY using information about related events and dates in the input.
 Q: The first day of 2019 is a Tuesday, and today is the first Monday of 2019. What is the date a month ago in MM/DD/YYYY?

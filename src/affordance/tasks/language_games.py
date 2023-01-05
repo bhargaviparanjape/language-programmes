@@ -105,7 +105,7 @@ def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
-            time.sleep(10)
+            # time.sleep(10)
         preds = [x.strip() for x in answers]
         perf_array.append(exact_match(labels, preds))
         print(perf_array)
@@ -394,6 +394,8 @@ Assuming we want to translate "Let's think step-by-step" into Pig Latin:
 1) Split the sentence into individual words: "Let's", "think", "step-by-step"
 2) Translate each word into Pig Latin: "et'slay", "inkthay", "tep-by-taypstep"
 3) Join the translated words back into a sentence: "Let'slay inkthay tep-by-taypstep"
+
+The final answer is "Let'slay inkthay tep-by-taypstep".
 ----
 Language Games: Pig Latin looks just like English, but if an English word starts with a vowel you add -yay at the end of the word (ice -> iceyay); if it starts with consonants, you move them to end of the word and add -ay (prank -> ankpray); if it is capitalized, the Pig Latin word is capitalized as well (Maggie -> Aggiemay). Translate Pig Latin into English or viceversa.
 (Pig Latin) Omtay akedbay anyay appleyay iepay orfay usyay.(English)
@@ -401,20 +403,15 @@ The final answer contains the translated sequence.
 A: Let's think step-by-step.
 
 Omtay: "Omtay" is "Tom" in Pig Latin.
-
 Akedbay: "Akedbay" is "Baked" in Pig Latin.
-
 Anyay: "Anyay" is "Any" in Pig Latin.
-
 Appleyay: "Appleyay" is "Apple" in Pig Latin.
-
 Iepay: "Iepay" is "Pie" in Pig Latin.
-
 Orfay: "Orfay" is "For" in Pig Latin.
-
 Usyay: "Usyay" is "Susy" in Pig Latin.
-
 So, the translation of "Tom baked any apple pie for Susy" in English is "Omtay akedbay anyay appleyay iepay orfay usyay" in Pig Latin.
+
+The final answer is Tom baked any apple pie for Susy.
 ----
 Language Games: Pig Latin looks just like English, but if an English word starts with a vowel you add -yay at the end of the word (ice -> iceyay); if it starts with consonants, you move them to end of the word and add -ay (prank -> ankpray); if it is capitalized, the Pig Latin word is capitalized as well (Maggie -> Aggiemay). Translate Pig Latin into English or viceversa.
 (Pig Latin) Ithay ityay ithway ayay ickstay.(English)
@@ -429,7 +426,7 @@ A: Let's think step-by-step.
 "ayay" = "ay+y" = "ay"
 "ickstay" = "ick+stay" = "ick+ay" = "ick+y" = "icky"
 
-The final answer is: "Ity ity ity ay icky."
+The final answer is "Ity ity ity ay icky."
 ----
 Language Games: Pig Latin looks just like English, but if an English word starts with a vowel you add -yay at the end of the word (ice -> iceyay); if it starts with consonants, you move them to end of the word and add -ay (prank -> ankpray); if it is capitalized, the Pig Latin word is capitalized as well (Maggie -> Aggiemay). Translate Pig Latin into English or viceversa.
 (Pig Latin) Amisay adhay efensiveday oundsway onyay ishay armsyay.(English)
@@ -443,7 +440,7 @@ A: Let's think step-by-step.
 6. "ishay" -> "ishay" is the same in both languages.
 7. "armsyay" -> "armsyay" is the same in both languages.
 
-The final answer is: Amisay adhay efensiveday oundsway onyay ishay armsyay.
+The final answer is Amisay adhay efensiveday oundsway onyay ishay armsyay.
 ----
 Language Games: Pig Latin looks just like English, but if an English word starts with a vowel you add -yay at the end of the word (ice -> iceyay); if it starts with consonants, you move them to end of the word and add -ay (prank -> ankpray); if it is capitalized, the Pig Latin word is capitalized as well (Maggie -> Aggiemay). Translate Pig Latin into English or viceversa.
 (Pig Latin) Iyay ishway otay aystay inyay Australiayay.(English)
@@ -451,16 +448,13 @@ The final answer contains the translated sequence.
 A: Let's think step-by-step.
 
 Iyay -> I
-
 I ishway -> I am
-
 I am otay -> I am not
-
 I am not aystay -> I am not staying
-
 I am not staying inyay -> I am not staying in
-
 I am not staying in Australiayay -> I am not staying in Australia.
+
+The final answer is I am not staying in Australia.
 ----
 """
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
@@ -537,7 +531,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
             for x in tqdm(chunks(inputs, 10)):
                 x = [ex.replace("\nA:", "") for ex in x]
                 answers.extend(predict(x))
-                time.sleep(10)
+                # time.sleep(10)
             preds = [get_autocot_answer(x) for x in answers]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)

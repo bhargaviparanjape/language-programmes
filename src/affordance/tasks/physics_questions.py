@@ -346,7 +346,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict_complete("Answer these high-school-level physics multiple-choice questions.", x))
-            time.sleep(10)
+            # time.sleep(10)
         preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
@@ -398,16 +398,18 @@ Q: Lamar Gant, U.S. powerlifting star, became the first man to deadlift five tim
 A: Let's think step-by-step.
 
 The work done by Lamar in deadlifting 260 kg to a height of 0.85 m above the ground is:
-
 $W = \frac{1}{2} \cdot 260 \cdot 9.8 \cdot 0.85 = 12,091 \text{ J}$
+
+The final answer is 12,091 J.
 ----
 (Physics Questions) Answer these high-school-level physics multiple-choice questions.
 Q: In the Funny Car competition at the Joliet Speedway in Joliet, Illinois in October of 2004, John Force complete the 1/4-mile dragster race in a record time of 4.437 seconds. Determine the average speed of the dragster in km/hr.
 A: Let's think step-by-step.
 
 First, we need to figure out how long it took the dragster to travel 1/4 of a mile. Since we know the dragster's speed in terms of seconds, we can convert 1/4 of a mile into seconds. There are 5280 feet in a mile, so 1/4 of a mile is 1320 feet. There are 3 feet in a yard, so 1/4 of a mile is also 440 yards. There are 3600 seconds in an hour, so 1/4 of a mile is also 1.2 seconds.
-
 Now that we know how long it took the dragster to travel 1/4 of a mile, we can calculate the average speed. The dragster traveled 1/4 of a mile in 1.2 seconds, so the average speed is 1/4 of a mile divided by 1.2 seconds. This is equal to 0.208 miles per second, or 0.208 * 3600 = 750 km/hr.
+
+The final answer is 750 km/hr.
 ----
 (Physics Questions) Answer these high-school-level physics multiple-choice questions.
 Q: A bicycle has a momentum of 24 kg*m/s. What momentum would the bicycle have if it had one-half the mass and was moving with thrice the speed?
@@ -417,6 +419,8 @@ The bicycle has a mass of 12 kg and a speed of 6 m/s.
 If the bicycle had one-half the mass, it would have a mass of 6 kg.
 If the bicycle had thrice the speed, it would have a speed of 18 m/s.
 Therefore, the bicycle would have a momentum of 6*18=108 kg*m/s.
+
+The final answer is 108 kg*m/s.
 ----
 """
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
@@ -464,7 +468,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
-            time.sleep(10)
+            # time.sleep(10)
         preds = [get_autocot_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)

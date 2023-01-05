@@ -94,7 +94,7 @@ Turing was one of the people who worked on the first computers. He created the t
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
-            time.sleep(10)
+            # time.sleep(10)
         preds = [x.strip() for x in answers]
         perf_array.append(exact_match(labels, preds))
         print(perf_array)
@@ -307,9 +307,9 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nEdited:", "") for ex in x]
-            answers.extend(predict(task_description, x))
+            answers.extend(predict_complete(task_description, x))
             # pdb.set_trace()
-            time.sleep(10)
+            # time.sleep(10)
         preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
@@ -367,14 +367,12 @@ The final answer should be the edited text.
 A: Let's think step-by-step.
 
 Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.
-
 Turing was one of the people who worked on the first bcdcomputers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.
-
 Turing was one of the people who worked on the first bcdcomputers. He created the theoretical bcdTuring machine in 1936. The machine was imaginary, but it included the idea of a computer program.
-
 Turing was one of the people who worked on the first bcdcomputers. He created the theoretical bcdTuring machine in 1936. The machine was bcdimaginary, but it included the idea of a computer program.
-
 Turing was one of the people who worked on the first bcdcomputers. He created the theoretical bcdTuring machine in 1936. The machine was bcdimaginary, but it included the idea of a bcdcomputer program.
+
+The final answer is Turing was one of the people who worked on the first bcdcomputers. He created the theoretical bcdTuring machine in 1936. The machine was bcdimaginary, but it included the idea of a bcdcomputer program.
 ----
 (Simple text editing) Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is.
 Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: replace all occurrencies of the character 'o' with 'a' in the entire text
@@ -382,10 +380,10 @@ The final answer should be the edited text.
 A: Let's think step-by-step.
 
 Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer pragram.
-
 Turing was one of the people who worked an the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer pragram.
-
 Turing was one of the people who worked an the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.
+
+The final answer is Turing was one of the people who worked an the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.
 ----
 (Simple text editing) Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is.
 Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: append the sentence 'SENTENCE TO BE APPENDED.' to the text
@@ -393,14 +391,12 @@ The final answer should be the edited text.
 A: Let's think step-by-step.
 
 First, we need to identify the text that we're supposed to edit, which is this:
-
 "Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program."
-
 Next, we need to identify the edit operation, which is "append the sentence 'SENTENCE TO BE APPENDED.' to the text." In other words, we need to add the sentence in quotes after the existing text.
-
 Finally, we need to apply the edit operation to the text. So the edited text would be this:
-
 "Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program. SENTENCE TO BE APPENDED."
+
+The final answer is "Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program. SENTENCE TO BE APPENDED."
 ----
 """
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
@@ -416,7 +412,6 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         auto_cot_prompt += cot[0] + "\n----\n"
         # Add the final answer with special format so evaluation is easier.
 
-    pdb.set_trace()
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
     else:
@@ -479,7 +474,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
             for x in tqdm(chunks(inputs, 10)):
                 x = [ex.replace("\nEdited:", "") for ex in x]
                 answers.extend(predict(x))
-                time.sleep(10)
+                # time.sleep(10)
             preds = [get_autocot_answer(x) for x in answers]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)

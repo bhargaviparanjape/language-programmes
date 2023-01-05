@@ -312,8 +312,9 @@ The final answer should be one of the provided choices.
 A: Let's think step-by-step.
 
 First, we need to identify which god is most associated with music. In Hinduism, that would be Krishna.
-
 Then, we need to identify which musical instrument is most associated with Krishna. Based on the choices provided, the answer would be the flute.
+
+The best answer choice is flute.
 ----
 Hindu Knowledge: Answer these multiple-choice questions about Hindu mythology.
 Q: In Hinduism, the era known as Dvapara Yuga is preceded by which era?
@@ -325,6 +326,8 @@ The final answer should be one of the provided choices.
 A: Let's think step-by-step.
 
 The Dvapara Yuga is the third age of the four ages of the Hindu cycle of time, so it is preceded by the first two ages, the Krita Yuga and the Treta Yuga.
+
+The best answer choice is Krita Yuga.
 ----
 Hindu Knowledge: Answer these multiple-choice questions about Hindu mythology.
 Q: In the Hindu epic Ramayana, which character killed Lavanasura?
@@ -336,10 +339,10 @@ The final answer should be one of the provided choices.
 A: Let's think step-by-step.
 
 First, we need to know who Lavanasura is. He's a demon king who was troubling the people of Ayodhya.
-
 Next, we need to decide which of the provided choices is most likely to have killed Lavanasura. Lakshmana is Rama's brother, so he's a likely candidate. Shatrughna is another one of Rama's brothers, so he's also a likely candidate. Bharata is Rama's cousin, so he's a possible candidate.
-
 Finally, we need to choose the most likely candidate. Based on the information given, it seems most likely that Lakshmana killed Lavanasura.
+
+The best answer choice is Lakshmana.
 ----
 """
 
@@ -420,7 +423,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
                 x = [ex.replace("\nA:", "") for ex in x]
                 answers.extend(predict(x))
                 time.sleep(10)
-            preds = [get_autocot_answer(x) for x in answers]
+            preds = [get_autocot_answer(x, "The best answer choice is ") for x in answers]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)
         print("Auto-CoT Performance:")
