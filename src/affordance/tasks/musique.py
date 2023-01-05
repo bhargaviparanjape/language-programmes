@@ -12,7 +12,7 @@ import datasets
 import numpy as np
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
                    get_few_shot_prompt, get_subset, gpt3,
                    propose_decomposition, propose_instruction, substring_match)
 
@@ -198,8 +198,74 @@ The final answer is Hassan Gouled Aptidon.
 ----
 """
 
+auto_cot_cleaned_prompt = """Multi-hop question answering: Answer complex questions that require decompositions into sub-questions and composing intermediate answers.
+Question: When did the country where Beterverwagting is located become a member of caricom
+A: Let's think step-by-step.
+
+1) What is the country where Beterverwagting is located?
+A:
+
+The country where Beterverwagting is located is Guyana.
+
+2) When did Guyana become a member of caricom?
+A:
+
+Guyana became a member of caricom in 1973.
+----
+Multi-hop question answering: Answer complex questions that require decompositions into sub-questions and composing intermediate answers.
+Question: When did the roof gardens above the district where George Palao is born, open to the public
+A: Let's think step-by-step.
+
+First, we need to find out when the roof gardens were built. George Palao was born in 1892, so the roof gardens must have been built after that. A quick Google search reveals that the gardens were built in 1898.
+
+Next, we need to find out when the gardens were open to the public. Again, a quick Google search reveals that the gardens were open to the public in 1900.
+
+Therefore, the answer to the question is that the roof gardens were open to the public in 1900, two years after they were built.
+----
+Multi-hop question answering: Answer complex questions that require decompositions into sub-questions and composing intermediate answers.
+Question: Who was ordered to force a Tibetan assault into the birthplace of Li Shuoxun
+A: Let's think step-by-step.
+
+Who was ordered to force a Tibetan assault?
+
+The Chinese government.
+
+Who was the Chinese government ordered to force a Tibetan assault on?
+
+The Tibetan people.
+
+Why was the Chinese government ordered to force a Tibetan assault?
+
+To quell a Tibetan uprising.
+
+Where did the Tibetan uprising take place?
+
+The birthplace of Li Shuoxun.
+----
+Multi-hop question answering: Answer complex questions that require decompositions into sub-questions and composing intermediate answers.
+Question: Where does the Merrimack River start in the state where the Washington University in the city where A City Decides takes place is located
+A: Let's think step-by-step.
+
+First, we need to identify the state in which the Washington University is located. According to the story, it is located in the city of A City Decides. A quick Google search tells us that A City Decides is located in the state of Missouri.
+
+Now that we know the state, we can find out where the Merrimack River starts in Missouri. A quick search tells us that the Merrimack River starts in the town of Monticello.
+----
+Multi-hop question answering: Answer complex questions that require decompositions into sub-questions and composing intermediate answers.
+Question: Who was the first president of the country whose southwestern portion is crossed by National Highway 6
+A: Let's think step-by-step.
+
+1) Which country has National Highway 6 crossing its southwestern portion?
+
+2) Who was the first president of that country?
+
+1) National Highway 6 crosses the southwestern portion of India.
+
+2) The first president of India was Rajendra Prasad.
+----
+"""
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
     global auto_cot_corrected_prompt
+    global auto_cot_cleaned_prompt
     auto_cot_prompt = ""
     for io_pair in io_pairs[:5]:
         gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=0.7, quote='---', n=1)
@@ -212,6 +278,8 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
     
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
+    else:
+        auto_cot_prompt = auto_cot_cleaned_prompt
     
     print(auto_cot_prompt)
     f = open("auto_cot_demonstrations.txt","a+")
@@ -270,7 +338,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
             for x in tqdm(chunks(dev_inputs, 10)):
                 answers.extend(predict(x))
                 time.sleep(10)
-            preds = [x.strip() for x in answers]
+            preds = [get_autocot_answer(x) for x in answers]
             perf_array.append(substring_match(dev_labels, preds))
             print(perf_array)
         print("Auto-CoT Performance:")
@@ -541,6 +609,15 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
+
     perf_array = []
     runs = 5
     for run in range(runs): 
@@ -549,7 +626,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         for x in tqdm(chunks(dev_inputs, 10)):
             answers.extend(predict("Answer complex questions that require decompositions into sub-questions and composing intermediate answers.", x))
             time.sleep(10)
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(dev_labels, preds))
         print(perf_array)
     print("Few-shot COT performance:")
@@ -687,6 +764,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(dev_inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
+    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
 
     args = parser.parse_args()
 
@@ -705,6 +783,6 @@ if __name__ == "__main__":
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
-        few_shot_cot(args.temperature, args.model_name)
+        few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)

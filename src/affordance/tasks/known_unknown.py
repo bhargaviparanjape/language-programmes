@@ -11,7 +11,7 @@ import datasets
 import numpy as np
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
                    get_few_shot_prompt, get_subset, gpt3,
                    propose_decomposition, propose_instruction, substring_match)
 
@@ -414,6 +414,15 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
+
     perf_array = []
     runs = 5
     for run in range(runs): 
@@ -497,8 +506,106 @@ The final answer is Unknown.
 ----
 """
 
+auto_cot_cleaned_prompt = """Answer the question by choosing one of the two options provided. If the answer can't be found, the final answer should be the string "Unknown".
+Q: Who is a famous whistler?
+  choice: Unknown
+  choice: Ronnie Ronalde
+The final answer is either the answer phrase or the word "Unknown".
+A: Let's think step-by-step.
+
+First, we need to determine what a famous whistler is. A famous whistler is someone who is well-known for their ability to whistle.
+
+Next, we need to identify who meets this criteria. There are many people who could be considered famous whistlers, but one name that stands out is Ronnie Ronalde.
+
+Ronnie Ronalde is a famous whistler, so the final answer is Ronnie Ronalde.
+----
+Answer the question by choosing one of the two options provided. If the answer can't be found, the final answer should be the string "Unknown".
+Q: Where was Mark Twain born?
+  choice: Unknown
+  choice: Florida, Missouri
+The final answer is either the answer phrase or the word "Unknown".
+A: Let's think step-by-step.
+
+First, we need to identify what information is being asked for. In this case, the question is asking for the location where Mark Twain was born.
+
+Next, we need to find where this information is located in the text. In this case, the text says that Mark Twain was born in Florida, Missouri.
+
+Finally, we need to choose the correct answer from the options given. In this case, the correct answer is "Florida, Missouri".
+----
+Answer the question by choosing one of the two options provided. If the answer can't be found, the final answer should be the string "Unknown".
+Q: What type of hat did Charlie Chaplin wear?
+  choice: Unknown
+  choice: Bowler hat
+The final answer is either the answer phrase or the word "Unknown".
+A: Let's think step-by-step.
+
+First, we need to decide what type of hat Charlie Chaplin wore. Was it a bowler hat or something else?
+
+From what we can tell, Charlie Chaplin wore a bowler hat.
+----
+Answer the question by choosing one of the two options provided. If the answer can't be found, the final answer should be the string "Unknown".
+Q: How many people in Cheyenne, Wyoming were eating during the last solar eclipse?
+  choice: Unknown
+  choice: 156
+The final answer is either the answer phrase or the word "Unknown".
+A: Let's think step-by-step.
+
+First, what is a solar eclipse? A solar eclipse is an event that occurs when the moon passes between the sun and the earth, and the moon blocks the sun's light from reaching the earth.
+
+Second, when was the last solar eclipse? The last solar eclipse was on August 21, 2017.
+
+Third, how many people were in Cheyenne, Wyoming on August 21, 2017? According to the U.S. Census Bureau, the population of Cheyenne, Wyoming was 63,624 as of July 1, 2017.
+
+Fourth, how many of those people were eating during the eclipse? This answer is unknown.
+----
+Answer the question by choosing one of the two options provided. If the answer can't be found, the final answer should be the string "Unknown".
+Q: How many legs do ants have?
+  choice: Unknown
+  choice: 6
+The final answer is either the answer phrase or the word "Unknown".
+A: Let's think step-by-step.
+
+First, let's consider the question. It's asking how many legs ants have. We know that ants are insects, and we also know that insects have six legs. Therefore, the answer to the question is six.
+----
+Answer the question by choosing one of the two options provided. If the answer can't be found, the final answer should be the string "Unknown".
+Q: How many hours of sleep a night is considered healthy for an adult?
+  choice: Unknown
+  choice: Between 7 and 9 hours
+The final answer is either the answer phrase or the word "Unknown".
+A: Let's think step-by-step.
+
+The question is asking how many hours of sleep a night is considered healthy for an adult.
+
+The two options provided are "Unknown" and "Between 7 and 9 hours".
+
+Since we don't know the answer, the final answer should be "Unknown".
+----
+Answer the question by choosing one of the two options provided. If the answer can't be found, the final answer should be the string "Unknown".
+Q: How much food does the cat Tinyman Zhengel eat every day?
+  choice: Unknown
+  choice: 250 calories
+The final answer is either the answer phrase or the word "Unknown".
+A: Let's think step-by-step.
+
+First, we need to find out how much food Tinyman Zhengel eats every day. To do this, we need to find a source that provides this information. Unfortunately, we were unable to find any sources that provided this information.
+
+Next, we need to try to estimate how much food Tinyman Zhengel eats every day. We know that the average cat eats about 250 calories per day. However, we don't know if Tinyman Zhengel is an average cat. Therefore, we cannot say for sure how much food he eats every day.
+
+Therefore, the final answer is "Unknown".
+----
+Answer the question by choosing one of the two options provided. If the answer can't be found, the final answer should be the string "Unknown".
+Q: Who was the first person to whistle?
+  choice: Unknown
+  choice: T.J. Cummings
+The final answer is either the answer phrase or the word "Unknown".
+A: Let's think step-by-step.
+
+The first person to whistle was T.J. Cummings.
+----
+"""
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
     global auto_cot_corrected_prompt
+    global auto_cot_cleaned_prompt
     auto_cot_prompt = ""
     for io_pair in io_pairs:
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=0.7, quote='---', n=1)
@@ -508,9 +615,11 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
         # Add the final answer with special format so evaluation is easier.
-    
+
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
+    else:
+        auto_cot_prompt = auto_cot_cleaned_prompt
     
     print(auto_cot_prompt)
     f = open("auto_cot_demonstrations.txt","a+")
@@ -542,7 +651,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
             time.sleep(10)
-        preds = [x.strip() for x in answers]
+        preds = [get_autocot_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("Auto-CoT Performance:")
@@ -679,6 +788,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
+    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
 
     args = parser.parse_args()
 
@@ -697,6 +807,6 @@ if __name__ == "__main__":
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
-        few_shot_cot(args.temperature, args.model_name)
+        few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)

@@ -25,8 +25,8 @@ from IPython.display import HTML
 with open(os.path.expanduser('~/.openai_api_key'), 'r') as file:
     openai.api_key = file.read().replace('\n', '')
 print(openai.api_key)
-#cache_dir = '/gscratch/zlab/bparan/projects/cascades/data'
-cache_dir = '/home/bparanjape/language-programmes/data'
+cache_dir = '/gscratch/zlab/bparan/projects/cascades/data'
+# cache_dir = '/home/bparanjape/language-programmes/data'
 import subprocess
 import sys
 
@@ -395,10 +395,19 @@ def get_answer(x, return_original=False):
         matches = [match for match in re.finditer("\#[0-9]+:", x)]
         # If any match is made, return the last match output 
         if len(matches):
-            return x[matches[-1].start():]
+            return x[matches[-1].start():].strip()
         if return_original:
             return x.strip()
         return ""
+
+def get_autocot_answer(x, answer_prompt="The final answer is ", return_original=False):
+    if re.search(answer_prompt, x):
+        return x[re.search(answer_prompt, x).span(0)[-1]:].strip()
+    else:
+        if return_original:
+            return x.strip()
+        return ""
+
 
 program = """Input:
 Python code:

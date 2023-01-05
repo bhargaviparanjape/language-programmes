@@ -11,7 +11,7 @@ import datasets
 import numpy as np
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
                    get_few_shot_prompt, get_subset, gpt3,
                    propose_decomposition, propose_instruction, substring_match)
 
@@ -325,8 +325,135 @@ So in this case, the code snippet returns the sum of two numbers.
 The best answer choice is "returns the sum of two numbers".
 ----
 """
+
+auto_cot_cleaned_prompt = """(Code Description) Which of the following choices best describes the functionality of the given python code snippet.
+Python code:
+try:
+    n = int(input())
+    m = int(input())
+    integer_sum = int(n) + int(m)
+    print(integer_sum)
+except:
+    print('error')
+
+  choice: prints number between 5 and 6
+  choice: try input and except error
+  choice: inputs the string 'try'
+  choice: prints sum of two input numbers only if they are integers otherwise raises error
+The final answer is one of the choices.
+A: Let's think step-by-step.
+
+First, we have a try statement. This means that the code inside the try block will be executed first.
+
+Inside the try block, we have two variables, n and m. We are trying to convert them into integers using the int() function.
+
+Then, we are adding the two integers and storing the result in a variable called integer_sum.
+
+Finally, we are printing the value of integer_sum.
+
+If the input values are not integers, then the code inside the except block will be executed. The except block will print the string 'error'.
+----
+(Code Description) Which of the following choices best describes the functionality of the given python code snippet.
+Python code:
+numbers_list = [2, 6, 8, 10, 11, 4, 12, 7, 13, 17, 0, 3, 21]
+filtered_list = list(filter(lambda num: (num > 7), numbers_list))
+print(filtered_list)
+
+  choice: prints lambda
+  choice: returns a filtered list
+  choice: prints a list of numbers greater than 7 from numbers_list
+  choice: prints numbers from 2 to 6
+The final answer is one of the choices.
+A: Let's think step-by-step.
+
+The first line creates a list called numbers_list.
+
+The second line uses the filter function to filter out numbers that are greater than 7.
+
+The third line prints the filtered_list.
+
+Therefore, the code snippet prints a list of numbers greater than 7 from numbers_list.
+----
+(Code Description) Which of the following choices best describes the functionality of the given python code snippet.
+Python code:
+sum_of_numbers = 0
+num = 10
+while(num > 0):
+    sum_of_numbers += num
+    num -= 1
+print('The sum is', sum_of_numbers)
+
+  choice: prints the factorial of numbers
+  choice: prints the sum of first 10 natural numbers
+  choice: prints number from 10 to 0 in ascending order
+  choice: prints the numbers from 1 to 10
+The final answer is one of the choices.
+A: Let's think step-by-step.
+
+sum_of_numbers = 0
+num = 10
+
+The code sets up a variable called sum_of_numbers, which starts at 0, and a variable called num, which starts at 10.
+
+while(num > 0):
+
+This while loop will keep going as long as num is greater than 0.
+
+sum_of_numbers += num
+
+This line adds the value of num to sum_of_numbers.
+
+num -= 1
+
+This line decreases the value of num by 1.
+
+print('The sum is', sum_of_numbers)
+
+Finally, the code prints the sum of the numbers from 1 to 10.
+----
+(Code Description) Which of the following choices best describes the functionality of the given python code snippet.
+Python code:
+for i in range(23):
+    print(i)
+
+  choice: prints 'hello world' to the terminal
+  choice: prints values from 1 to 10
+  choice: computes first 10 prime numbers
+  choice: prints values from 0 to 22
+The final answer is one of the choices.
+A: Let's think step-by-step.
+
+The for loop iterates over a range of numbers from 0 to 23.
+
+For each number in the range, the code prints the number to the screen.
+
+So, the code will print values from 0 to 22 to the screen.
+----
+(Code Description) Which of the following choices best describes the functionality of the given python code snippet.
+Python code:
+def sum_two(a,b):
+    return a+b
+
+  choice: returns a and b
+  choice: returns the sum of two numbers
+  choice: returns 5 and 6
+  choice: returns numbers between 5 and 6
+The final answer is one of the choices.
+A: Let's think step-by-step.
+
+def sum_two(a,b):
+
+This defines a function that takes two parameters, a and b.
+
+return a+b
+
+This line tells the function to return the sum of a and b.
+----
+"""
+
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
     global auto_cot_corrected_prompt
+    global auto_cot_cleaned_prompt
     auto_cot_prompt = ""
     for io_pair in io_pairs:
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=0.7, quote='---', n=1)
@@ -339,6 +466,8 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
 
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
+    else:
+        auto_cot_prompt = auto_cot_cleaned_prompt
     
     print(auto_cot_prompt)
     f = open("auto_cot_demonstrations.txt","a+")
@@ -555,6 +684,15 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
+
     perf_array = []
     runs = 5
     for run in range(runs): 
@@ -562,7 +700,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         answers = []
         for x in tqdm(chunks(inputs, 20)):
             x = [ex.replace("\n\nEnglish language description:", "") for ex in x]
-            answers.extend(predict("""(Code Description) Which of the following choices best describes the functionality of the given python code snippet.""", x))
+            answers.extend(predict_complete(task_description, x))
         preds = [get_answer(x.strip()) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
@@ -635,7 +773,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
             time.sleep(60)
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("FS-CoT Performance:")

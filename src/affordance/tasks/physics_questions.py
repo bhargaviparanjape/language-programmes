@@ -11,7 +11,7 @@ import datasets
 import numpy as np
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
                    get_few_shot_prompt, get_subset, gpt3,
                    propose_decomposition, propose_instruction, substring_match)
 
@@ -329,6 +329,15 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
+
     perf_array = []
     runs = 5
     for run in range(runs): 
@@ -336,9 +345,9 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
-            answers.extend(predict("Answer these high-school-level physics multiple-choice questions.", x))
+            answers.extend(predict_complete("Answer these high-school-level physics multiple-choice questions.", x))
             time.sleep(10)
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("Few-shot COT performance:")
@@ -383,7 +392,36 @@ Thus, the new momentum is 3/2 of the original. That would be 3/2*24 = 36
 The final answer is 36 kg*m/s
 ----
 """
+
+auto_cot_cleaned_prompt = """(Physics Questions) Answer these high-school-level physics multiple-choice questions.
+Q: Lamar Gant, U.S. powerlifting star, became the first man to deadlift five times his own body weight in 1985. Deadlifting involves raising a loaded barbell from the floor to a position above the head with outstretched arms. Determine the work done by Lamar in deadlifting 260 kg to a height of 0.85 m above the ground.
+A: Let's think step-by-step.
+
+The work done by Lamar in deadlifting 260 kg to a height of 0.85 m above the ground is:
+
+$W = \frac{1}{2} \cdot 260 \cdot 9.8 \cdot 0.85 = 12,091 \text{ J}$
+----
+(Physics Questions) Answer these high-school-level physics multiple-choice questions.
+Q: In the Funny Car competition at the Joliet Speedway in Joliet, Illinois in October of 2004, John Force complete the 1/4-mile dragster race in a record time of 4.437 seconds. Determine the average speed of the dragster in km/hr.
+A: Let's think step-by-step.
+
+First, we need to figure out how long it took the dragster to travel 1/4 of a mile. Since we know the dragster's speed in terms of seconds, we can convert 1/4 of a mile into seconds. There are 5280 feet in a mile, so 1/4 of a mile is 1320 feet. There are 3 feet in a yard, so 1/4 of a mile is also 440 yards. There are 3600 seconds in an hour, so 1/4 of a mile is also 1.2 seconds.
+
+Now that we know how long it took the dragster to travel 1/4 of a mile, we can calculate the average speed. The dragster traveled 1/4 of a mile in 1.2 seconds, so the average speed is 1/4 of a mile divided by 1.2 seconds. This is equal to 0.208 miles per second, or 0.208 * 3600 = 750 km/hr.
+----
+(Physics Questions) Answer these high-school-level physics multiple-choice questions.
+Q: A bicycle has a momentum of 24 kg*m/s. What momentum would the bicycle have if it had one-half the mass and was moving with thrice the speed?
+A: Let's think step-by-step.
+The bicycle's momentum is 24 kg*m/s.
+The bicycle has a mass of 12 kg and a speed of 6 m/s.
+If the bicycle had one-half the mass, it would have a mass of 6 kg.
+If the bicycle had thrice the speed, it would have a speed of 18 m/s.
+Therefore, the bicycle would have a momentum of 6*18=108 kg*m/s.
+----
+"""
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
+    global auto_cot_cleaned_prompt
+    global auto_cot_corrected_prompt
     auto_cot_prompt = ""
     description = "(Physics Questions) Answer these high-school-level physics multiple-choice questions."
     for io_pair in io_pairs:
@@ -393,8 +431,11 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         auto_cot_prompt += prompt
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
+
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
+    else:
+        auto_cot_prompt = auto_cot_cleaned_prompt
     
     print(auto_cot_prompt)
     f = open("auto_cot_demonstrations.txt","a+")
@@ -424,7 +465,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
             time.sleep(10)
-        preds = [x.strip() for x in answers]
+        preds = [get_autocot_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("Auto-CoT Performance:")
@@ -524,6 +565,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
+    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
 
     args = parser.parse_args()
 
@@ -542,6 +584,6 @@ if __name__ == "__main__":
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
-        few_shot_cot(args.temperature, args.model_name)
+        few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)

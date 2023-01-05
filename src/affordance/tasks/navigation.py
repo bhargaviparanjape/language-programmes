@@ -11,7 +11,7 @@ import datasets
 import numpy as np
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
                    get_few_shot_prompt, get_subset, gpt3,
                    propose_decomposition, propose_instruction, substring_match)
 
@@ -221,7 +221,92 @@ In the end, you are 5 steps away from the starting point.
 The final answer is False.
 ----
 """
+
+auto_cot_cleaned_prompt = """If you follow these instructions, do you return to the starting point?
+Q: Turn left. Take 4 steps. Turn around. Take 4 steps.
+The final answer is "True" or "False".
+A: Let's think step-by-step.
+
+Turn left. Take 4 steps.
+
+You are now facing the opposite direction.
+
+Turn around. Take 4 steps.
+
+You have returned to the original starting point. Therefore, the answer is True.
+----
+If you follow these instructions, do you return to the starting point?
+Q: Take 7 steps. Take 8 steps. Take 10 steps. Turn around. Turn around. Take 5 steps. Turn around.
+The final answer is "True" or "False".
+A: Let's think step-by-step.
+
+You take 7 steps.
+You take 8 steps.
+You take 10 steps.
+You turn around.
+You turn around again.
+You take 5 steps.
+You turn around one final time.
+
+Now, let's think about where you are in relation to the starting point. You are 7 + 8 + 10 = 25 steps away from the starting point. However, you've turned around twice, so you've effectively walked back two steps for each turn around. This means you are now only 25 - 4 = 21 steps away from the starting point. Finally, you turn around one last time and take 5 steps. This puts you 21 + 5 = 26 steps away from the starting point, which is exactly where you started, so the answer is "True".
+----
+If you follow these instructions, do you return to the starting point?
+Q: Always face forward. Take 8 steps left. Take 2 steps right. Take 6 steps right.
+The final answer is "True" or "False".
+A: Let's think step-by-step.
+
+Always face forward. This means that if you're facing north, you'll stay facing north.
+Take 8 steps left. This means that if you're facing north, you'll end up facing west.
+Take 2 steps right. This means that if you're facing west, you'll end up facing north.
+Take 6 steps right. This means that if you're facing north, you'll end up facing east.
+
+So in the end, you'll be back where you started, facing the same direction. Therefore, the answer is True.
+----
+If you follow these instructions, do you return to the starting point?
+Q: Take 3 steps. Turn right. Turn left. Take 5 steps. Take 10 steps. Take 7 steps. Turn left.
+The final answer is "True" or "False".
+A: Let's think step-by-step.
+
+You take 3 steps. Now you are 3 steps away from the starting point.
+You turn right. Now you are still 3 steps away from the starting point, but facing a different direction.
+You turn left. Now you are still 3 steps away from the starting point, but facing the original direction.
+You take 5 steps. Now you are 8 steps away from the starting point.
+You take 10 steps. Now you are 18 steps away from the starting point.
+You take 7 steps. Now you are 25 steps away from the starting point.
+You turn left. Now you are 25 steps away from the starting point, but facing a different direction.
+
+The final answer is "False".
+----
+If you follow these instructions, do you return to the starting point?
+Q: Take 5 steps. Turn right. Turn left.
+The final answer is "True" or "False".
+A: Let's think step-by-step.
+
+You take 5 steps. This moves you 5 units forward.
+You turn right. This changes your direction by 90 degrees.
+You turn left. This changes your direction by 90 degrees.
+
+Now, let's consider your final position and direction. You are 5 units forward, and your direction is the same as it was at the start. Therefore, the answer is True.
+----
+If you follow these instructions, do you return to the starting point?
+Q: Always face forward. Take 7 steps left. Take 10 steps right. Take 1 step right. Take 4 steps left. Take 1 step backward. Take 3 steps backward.
+The final answer is "True" or "False".
+A: Let's think step-by-step.
+
+Always face forward. This will keep you oriented in the same direction.
+Take 7 steps left. 
+Take 10 steps right. 
+Take 1 step right. 
+Take 4 steps left. 
+Take 1 step backward. 
+Take 3 steps backward.
+
+After taking all of these steps, you will be back at the starting point. Therefore, the answer is True.
+----
+"""
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
+    global auto_cot_cleaned_prompt
+    global auto_cot_corrected_prompt
     auto_cot_prompt = ""
     for io_pair in io_pairs:
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=0.7, quote='---', n=1)
@@ -231,8 +316,11 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
         # Add the final answer with special format so evaluation is easier.
+
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
+    else:
+        auto_cot_prompt = auto_cot_cleaned_prompt
     
     print(auto_cot_prompt)
     f = open("auto_cot_demonstrations.txt","a+")
@@ -264,7 +352,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
             time.sleep(10)
-        preds = [x.strip() for x in answers]
+        preds = [get_autocot_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("Auto-CoT Performance:")
@@ -529,6 +617,15 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
+
     perf_array = []
     runs = 5
     for run in range(runs): 
@@ -537,10 +634,10 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         for x in tqdm(chunks(inputs, 10)):
             # x = [ex.replace("If you follow these instructions, do you return to the starting point?\n", "") for ex in x]
             x = [ex.replace("\nA:", "") for ex in x]
-            answers.extend(predict(task_description, x))
+            answers.extend(predict_complete(task_description, x))
             time.sleep(10)
         # preds = [[y.strip() for y in x.split("\n")] for x in answers]
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("FS-CoT performance:")
@@ -601,6 +698,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
+    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
 
     args = parser.parse_args()
 
@@ -619,6 +717,6 @@ if __name__ == "__main__":
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
-        few_shot_cot(args.temperature, args.model_name)
+        few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)

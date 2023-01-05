@@ -71,7 +71,7 @@ def google_search(query, previous_input=None, top_k=1):
         toret = res['answer_box']['snippet']
     elif 'answer_box' in res.keys() and 'snippet_highlighted_words' in res['answer_box'].keys():
         toret = res['answer_box']["snippet_highlighted_words"][0]
-    elif 'snippet' in res["organic_results"][0].keys():
+    elif 'organic_results' in res.keys() and 'snippet' in res["organic_results"][0].keys():
         toret= res["organic_results"][0]['snippet'] 
     else:
         toret = None
@@ -95,10 +95,9 @@ def code_generate(instruction, code_input):
             instruction = instruction.replace(input_string, "Input")
         comment = "\"\"\"\n{0}\nInput:{1}\nStore the final result as a variable named 'ans' and print it.\n\"\"\"\n\ndef".format(instruction, code_input)
 
-    time.sleep(15)
-
     response = openai.Completion.create(
-    model="code-davinci-002",
+    # model="code-davinci-002",
+    model="davinci-codex-002-msft",
     prompt=comment,
     temperature=0.0,
     max_tokens=256,
@@ -109,6 +108,7 @@ def code_generate(instruction, code_input):
     )
     
     code_snippet = response.choices[0].text
+
     return "def" + code_snippet, comment
 
 def code_execute(code_snippet, code_input=None):
@@ -173,6 +173,7 @@ def code_generate_then_execute(instruction, code_input):
     return result
 
 def code_generate_then_lookup(instruction, code_input):
+
     code_snippet, generate_details = code_generate(instruction=instruction, code_input=code_input)
     time.sleep(15)
     result, execute_snippet = code_execute(code_snippet=code_snippet)
@@ -324,7 +325,7 @@ class TopDownVisitor(Interpreter):
 
 
 class TopDownVisitorBeta(Interpreter):
-    def __init__(self, model_name="text-davinci-002", rerun=True):
+    def __init__(self, model_name="text-davinci-002", temperature=0.3, rerun=True):
         self.built_ins = {
             "[generate]": generate,
             "[search]": google_search,
@@ -334,14 +335,14 @@ class TopDownVisitorBeta(Interpreter):
             "[string index]" : code_generate_then_execute,
             "[string permutation]" : code_generate_then_lookup,
             # "[arithmetic]" : arithmetic,
-            "[generate python code]" : code_generate,
+            # "[generate python code]" : code_generate,
         }
         self.keyword_map = {
             "[permutation]": "[string permutation]", "[permute]": "[string permutation]", "[string permute]": "[string permutation]"}
 
         self.execution_details = []
         self.rerun = rerun
-        self.program_completer = OpenAIModel(model=model_name,  temperature=0.3, max_length=500, quote='---', n=1)
+        self.program_completer = OpenAIModel(model=model_name,  temperature=temperature, max_length=500, quote='---', n=1)
 
     def syntax_check(self, program):
         # Look for programs with EOC ending and final answer in syntax.

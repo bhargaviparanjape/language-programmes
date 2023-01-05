@@ -11,7 +11,7 @@ import datasets
 import numpy as np
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
                    get_few_shot_prompt, get_subset, gpt3,
                    propose_decomposition, propose_instruction, substring_match)
 
@@ -212,7 +212,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     
     global few_shot_cot_prompt
     task_name = "Hindu Knowledge"
-    task_description = "(Hindu Knowledge) Answer these multiple-choice questions about Hindu mythology."
+    task_description = "(Hindu Knowledge) Answer these multiple-choice questions about Hindu mythology. The final answer should be one of the provided choices."
 
     if strategy == "fixed":
         few_shot_cot_prompt = few_shot_cot_prompt
@@ -231,6 +231,15 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
+
     perf_array = []
     runs = 5
     for run in range(runs): 
@@ -238,9 +247,9 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
-            answers.extend(predict("Answer these multiple-choice questions about Hindu mythology. The final answer should be one of the provided choices.", x))
+            answers.extend(predict_complete(task_description, x))
             time.sleep(10)
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("Few-shot COT performance:")
@@ -294,10 +303,51 @@ The Dvapara Yuga is the third era in the Hindu cosmology, and it is preceded by 
 
 The final answer is "Treta Yuga"."""
 
+auto_cot_cleaned_prompt = """Q: In Hinduism, which musical instrument is most associated with the god Krishna?
+  choice: Sitar
+  choice: Veena
+  choice: Flute
+  choice: Tabla (drum)
+The final answer should be one of the provided choices.
+A: Let's think step-by-step.
+
+First, we need to identify which god is most associated with music. In Hinduism, that would be Krishna.
+
+Then, we need to identify which musical instrument is most associated with Krishna. Based on the choices provided, the answer would be the flute.
+----
+Hindu Knowledge: Answer these multiple-choice questions about Hindu mythology.
+Q: In Hinduism, the era known as Dvapara Yuga is preceded by which era?
+  choice: Krita Yuga
+  choice: Treta Yuga
+  choice: Kali Yuga
+  choice: Satya Yuga
+The final answer should be one of the provided choices.
+A: Let's think step-by-step.
+
+The Dvapara Yuga is the third age of the four ages of the Hindu cycle of time, so it is preceded by the first two ages, the Krita Yuga and the Treta Yuga.
+----
+Hindu Knowledge: Answer these multiple-choice questions about Hindu mythology.
+Q: In the Hindu epic Ramayana, which character killed Lavanasura?
+  choice: Lakshmana
+  choice: Shatrughna
+  choice: Bharata
+  choice: Rama
+The final answer should be one of the provided choices.
+A: Let's think step-by-step.
+
+First, we need to know who Lavanasura is. He's a demon king who was troubling the people of Ayodhya.
+
+Next, we need to decide which of the provided choices is most likely to have killed Lavanasura. Lakshmana is Rama's brother, so he's a likely candidate. Shatrughna is another one of Rama's brothers, so he's also a likely candidate. Bharata is Rama's cousin, so he's a possible candidate.
+
+Finally, we need to choose the most likely candidate. Based on the information given, it seems most likely that Lakshmana killed Lavanasura.
+----
+"""
+
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
     global auto_cot_corrected_prompt
+    global auto_cot_cleaned_prompt
     auto_cot_prompt = ""
-    for io_pair in io_pairs[:5]:
+    for io_pair in io_pairs:
         gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=0.7, quote='---', n=1)
         prompt = """%s\n"""% task_description + io_pair[0] + \
             """\nThe final answer should be one of the provided choices.\nA: Let's think step-by-step.\n""" 
@@ -306,8 +356,11 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         auto_cot_prompt += cot[0] + "\n----\n"
         # Add the final answer with special format so evaluation is easier.
     
+    pdb.set_trace()
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
+    else:
+        auto_cot_prompt = auto_cot_cleaned_prompt
     
     print(auto_cot_prompt)
     f = open("auto_cot_demonstrations.txt","a+")
@@ -367,7 +420,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
                 x = [ex.replace("\nA:", "") for ex in x]
                 answers.extend(predict(x))
                 time.sleep(10)
-            preds = [x.strip() for x in answers]
+            preds = [get_autocot_answer(x) for x in answers]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)
         print("Auto-CoT Performance:")
@@ -640,7 +693,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
                 new_answer  = interpreter.batch_visit(prompts, answer)
                 answers.extend(new_answer)
                 time.sleep(30)
-            preds = [x.strip() for x in answers]
+            preds = [get_answer(x) for x in answers]
             perf_array.append(substring_match(labels, preds))
 
             # Report on interpreter performance
@@ -661,6 +714,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
+    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
 
     args = parser.parse_args()
 
@@ -679,6 +733,6 @@ if __name__ == "__main__":
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
-        few_shot_cot(args.temperature, args.model_name)
+        few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)

@@ -11,7 +11,7 @@ import datasets
 import numpy as np
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
                    get_few_shot_prompt, get_subset, gpt3,
                    propose_decomposition, propose_instruction, substring_match)
 
@@ -145,7 +145,6 @@ Frankenstein.
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
-            time.sleep(10)
         preds = [x.strip().split("\n") for x in answers]
         perf_array.append(token_match(labels, preds))
         print(perf_array)
@@ -237,7 +236,152 @@ So, at the end of the event, Alice has the brown present, Bob has the orange pre
 The final answer is brown present.
 ----
 """
+
+auto_cot_cleaned_prompt = """(Tracking shuffled objects) You are given a list of persons or objects that sequentially interact with each other in pairs. Track how the pairs change over the course of the interaction and figure out the pair of the final person or object.
+Alice, Bob, Claire, Dave, and Eve are playing a game. At the start of the game, they are each holding a ball: Alice has a brown ball, Bob has a purple ball, Claire has a black ball, Dave has a green ball, and Eve has a yellow ball. 
+
+As the game progresses, pairs of players trade balls. First, Claire and Alice swap balls. Then, Bob and Alice swap balls. Then, Eve and Dave swap balls. Then, Dave and Claire swap balls. Finally, Alice and Bob swap balls. At the end of the game, Claire has the
+A: Let's think step-by-step.
+
+First, Claire and Alice swap balls. So now Claire has a brown ball and Alice has a black ball.
+Then, Bob and Alice swap balls. So now Bob has a brown ball and Alice has a purple ball.
+Then, Eve and Dave swap balls. So now Eve has a green ball and Dave has a yellow ball.
+Then, Dave and Claire swap balls. So now Dave has a black ball and Claire has a green ball.
+Finally, Alice and Bob swap balls. So now Alice has a yellow ball and Bob has a purple ball.
+Therefore, the final pairs are:
+Claire has the green ball and Dave has the black ball.
+
+The final answer is 'green ball'
+----
+(Tracking shuffled objects) You are given a list of persons or objects that sequentially interact with each other in pairs. Track how the pairs change over the course of the interaction and figure out the pair of the final person or object.
+Alice, Bob, Claire, Dave, and Eve are playing a game. At the start of the game, they are each holding a ball: Alice has a black ball, Bob has a brown ball, Claire has a red ball, Dave has a white ball, and Eve has a green ball. 
+
+As the game progresses, pairs of players trade balls. First, Bob and Alice swap balls. Then, Alice and Claire swap balls. Then, Eve and Alice swap balls. Then, Claire and Bob swap balls. Finally, Claire and Dave swap balls. At the end of the game, Eve has the
+A: Let's think step-by-step.
+
+1. At the start of the game, each player has a ball:
+Alice has a black ball,
+Bob has a brown ball,
+Claire has a red ball,
+Dave has a white ball,
+Eve has a green ball.
+2. Bob and Alice swap balls.
+Alice now has a brown ball,
+Bob now has a black ball.
+3. Alice and Claire swap balls.
+Alice now has a red ball,
+Claire now has a brown ball.
+4. Eve and Alice swap balls.
+Alice now has a green ball,
+Eve now has a red ball.
+5. Claire and Bob swap balls.
+Claire now has a black ball,
+Bob now has a green ball.
+6. Claire and Dave swap balls.
+Claire now has a white ball,
+Dave now has a black ball.
+7. At the end of the game, Eve has the green ball, Alice has the white ball, Claire has the brown ball, Bob has the red ball, and Dave has the black ball.
+
+The final answer is 'green ball'
+----
+(Tracking shuffled objects) You are given a list of persons or objects that sequentially interact with each other in pairs. Track how the pairs change over the course of the interaction and figure out the pair of the final person or object.
+Alice, Bob, Claire, Dave, and Eve are holding a white elephant gift exchange. At the start of the event, they are each holding a present of a different color: Alice has a red present, Bob has a yellow present, Claire has a green present, Dave has a pink ball, and Eve has a white present. 
+
+As the event progresses, pairs of people swap gifts. First, Claire and Alice swap their gifts. Then, Dave and Eve swap their gifts. Then, Bob and Dave swap their gifts. Then, Eve and Dave swap their gifts. Finally, Dave and Alice swap their gifts. At the end of the event, Eve has the
+A: Let's think step-by-step.
+
+At the start of the event:
+
+Alice has a red present.
+Bob has a yellow present.
+Claire has a green present.
+Dave has a pink ball.
+Eve has a white present.
+
+After the first swap (Claire and Alice):
+
+Alice has a green present.
+Bob has a yellow present.
+Claire has a red present.
+Dave has a pink ball.
+Eve has a white present.
+
+After the second swap (Dave and Eve):
+
+Alice has a green present.
+Bob has a yellow present.
+Claire has a red present.
+Dave has a white present.
+Eve has a pink ball.
+
+After the third swap (Bob and Dave):
+
+Alice has a green present.
+Bob has a pink ball.
+Claire has a red present.
+Dave has a yellow present.
+Eve has a white present.
+
+After the fourth swap (Eve and Dave):
+
+Alice has a green present.
+Bob has a pink ball.
+Claire has a red present.
+Dave has a white present.
+Eve has a yellow present.
+
+After the fifth and final swap (Dave and Alice):
+
+Alice has a pink ball.
+Bob has a green present.
+Claire has a red present.
+Dave has a yellow present.
+Eve has a white present.
+
+The final answer is 'white present'
+----
+(Tracking shuffled objects) You are given a list of persons or objects that sequentially interact with each other in pairs. Track how the pairs change over the course of the interaction and figure out the pair of the final person or object.
+Alice, Bob, Claire, Dave, and Eve are playing a game. At the start of the game, they are each holding a ball: Alice has a brown ball, Bob has a purple ball, Claire has a green ball, Dave has a white ball, and Eve has a blue ball. 
+
+As the game progresses, pairs of players trade balls. First, Alice and Claire swap balls. Then, Dave and Alice swap balls. Then, Bob and Eve swap balls. Then, Claire and Eve swap balls. Finally, Alice and Dave swap balls. At the end of the game, Claire has the
+A: Let's think step-by-step.
+
+Alice starts with a brown ball.
+Claire starts with a green ball.
+Alice and Claire swap balls.
+Now, Alice has a green ball and Claire has a brown ball.
+Dave and Alice swap balls.
+Now, Dave has a green ball and Alice has a white ball.
+Bob and Eve swap balls.
+Now, Bob has a blue ball and Eve has a purple ball.
+Claire and Eve swap balls.
+Now, Claire has a purple ball and Eve has a green ball.
+Alice and Dave swap balls.
+Now, Alice has a blue ball and Dave has a white ball.
+
+The final answer is 'purple ball' 
+----
+(Tracking shuffled objects) You are given a list of persons or objects that sequentially interact with each other in pairs. Track how the pairs change over the course of the interaction and figure out the pair of the final person or object.
+Alice, Bob, Claire, Dave, Eve, Fred, and Gertrude are holding a white elephant gift exchange. At the start of the event, they are each holding a present of a different color: Alice has a blue present, Bob has a white present, Claire has a purple present, Dave has a black ball, Eve has a brown present, Fred has a orange ball, and Gertrude has a yellow present. 
+
+As the event progresses, pairs of people swap gifts. First, Gertrude and Alice swap their gifts. Then, Dave and Eve swap their gifts. Then, Alice and Dave swap their gifts. Then, Fred and Dave swap their gifts. Then, Bob and Dave swap their gifts. Then, Claire and Gertrude swap their gifts. Finally, Gertrude and Dave swap their gifts. At the end of the event, Alice has the
+A: Let's think step-by-step.
+
+1. Gertrude and Alice swap their gifts.
+2. Dave and Eve swap their gifts.
+3. Alice and Dave swap their gifts.
+4. Fred and Dave swap their gifts.
+5. Bob and Dave swap their gifts.
+6. Claire and Gertrude swap their gifts.
+7. Gertrude and Dave swap their gifts.
+So, at the end of the event, Alice has the yellow present, Bob has the purple present, Claire has the white present, Dave has the orange ball, Eve has the black ball, Fred has the brown present, and Gertrude has the blue present.
+
+The final answer is 'yellow present'
+----
+"""
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
+    global auto_cot_cleaned_prompt
+    global auto_cot_corrected_prompt
     auto_cot_prompt = ""
     description = """(Tracking shuffled objects) You are given a list of persons or objects that sequentially interact with each other in pairs. Track how the pairs change over the course of the interaction and figure out the pair of the final person or object."""
     for io_pair in io_pairs:
@@ -247,8 +391,11 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         auto_cot_prompt += prompt
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
+    
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
+    else:
+        auto_cot_prompt = auto_cot_cleaned_prompt
     
     print(auto_cot_prompt)
     f = open("auto_cot_demonstrations.txt","a+")
@@ -278,8 +425,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
-            time.sleep(10)
-        preds = [x.strip() for x in answers]
+        preds = [get_autocot_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("Auto-CoT Performance:")
@@ -440,15 +586,24 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
+
     perf_array = []
     runs = 5
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
-            answers.extend(predict(task_description, x))
-            time.sleep(10)
-        preds = [x.strip() for x in answers]
+            answers.extend(predict_complete(task_description, x))
+            # time.sleep(10)
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("Few-shot COT performance:")
@@ -487,11 +642,10 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
         answers = []
         new_labels = ["Ans: " + label for label in labels]
         for x in tqdm(chunks(inputs, 10)):
-            x = [ex.replace("\nDoes the preceding sentence contain non-contemporaneous (anachronistic) elements?", "") for ex in x]
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(new_labels, preds))
         print(perf_array)
     print("FS-CoT Performance:")
@@ -508,6 +662,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
+    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
 
     args = parser.parse_args()
 
@@ -526,6 +681,6 @@ if __name__ == "__main__":
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
-        few_shot_cot(args.temperature, args.model_name)
+        few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)

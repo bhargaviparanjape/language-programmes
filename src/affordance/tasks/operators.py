@@ -11,7 +11,7 @@ import datasets
 import numpy as np
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
                    get_few_shot_prompt, get_subset, gpt3,
                    propose_decomposition, propose_instruction, substring_match)
 
@@ -124,9 +124,83 @@ op 16 0 10 6 =
 
 
 auto_cot_corrected_prompt = """"""
+
+auto_cot_cleaned_prompt = """Given the definition of the op operator, compute the result.
+i op j subtracts j from i.
+7 op 3 =
+The final answer is the result of the operation.
+A: Let's think step-by-step.
+
+First, we need to understand what the op operator does. It subtracts j from i.
+
+Next, we need to apply that operation to the numbers given.
+
+7 op 3 = 7 - 3
+
+The final answer is the result of the operation, which in this case is 4.
+----
+Given the definition of the op operator, compute the result.
+i op j subtracts j from i.
+176 op 23 =
+The final answer is the result of the operation.
+A: Let's think step-by-step.
+
+i op j subtracts j from i.
+
+That means we're subtracting 23 from 176.
+
+The final answer is 153.
+----
+Given the definition of the op operator, compute the result.
+i op j keeps the j first digits of i.
+125690 op 3 =
+The final answer is the result of the operation.
+A: Let's think step-by-step.
+
+The op operator keeps the 3 first digits of 125690.
+
+The 3 first digits of 125690 are 125.
+
+Therefore, 125690 op 3 = 125.
+----
+Given the definition of the op operator, compute the result.
+i op j suppresses the j first digits of i.
+125690 op 2 =
+The final answer is the result of the operation.
+A: Let's think step-by-step.
+
+The op operator suppresses the j first digits of i. In this case, j is 2. This means that the first 2 digits of 125690 will be suppressed.
+
+125690
+
+The first 2 digits are 12, so they will be suppressed.
+
+5690
+
+The final answer is 5690.
+----
+Given the definition of the op operator, compute the result.
+op n1 n2 ... nn selects the smallest from the n listed numbers.
+op 16 0 10 6 =
+The final answer is the result of the operation.
+A: Let's think step-by-step.
+
+The first number in the list is 16. The next number is 0.
+
+16 is greater than 0, so the op operator will select 16.
+
+The next number is 10. 16 is greater than 10, so op will select 10.
+
+The next number is 6. 10 is greater than 6, so op will select 6.
+
+The final answer is 6.
+----
+"""
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
     auto_cot_prompt = ""
-    for io_pair in io_pairs[:3]:
+    global auto_cot_cleaned_prompt
+    global auto_cot_corrected_prompt
+    for io_pair in io_pairs:
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=0.7, quote='---', n=1)
         prompt = """%s\n"""% task_description + io_pair[0] + \
             """\nThe final answer is the result of the operation.\nA: Let's think step-by-step.\n""" 
@@ -134,8 +208,11 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
         # Add the final answer with special format so evaluation is easier.
+    
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
+    else:
+        auto_cot_prompt = auto_cot_cleaned_prompt
     
     print(auto_cot_prompt)
     f = open("auto_cot_demonstrations.txt","a+")
@@ -165,7 +242,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
-        preds = [x.strip() for x in answers]
+        preds = [get_autocot_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
     print("Auto-CoT Performance:")
     print("Mean", np.mean(perf_array))
@@ -428,6 +505,15 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
+
 
     perf_array = []
     runs = 5
@@ -437,10 +523,10 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
-            answers.extend(predict(task_description, x))
+            answers.extend(predict_complete(task_description, x))
             time.sleep(10)
         # preds = [[y.strip() for y in x.split("\n")] for x in answers]
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("FS-CoT performance:")
@@ -560,6 +646,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
+    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
 
     args = parser.parse_args()
 
@@ -578,6 +665,6 @@ if __name__ == "__main__":
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
-        few_shot_cot(args.temperature, args.model_name)
+        few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)

@@ -13,7 +13,7 @@ import numpy as np
 import time
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_few_shot_prompt,
+from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_few_shot_prompt, get_autocot_answer,
                    get_subset, gpt3, propose_decomposition,
                    propose_instruction, substring_match)
 
@@ -201,6 +201,15 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         prompts=[few_shot_cot_prompt % (description, x) for x in chunk]
         return gpt3(prompts)
 
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
+
     perf_array = []
     runs = 2
     for run in range(runs): 
@@ -208,10 +217,9 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
-            answers.extend(predict("Unscrambling the given word into a word in English.", x))
-            time.sleep(10)
-        preds = [[y.strip() for y in x.split("\n")] for x in answers]
-        perf_array.append(token_match(labels, preds))
+            answers.extend(predict_complete(task_description, x))
+        preds = [get_answer(x) for x in answers]
+        perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("Few-shot COT performance:")
     print("Mean", np.mean(perf_array))
@@ -219,8 +227,75 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
 
 
 auto_cot_corrected_prompt = """"""
+auto_cot_cleaned_prompt = """Unscramble the given word into a word in English.
+Q: The word untamqu is a scrambled version of the English word
+The final answer is the unscrambled English word.
+A: Let's think step-by-step.
+
+1) The first letter is 'u', so the word might start with 'un-' or 'u'.
+2) The second letter is 'n', so the word might start with 'un-'.
+3) The third letter is 't', so the word might start with 'un-t'.
+4) The fourth letter is 'a', so the word might be 'un-ta-'.
+5) The fifth letter is 'm', so the word might be 'un-ta-m'.
+6) The sixth letter is 'q', so the word might be 'un-ta-mq'.
+7) The seventh letter is 'u', so the word might be 'un-ta-mqu'.
+The word is 'un-ta-mqu', so the unscrambled word is 'quantum'.
+
+The final answer is 'quantum'
+----
+Unscramble the given word into a word in English.
+Q: The word mnoeg is a scrambled version of the English word
+The final answer is the unscrambled English word.
+A: Let's think step-by-step.
+
+1. The word "mnoeg" is a scrambled version of the English word "menge."
+2. The word "menge" is a German word meaning "crowd" or "group."
+3. Therefore, the unscrambled English word is "crowd."
+
+The final answer is 'crowd'
+----
+Unscramble the given word into a word in English.
+Q: The word agknkbo is a scrambled version of the English word
+The final answer is the unscrambled English word.
+A: Let's think step-by-step.
+
+1. The word agknkbo is a scrambled version of the English word
+2. The final answer is the unscrambled English word.
+3. The word agknkbo is a scrambled version of the English word "book".
+
+The final answer is 'book'
+----
+Unscramble the given word into a word in English.
+Q: The word mgiaein is a scrambled version of the English word
+The final answer is the unscrambled English word.
+A: Let's think step-by-step.
+
+1. The first letter is 'm'. This could be the beginning of the word 'magic' or 'magician'.
+2. The second letter is 'g'. This could be the beginning of the word 'game' or 'garden'.
+3. The third letter is 'i'. This could be the beginning of the word 'is' or 'in'.
+4. The fourth letter is 'a'. This could be the beginning of the word 'am' or 'are'.
+5. The fifth letter is 'e'. This could be the beginning of the word 'eat' or 'end'.
+6. The sixth letter is 'n'. This could be the beginning of the word 'now' or 'not'.
+7. The seventh letter is 'i'. This could be the beginning of the word 'it' or 'is'.
+The word is 'magician'.
+
+The final answer is 'magician'
+----
+Unscramble the given word into a word in English.
+Q: The word eacperlfi is a scrambled version of the English word
+The final answer is the unscrambled English word.
+A: Let's think step-by-step.
+
+1. The word eacperlfi is a scrambled version of the English word
+2. The final answer is the unscrambled English word.
+3. Therefore, the word eacperlfi is a scrambled version of the English word "fireplace."
+
+The final answer is 'fireplace'
+----
+"""
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
     global auto_cot_corrected_prompt
+    global auto_cot_cleaned_prompt
     auto_cot_prompt = ""
     for io_pair in io_pairs:
         gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=0.2, quote='---', n=1)
@@ -232,6 +307,8 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
 
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
+    else:
+        auto_cot_prompt = auto_cot_cleaned_prompt
     
     print(auto_cot_prompt)
     f = open("auto_cot_demonstrations.txt","a+")
@@ -292,7 +369,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
                 x = [ex.replace("\nA:", "") for ex in x]
                 answers.extend(predict(x))
                 time.sleep(10)
-            preds = [x.strip() for x in answers]
+            preds = [get_autocot_answer(x) for x in answers]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)
         print("Auto-CoT Performance:")
@@ -676,8 +753,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
                 prompts, answer = predict(task_description, x)
                 new_answer  = interpreter.batch_visit(prompts, answer)
                 answers.extend(new_answer)
-                pdb.set_trace()
-                time.sleep(30)
+                time.sleep(10)
             preds = [x.strip() for x in answers]
             perf_array.append(substring_match(labels, preds))
 
@@ -698,6 +774,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
+    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
 
     args = parser.parse_args()
 
@@ -716,12 +793,6 @@ if __name__ == "__main__":
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
-        few_shot_cot(args.temperature, args.model_name)
+        few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)
-
-    # repeat_copy_logic(temperature=0.3)
-    # auto_cot(temperature=0.3)
-    # few_shot_cot(temperature=0.3)
-    # dynamic_few_shot_cot(temperature=0.3, strategy="similar")
-    # notebook(temperature=0.3, model_name="code-davinci-002")
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)

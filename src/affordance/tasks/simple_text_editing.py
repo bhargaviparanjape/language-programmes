@@ -20,7 +20,7 @@ from prompt_library import (llm_similar_tasks, random_tasks,
 from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer, 
                    get_few_shot_prompt, get_subset, gpt3,
                    propose_decomposition, propose_instruction, substring_match)
 
@@ -291,6 +291,15 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
+
     perf_array = []
     runs = 5
     for run in range(runs): 
@@ -301,7 +310,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
             answers.extend(predict(task_description, x))
             # pdb.set_trace()
             time.sleep(10)
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("Few-shot COT performance:")
@@ -352,9 +361,51 @@ Append "SENTENCE TO BE APPENDED." to the end of 'Turing was one of the people wh
 The final answer is 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program. SENTENCE TO BE APPENDED.'
 ----
 """
+auto_cot_cleaned_prompt = """(Simple text editing) Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is.
+Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: add 'bcd' after each 'a' in the entire text
+The final answer should be the edited text.
+A: Let's think step-by-step.
 
+Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.
+
+Turing was one of the people who worked on the first bcdcomputers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.
+
+Turing was one of the people who worked on the first bcdcomputers. He created the theoretical bcdTuring machine in 1936. The machine was imaginary, but it included the idea of a computer program.
+
+Turing was one of the people who worked on the first bcdcomputers. He created the theoretical bcdTuring machine in 1936. The machine was bcdimaginary, but it included the idea of a computer program.
+
+Turing was one of the people who worked on the first bcdcomputers. He created the theoretical bcdTuring machine in 1936. The machine was bcdimaginary, but it included the idea of a bcdcomputer program.
+----
+(Simple text editing) Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is.
+Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: replace all occurrencies of the character 'o' with 'a' in the entire text
+The final answer should be the edited text.
+A: Let's think step-by-step.
+
+Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer pragram.
+
+Turing was one of the people who worked an the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer pragram.
+
+Turing was one of the people who worked an the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.
+----
+(Simple text editing) Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is.
+Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: append the sentence 'SENTENCE TO BE APPENDED.' to the text
+The final answer should be the edited text.
+A: Let's think step-by-step.
+
+First, we need to identify the text that we're supposed to edit, which is this:
+
+"Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program."
+
+Next, we need to identify the edit operation, which is "append the sentence 'SENTENCE TO BE APPENDED.' to the text." In other words, we need to add the sentence in quotes after the existing text.
+
+Finally, we need to apply the edit operation to the text. So the edited text would be this:
+
+"Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program. SENTENCE TO BE APPENDED."
+----
+"""
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
     global auto_cot_corrected_prompt
+    global auto_cot_cleaned_prompt
     auto_cot_prompt = ""
     for io_pair in io_pairs:
         gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=0.7, quote='---', n=1)
@@ -364,9 +415,12 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
         # Add the final answer with special format so evaluation is easier.
-    
+
+    pdb.set_trace()
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
+    else:
+        auto_cot_prompt = auto_cot_cleaned_prompt
     
     print(auto_cot_prompt)
     f = open("auto_cot_demonstrations.txt","a+")
@@ -426,7 +480,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
                 x = [ex.replace("\nEdited:", "") for ex in x]
                 answers.extend(predict(x))
                 time.sleep(10)
-            preds = [x.strip() for x in answers]
+            preds = [get_autocot_answer(x) for x in answers]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)
         print("Auto-CoT Performance:")
@@ -854,37 +908,27 @@ if __name__ == "__main__":
     parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
+    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
 
     args = parser.parse_args()
 
     print("Dataset statistics")
     print(task_description)
-    print("Training examples:", len(inputs))
+    print("Training examples:", len(train_inputs))
     print("Dev examples:", len(inputs))
 
     inputs = inputs[:args.num_dev_examples]
     labels = labels[:args.num_dev_examples]
 
     if args.inference_strategy == "few_shot":
-        few_shot_prompt = get_few_shot_prompt(inputs, labels, n=args.num_train_examples)
+        few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=args.num_train_examples)
         print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
-        few_shot_cot(args.temperature, args.model_name)
+        few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)
-
-    # simple_text_editing(temperature=0.3)
-    # auto_cot(temperature=0.3)
-    # few_shot_cot(temperature=0.3, model_name="text-davinci-003")
-    # auto_decomp(10, 0.3)
-    # affordance(temperature=0.3)
-    # dynamic_few_shot_cot(temperature=0.3, strategy="llm_similar")
-    # prompt_guidance()
-    # nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed")
-    # notebook(temperature=0.3, model_name="code-davinci-002")
-
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)
 
 

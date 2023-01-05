@@ -11,7 +11,7 @@ import datasets
 import numpy as np
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
                    get_few_shot_prompt, get_subset, gpt3,
                    propose_decomposition, propose_instruction, substring_match)
 
@@ -254,7 +254,189 @@ Solving this equation, we find that it would take 120 minutes for the bills to b
 The final answer choice is 120 minutes.
 ----
 """
+
+auto_cot_cleaned_prompt = """Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer.
+What is the result of the following arithmetic operations?:divide(multiply(12, multiply(1.6, 1000)), 48)
+ choice:200 m
+ choice:600 m
+ choice:300 m
+ choice:100 m
+ choice:400 m
+The final answer is one of the five choices.
+A: Let's think step-by-step.
+
+12 * 1.6 * 1000 = 19200
+
+19200 / 48 = 400
+----
+Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer.
+What is the result of the following arithmetic operations?:multiply(divide(divide(400, 4), 8), 7)
+ choice:87.1
+ choice:87.5
+ choice:87.2
+ choice:87.0
+ choice:87.4
+The final answer is one of the five choices.
+A: Let's think step-by-step.
+
+400 divided by 4 equals 100.
+
+100 divided by 8 equals 12.5.
+
+12.5 multiplied by 7 equals 87.5.
+
+So, the final answer is 87.5.
+----
+Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer.
+What is the answer to the following math word problem?:a sporting goods store sold 64 frisbees in one week , some for $ 3 and the rest for $ 4 each . if receipts from frisbee sales for the week totaled $ 196 what is the fewest number of $ 4 frisbees that could have been sold ?
+ choice:2
+ choice:8
+ choice:24
+ choice:12
+ choice:4
+The final answer is one of the five choices.
+A: Let's think step-by-step.
+
+There were a total of 64 frisbees sold.
+Some were sold for $3, and the rest were sold for $4.
+This means that the total number of frisbees sold for $4 must be equal to or greater than the total number of frisbees sold for $3.
+
+We can set up the following equation:
+
+3x + 4y = 196
+
+y must be at least 8 in order for the equation to be true.
+
+This means that the fewest number of $4 frisbees that could have been sold is 8.
+----
+Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer.
+What is the answer to the following math word problem, with the given hint?:what decimal fraction is 20 ml of a litre ?
+divide 20 by 1000,
+ choice:. 05
+ choice:none of these
+ choice:. 2
+ choice:. 02
+ choice:0.002
+The final answer is one of the five choices.
+A: Let's think step-by-step.
+
+First, we need to understand what the question is asking. It is asking what decimal fraction is 20 ml of a litre. In other words, we need to convert 20 ml into a decimal fraction of a litre.
+
+To do this, we need to divide 20 by 1000. This gives us 0.02, which is the answer.
+----
+Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer.
+What is the answer to the following math word problem, with the given hint?:united telephone charges a base rate of $ 6.00 for service , plus an additional charge of $ 0.25 per minute . atlantic call charges a base rate of $ 12.00 for service , plus an additional charge of $ 0.20 per minute . for what number of minutes would the bills for each telephone company be the same ?
+divide(subtract(12.00, 6.00), subtract(0.25, 0.20))
+ choice:120 minutes
+ choice:20 minutes
+ choice:140 minutes
+ choice:110 minutes
+ choice:160 minutes
+The final answer is one of the five choices.
+A: Let's think step-by-step.
+
+The bills for each telephone company will be the same when the charges for each company are the same. So we want to find out when the charges for each company are equal.
+
+We can set up the equation:
+
+(6.00 + 0.25x) = (12.00 + 0.20x)
+
+Then we can solve for x:
+
+0.25x = 6.00 - 12.00
+
+0.25x = -6.00
+
+x = -24.00
+
+So the bills for each company will be the same when the number of minutes is equal to -24.00.
+
+This doesn't make sense, because the number of minutes can't be negative. So the answer must be one of the other choices.
+
+B: Let's think step-by-step.
+
+The bills for each telephone company will be the same when the charges for each company are the same. So we want to find out when the charges for each company are equal.
+
+We can set up the equation:
+
+(6.00 + 0.25x) = (12.00 + 0.20x)
+
+Then we can solve for x:
+
+0.25x = 6.00 - 12.00
+
+0.25x = -6.00
+
+x = -24.00
+
+So the bills for each company will be the same when the number of minutes is equal to -24.00.
+
+This doesn't make sense, because the number of minutes can't be negative. So the answer must be one of the other choices.
+
+C: Let's think step-by-step.
+
+The bills for each telephone company will be the same when the charges for each company are the same. So we want to find out when the charges for each company are equal.
+
+We can set up the equation:
+
+(6.00 + 0.25x) = (12.00 + 0.20x)
+
+Then we can solve for x:
+
+0.25x = 6.00 - 12.00
+
+0.25x = -6.00
+
+x = -24.00
+
+So the bills for each company will be the same when the number of minutes is equal to -24.00.
+
+This doesn't make sense, because the number of minutes can't be negative. So the answer must be one of the other choices.
+
+D: Let's think step-by-step.
+
+The bills for each telephone company will be the same when the charges for each company are the same. So we want to find out when the charges for each company are equal.
+
+We can set up the equation:
+
+(6.00 + 0.25x) = (12.00 + 0.20x)
+
+Then we can solve for x:
+
+0.25x = 6.00 - 12.00
+
+0.25x = -6.00
+
+x = -24.00
+
+So the bills for each company will be the same when the number of minutes is equal to -24.00.
+
+This doesn't make sense, because the number of minutes can't be negative. So the answer must be one of the other choices.
+
+E: Let's think step-by-step.
+
+The bills for each telephone company will be the same when the charges for each company are the same. So we want to find out when the charges for each company are equal.
+
+We can set up the equation:
+
+(6.00 + 0.25x) = (12.00 + 0.20x)
+
+Then we can solve for x:
+
+0.25x = 6.00 - 12.00
+
+0.25x = -6.00
+
+x = -24.00
+
+So the bills for each company will be the same when the number of minutes is equal to -24.00.
+
+This doesn't make sense, because the number of minutes can't be negative. So the answer must be one of the other choices.
+----
+"""
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
+    global auto_cot_corrected_prompt
+    global auto_cot_cleaned_prompt
     auto_cot_prompt = ""
     for io_pair in io_pairs:
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=0.7, quote='---', n=1)
@@ -267,6 +449,8 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
 
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
+    else:
+        auto_cot_prompt = auto_cot_cleaned_prompt
     
     print(auto_cot_prompt)
     f = open("auto_cot_demonstrations.txt","a+")
@@ -297,7 +481,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
             time.sleep(10)
-        preds = [x.strip() for x in answers]
+        preds = [get_autocot_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("Auto-CoT Performance:")
@@ -560,6 +744,15 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
+
     perf_array = []
     runs = 5
     for run in range(runs): 
@@ -570,7 +763,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
             answers.extend(predict(task_description, x))
             time.sleep(10)
         # preds = [[y.strip() for y in x.split("\n")] for x in answers]
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("FS-CoT performance:")
@@ -613,7 +806,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(new_labels, preds))
         print(perf_array)
     print("FS-CoT Performance:")
@@ -629,6 +822,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
+    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
 
     args = parser.parse_args()
 
@@ -647,6 +841,6 @@ if __name__ == "__main__":
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
-        few_shot_cot(args.temperature, args.model_name)
+        few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)

@@ -11,7 +11,7 @@ import datasets
 import numpy as np
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
                    get_few_shot_prompt, get_subset, gpt3,
                    propose_decomposition, propose_instruction, substring_match)
 
@@ -279,6 +279,15 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
+
     perf_array = []
     runs = 5
     for run in range(runs): 
@@ -286,9 +295,9 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
-            answers.extend(predict(task_description, x))
+            answers.extend(predict_complete(task_description, x))
         # preds = [[y.strip() for y in x.split("\n")] for x in answers]
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("FS-CoT performance:")
@@ -375,10 +384,88 @@ A: Let's think step-by-step.
 The final answer is "Tom baked an apple pie for us."
 """
 
+auto_cot_cleaned_prompt = """Language Games: Pig Latin looks just like English, but if an English word starts with a vowel you add -yay at the end of the word (ice -> iceyay); if it starts with consonants, you move them to end of the word and add -ay (prank -> ankpray); if it is capitalized, the Pig Latin word is capitalized as well (Maggie -> Aggiemay). Translate Pig Latin into English or viceversa.
+(Pig Latin) Apsnay ouryay ingersfay.(English)
+The final answer contains the translated sequence.
+A: Let's think step-by-step.
 
+Assuming we want to translate "Let's think step-by-step" into Pig Latin:
+
+1) Split the sentence into individual words: "Let's", "think", "step-by-step"
+2) Translate each word into Pig Latin: "et'slay", "inkthay", "tep-by-taypstep"
+3) Join the translated words back into a sentence: "Let'slay inkthay tep-by-taypstep"
+----
+Language Games: Pig Latin looks just like English, but if an English word starts with a vowel you add -yay at the end of the word (ice -> iceyay); if it starts with consonants, you move them to end of the word and add -ay (prank -> ankpray); if it is capitalized, the Pig Latin word is capitalized as well (Maggie -> Aggiemay). Translate Pig Latin into English or viceversa.
+(Pig Latin) Omtay akedbay anyay appleyay iepay orfay usyay.(English)
+The final answer contains the translated sequence.
+A: Let's think step-by-step.
+
+Omtay: "Omtay" is "Tom" in Pig Latin.
+
+Akedbay: "Akedbay" is "Baked" in Pig Latin.
+
+Anyay: "Anyay" is "Any" in Pig Latin.
+
+Appleyay: "Appleyay" is "Apple" in Pig Latin.
+
+Iepay: "Iepay" is "Pie" in Pig Latin.
+
+Orfay: "Orfay" is "For" in Pig Latin.
+
+Usyay: "Usyay" is "Susy" in Pig Latin.
+
+So, the translation of "Tom baked any apple pie for Susy" in English is "Omtay akedbay anyay appleyay iepay orfay usyay" in Pig Latin.
+----
+Language Games: Pig Latin looks just like English, but if an English word starts with a vowel you add -yay at the end of the word (ice -> iceyay); if it starts with consonants, you move them to end of the word and add -ay (prank -> ankpray); if it is capitalized, the Pig Latin word is capitalized as well (Maggie -> Aggiemay). Translate Pig Latin into English or viceversa.
+(Pig Latin) Ithay ityay ithway ayay ickstay.(English)
+The final answer contains the translated sequence.
+A: Let's think step-by-step.
+
+"Ithay ityay ithway ayay ickstay"
+
+"Ithay" = "ith+yay" = "it+hay" = "it+ay" = "it+y" = "ity"
+"ityay" = "ity+ay" = "ity+y" = "ity"
+"ithway" = "ith+way" = "it+hway" = "it+way" = "it+y" = "ity"
+"ayay" = "ay+y" = "ay"
+"ickstay" = "ick+stay" = "ick+ay" = "ick+y" = "icky"
+
+The final answer is: "Ity ity ity ay icky."
+----
+Language Games: Pig Latin looks just like English, but if an English word starts with a vowel you add -yay at the end of the word (ice -> iceyay); if it starts with consonants, you move them to end of the word and add -ay (prank -> ankpray); if it is capitalized, the Pig Latin word is capitalized as well (Maggie -> Aggiemay). Translate Pig Latin into English or viceversa.
+(Pig Latin) Amisay adhay efensiveday oundsway onyay ishay armsyay.(English)
+The final answer contains the translated sequence.
+A: Let's think step-by-step.
+1. "Amisay" -> "Amisay" is the same in both languages.
+2. "adhay" -> "adhay" is the same in both languages.
+3. "efensiveday" -> "efensiveday" is the same in both languages.
+4. "oundsway" -> "oundsway" is the same in both languages.
+5. "onyay" -> "onyay" is the same in both languages.
+6. "ishay" -> "ishay" is the same in both languages.
+7. "armsyay" -> "armsyay" is the same in both languages.
+
+The final answer is: Amisay adhay efensiveday oundsway onyay ishay armsyay.
+----
+Language Games: Pig Latin looks just like English, but if an English word starts with a vowel you add -yay at the end of the word (ice -> iceyay); if it starts with consonants, you move them to end of the word and add -ay (prank -> ankpray); if it is capitalized, the Pig Latin word is capitalized as well (Maggie -> Aggiemay). Translate Pig Latin into English or viceversa.
+(Pig Latin) Iyay ishway otay aystay inyay Australiayay.(English)
+The final answer contains the translated sequence.
+A: Let's think step-by-step.
+
+Iyay -> I
+
+I ishway -> I am
+
+I am otay -> I am not
+
+I am not aystay -> I am not staying
+
+I am not staying inyay -> I am not staying in
+
+I am not staying in Australiayay -> I am not staying in Australia.
+----
+"""
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
     global auto_cot_corrected_prompt
-    auto_cot_prompt = auto_cot_corrected_prompt
+    auto_cot_prompt = ""
     for io_pair in io_pairs[:5]:
         gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=0.7, quote='---', n=1)
         prompt = """%s\n"""% task_description + io_pair[0] + \
@@ -390,6 +477,8 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
 
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
+    else:
+        auto_cot_prompt = auto_cot_cleaned_prompt
     
     print(auto_cot_prompt)
     f = open("auto_cot_demonstrations.txt","a+")
@@ -449,7 +538,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
                 x = [ex.replace("\nA:", "") for ex in x]
                 answers.extend(predict(x))
                 time.sleep(10)
-            preds = [x.strip() for x in answers]
+            preds = [get_autocot_answer(x) for x in answers]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)
         print("Auto-CoT Performance:")
@@ -583,6 +672,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
+    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
 
     args = parser.parse_args()
 
@@ -601,10 +691,6 @@ if __name__ == "__main__":
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
-        few_shot_cot(args.temperature, args.model_name)
+        few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)
-
-    # few_shot_cot(temperature=0.4)
-    # few_shot(N=20)
-    # auto_cot(temperature=0.3)
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)

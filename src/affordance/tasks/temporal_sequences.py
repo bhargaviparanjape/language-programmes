@@ -11,7 +11,7 @@ import datasets
 import numpy as np
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
                    get_few_shot_prompt, get_subset, gpt3,
                    propose_decomposition, propose_instruction, substring_match)
 
@@ -273,7 +273,6 @@ Possible times:
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
-            time.sleep(10)
         preds = [x.strip() for x in answers]
         perf_array.append(exact_match(labels, preds))
         print(perf_array)
@@ -474,8 +473,113 @@ So, Jennifer could have gone to the art show any time between 5am and 7am.
 The best answer choice is 5am to 7am.
 ----
 """
+
+auto_cot_cleaned_prompt = """TASK: 
+Today, Elizabeth went to the construction site. Between what times could they have gone?
+We know that: 
+Elizabeth woke up at 5am.
+Lisa saw Elizabeth buying a phone at the electronics store from 5am to 10am.
+Mary saw Elizabeth waiting at the train station from 10am to 11am.
+Hannah saw Elizabeth waiting at the airport from 1pm to 3pm.
+William saw Elizabeth reading at the library from 3pm to 9pm.
+The construction site was closed after 9pm.
+Between what times could Elizabeth have gone to the construction site?
+  choice: 11am to 1pm
+  choice: 5am to 10am
+  choice: 10am to 11am
+  choice: 3pm to 9pm
+Possible times:
+A: Let's think step-by-step.
+
+First, we need to find out when Lisa saw Elizabeth. We know that Lisa saw Elizabeth from 5am to 10am. This means that Elizabeth must have gone to the construction site sometime between 10am and 11am.
+Next, we need to find out when Mary saw Elizabeth. We know that Mary saw Elizabeth from 10am to 11am. This means that Elizabeth must have gone to the construction site sometime between 11am and 1pm.
+Lastly, we need to find out when William saw Elizabeth. We know that William saw Elizabeth from 3pm to 9pm. This means that Elizabeth must have gone to the construction site sometime between 3pm and 9pm.
+Therefore, the possible times that Elizabeth could have gone to the construction site are from 11am to 1pm, from 5am to 10am, and from 3pm to 9pm.
+
+The best answer choice is 5am to 10am.
+----
+TASK: 
+Today, Andrew went to the art show. Between what times could they have gone?
+We know that: 
+Andrew woke up at 6am.
+Kimberly saw Andrew waiting at the airport from 10am to 12pm.
+Anthony saw Andrew attending class at the school from 12pm to 7pm.
+John saw Andrew working out at the gym from 7pm to 8pm.
+The art show was closed after 8pm.
+Between what times could Andrew have gone to the art show?
+  choice: 12pm to 7pm
+  choice: 7pm to 8pm
+  choice: 10am to 12pm
+  choice: 6am to 10am
+Possible times:
+A: Let's think step-by-step.
+
+First, we know that Andrew woke up at 6am. So, the earliest he could have gone to the art show would be 6am.
+Next, we know that Kimberly saw Andrew waiting at the airport from 10am to 12pm. So, the latest he could have gone to the art show would be 10am.
+That means that the only time that Andrew could have gone to the art show would be between 6am and 10am.
+
+The best answer choice is 6am and 10am.
+----
+TASK: 
+Today, Susan went to the orchestra hall. Between what times could they have gone?
+We know that: 
+Susan woke up at 5am.
+Thomas saw Susan buying cookies at a bakery from 5am to 9am.
+Ashley saw Susan buying a phone at the electronics store from 9am to 10am.
+Betty saw Susan driving to the water park from 10am to 12pm.
+Linda saw Susan watching a movie at the theater from 1pm to 3pm.
+Leslie saw Susan walking towards the Statue of Liberty from 3pm to 8pm.
+The orchestra hall was closed after 8pm.
+Between what times could Susan have gone to the orchestra hall?
+  choice: 12pm to 1pm
+  choice: 5am to 9am
+  choice: 10am to 12pm
+  choice: 3pm to 8pm
+Possible times:
+A: Let's think step-by-step.
+
+First, we need to determine when Susan woke up. We know that she woke up at 5am, so we'll put that down as our first possible time.
+Next, we need to determine when Thomas saw her. We know that he saw her from 5am to 9am, so we'll put that down as our second possible time.
+After that, we need to determine when Ashley saw her. We know that she saw her from 9am to 10am, so we'll put that down as our third possible time.
+Now, we need to determine when Betty saw her. We know that she saw her from 10am to 12pm, so we'll put that down as our fourth possible time.
+Finally, we need to determine when Linda saw her. We know that she saw her from 1pm to 3pm, so we'll put that down as our fifth possible time.
+We also know that the orchestra hall was closed after 8pm, so we'll put that down as our sixth possible time.
+That means that the possible times Susan could have gone to the orchestra hall are 5am, 9am, 10am, 12pm, 1pm, and 3pm.
+
+The best answer choice is 5am to 9am.
+----
+TASK: 
+Today, Jennifer went to the art show. Between what times could they have gone?
+We know that: 
+Jennifer woke up at 5am.
+Ashley saw Jennifer sitting on a rooftop from 7am to 3pm.
+David saw Jennifer buying a bike at the bike shop from 3pm to 5pm.
+Steven saw Jennifer playing tennis at the tennis court from 5pm to 6pm.
+Susan saw Jennifer waiting at the airport from 6pm to 8pm.
+Anthony saw Jennifer stretching at a yoga studio from 8pm to 10pm.
+The art show was closed after 10pm.
+Between what times could Jennifer have gone to the art show?
+  choice: 5am to 7am
+  choice: 6pm to 8pm
+  choice: 3pm to 5pm
+  choice: 5pm to 6pm
+Possible times:
+A: Let's think step-by-step.
+
+1. Jennifer woke up at 5am. She could have gone to the art show at this time.
+2. Ashley saw Jennifer sitting on a rooftop from 7am to 3pm. This means that the latest Jennifer could have gone to the art show is 3pm.
+3. David saw Jennifer buying a bike at the bike shop from 3pm to 5pm. This means that the earliest Jennifer could have gone to the art show is 5pm.
+4. Steven saw Jennifer playing tennis at the tennis court from 5pm to 6pm. This means that the latest Jennifer could have gone to the art show is 6pm.
+5. Susan saw Jennifer waiting at the airport from 6pm to 8pm. This means that the earliest Jennifer could have gone to the art show is 8pm.
+6. Anthony saw Jennifer stretching at a yoga studio from 8pm to 10pm. This means that the latest Jennifer could have gone to the art show is 10pm.
+So, the possible times Jennifer could have gone to the art show are 5am to 3pm, 5pm to 6pm, and 8pm to 10pm.
+
+The best answer choice is 5pm to 6pm.
+----
+"""
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
     global auto_cot_corrected_prompt
+    global auto_cot_cleaned_prompt
     auto_cot_prompt = ""
     description = "TASK: "
     for io_pair in io_pairs:
@@ -488,6 +592,8 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
 
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
+    else:
+        auto_cot_prompt = auto_cot_cleaned_prompt
     
     print(auto_cot_prompt)
     f = open("auto_cot_demonstrations.txt","a+")
@@ -518,8 +624,8 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nPossible times:", "") for ex in x]
             answers.extend(predict(x))
-            time.sleep(10)
-        preds = [x.strip() for x in answers]
+            # time.sleep(10)
+        preds = [get_autocot_answer(x, answer_prompt="The best answer choice is") for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("Auto-CoT Performance:")
@@ -706,8 +812,10 @@ Descripton: %s
 Input: %s
 Q1:"""
 
+few_shot_cot_prompt = few_shot_arithmetic_prompt
 
 def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
+    global few_shot_cot_prompt
     global few_shot_pot_prompt
     task_name = "Temporal Sequences"
     task_description = """(Temporal sequences) Given the daily schedule of activities of a person and a final activity that they need to find time for, choose one of the four provided options when they could do the activity."""
@@ -728,6 +836,15 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         prompts=[few_shot_pot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
+
     perf_array = []
     runs = 5
     task_description = "Temporal sequences: Given the daily schedule of activities of a person and a final activity that they need to find time for, choose one of the four provided options when they could do the activity. Write out intermediate calculations as python code and store result as a variable named 'ans'."
@@ -736,10 +853,10 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("""\nPossible times:""", "") for ex in x]
-            answers.extend(predict(task_description, x))
-            time.sleep(10)
+            answers.extend(predict_complete(task_description, x))
+            # time.sleep(10)
         # preds = [[y.strip() for y in x.split("\n")] for x in answers]
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("FS-CoT performance:")
@@ -784,13 +901,13 @@ def affordance(temperature=0.3, model_name = "text-davinci-002"):
 
 
 def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
-    
+    global few_shot_pot_prompt
     global few_shot_cot_prompt
     task_name = "(Temporal sequences)"
     task_description = """(Temporal sequences) Given the daily schedule of activities of a person and a final activity that they need to find time for, choose one of the four provided options when they could do the activity."""
 
     if strategy == "fixed":
-        few_shot_cot_prompt = few_shot_pot_prompt
+        few_shot_cot_prompt = few_shot_cot_prompt
     elif strategy == "random":
         few_shot_cot_prompt = random_tasks(N=6)
     elif strategy == "similar":
@@ -818,12 +935,17 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
-        preds = [x.strip() for x in answers]
+
+        positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+        positive_rate = sum(positive_calls)/len(interpreter.execution_details)
+
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(new_labels, preds))
         print(perf_array)
     print("FS-CoT Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
+    print("Rate of affordance call", positive_rate)
 
 
 
@@ -835,6 +957,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
+    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
 
     args = parser.parse_args()
 
@@ -853,6 +976,6 @@ if __name__ == "__main__":
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
-        few_shot_cot(args.temperature, args.model_name)
+        few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)

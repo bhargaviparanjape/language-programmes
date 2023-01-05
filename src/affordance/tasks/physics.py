@@ -12,7 +12,7 @@ import datasets
 import numpy as np
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
                    get_few_shot_prompt, get_subset, gpt3,
                    propose_decomposition, propose_instruction, substring_match)
 
@@ -253,7 +253,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
 
     global few_shot_cot_prompt
     task_name = "Physics questions"
-    task_description = "(Physics questions) Identify the physics formula that would be most useful for finding the answer to each of the following word problems."
+    task_description = "(Physics questions) Given a physics word problem, choose which physics formula from among the choices is most helpful in solving the word problem. The final answer should be one of the choices."
 
     if strategy == "fixed":
         few_shot_cot_prompt = few_shot_cot_prompt
@@ -271,6 +271,15 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
+
     perf_array = []
     runs = 5
     for run in range(runs): 
@@ -279,7 +288,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
             x = [ex.replace("Identify the physics formula that would be most useful for finding the answer to each of the following word problems.\n\n\n", "") for ex in x]
-            answers.extend(predict("Given a physics word problem, choose which physics formula from among the choices is most helpful in solving the word problem. The final answer should be one of the choices.", x))
+            answers.extend(predict_complete(task_description, x))
             time.sleep(10)
         preds = [get_answer(x.strip()) for x in answers]
         perf_array.append(substring_match(labels, preds))
@@ -365,6 +374,97 @@ So the final formula for work is W = m * g * h
 The best answer choice is U = m * g * h
 ----
 """
+
+auto_cot_cleaned_prompt = """Physics: Identify the physics formula that would be most useful for finding the answer to each of the following word problems.
+Q: In an experiment, a positively charged oil droplet weighing 6.5 * 10 ^ -15 N is held stationary by a vertical electric field. If the electric field strength is 5.3 * 10 ^ 3 N/C, what is the charge on the oil droplet?
+  choice: dt = dx / v
+  choice: v = λ * f
+  choice: F = q * E
+  choice: v = v_0 + a * t
+The final answer should be one of the choices.
+A: Let's think step-by-step.
+
+First, we need to figure out what quantity we're trying to solve for. In this case, it's the charge on the oil droplet.
+
+Next, we need to identify which formula would be most useful for solving for that quantity. In this case, it's the formula for electric force, which is equal to the charge on an object times the electric field strength.
+
+So, we can solve for the charge on the oil droplet by plugging in the given values for the electric field strength and the weight of the oil droplet, and solving for q.
+----
+Physics: Identify the physics formula that would be most useful for finding the answer to each of the following word problems.
+Q: A 3.0 kg ball rolls down from the top of a ramp as shown. If the ball is moving at 10.0 m/sat the bottom, how much energy was lost due to friction (thermal energy)?
+  choice: Q = m * c * dT
+  choice: ɸ = E * A * cos(θ)
+  choice: E = F / q
+  choice: a = dv / dt
+The final answer should be one of the choices.
+A: Let's think step-by-step.
+
+1. We want to find the energy lost due to friction, so we're looking for a formula that deals with energy.
+2. We know the mass of the ball, the velocity of the ball, and the change in temperature.
+3. Q = m * c * dT is the formula we want!
+----
+Physics: Identify the physics formula that would be most useful for finding the answer to each of the following word problems.
+Q: A 1200 kg car rounds a flat circular section of road at 20 m/s as shown in the diagram. The coefficient of friction between the car tires and the road surface is 0.65. What minimum friction force is required for the car to follow this curve?
+  choice: F = m * a
+  choice: dq = ρ * dV
+  choice: E = q * σ / (2 * ε)
+  choice: P = dE / dt
+The final answer should be one of the choices.
+A: Let's think step-by-step.
+
+First, we need to calculate the force required to keep the car moving at 20 m/s. We can use the equation F = ma for this. We know the mass of the car (1200 kg) and the acceleration (20 m/s), so we just need to solve for F.
+
+F = 1200 kg * 20 m/s
+
+F = 24000 kg * m/s^2
+
+Now that we know the force required to keep the car moving, we need to calculate the friction force. We know that the friction force is equal to the coefficient of friction times the normal force. Since this is a flat surface, the normal force is just equal to the weight of the car. We also know the coefficient of friction (0.65). So we just need to solve for the friction force.
+
+Friction force = 0.65 * weight of the car
+
+Friction force = 0.65 * (1200 kg * 9.8 m/s^2)
+
+Friction force = 7824 N
+----
+Physics: Identify the physics formula that would be most useful for finding the answer to each of the following word problems.
+Q: A 6.6 N object is traveling at a velocity of 3.0 m/s north. What is the object’s momentum?
+  choice: p = m * v
+  choice: v = v_0 + a * t
+  choice: d = x_0 + v_0 * t + 1/2 * a * t ^ 2
+  choice: q = Q * dθ / π
+The final answer should be one of the choices.
+A: Let's think step-by-step.
+
+We want to find the object's momentum, so we'll need a formula that includes both mass and velocity. That narrows it down to either p = m * v or v = v_0 + a * t.
+
+But since we're only given the object's velocity and not its acceleration, we'll use p = m * v.
+----
+Physics: Identify the physics formula that would be most useful for finding the answer to each of the following word problems.
+Q: A 1250 W electric motor is used to lift an 80.0 kg weight to a height of 4.0 m in 3.00 s. What is the efficiency of the motor?
+  choice: U = m * g * h
+  choice: dt = dx / v
+  choice: E = K + U + Q
+  choice: d = x_0 + v_0 * t + 1/2 * a * t ^ 2
+The final answer should be one of the choices.
+A: Let's think step-by-step.
+
+What are we trying to find? The efficiency of the motor.
+
+What formula would give us efficiency?
+
+Efficiency = work output / work input
+
+For work output, we can use the formula:
+
+Work output = force * distance
+
+For work input, we can use the formula:
+
+Work input = power * time
+
+Now we just need to plug in the given values and solve for efficiency.
+----
+"""
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
     global auto_cot_corrected_prompt
     auto_cot_prompt = ""
@@ -379,6 +479,8 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
 
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
+    else:
+        auto_cot_prompt = auto_cot_cleaned_prompt
     
     print(auto_cot_prompt)
     f = open("auto_cot_demonstrations.txt","a+")
@@ -438,7 +540,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
                 x = [ex.replace("\nA:", "") for ex in x]
                 answers.extend(predict(x))
                 time.sleep(10)
-            preds = [x.strip() for x in answers]
+            preds = [get_autocot_answer(x) for x in answers]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)
         print("Auto-CoT Performance:")
@@ -562,6 +664,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
+    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
 
     args = parser.parse_args()
 
@@ -580,6 +683,6 @@ if __name__ == "__main__":
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
-        few_shot_cot(args.temperature, args.model_name)
+        few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)

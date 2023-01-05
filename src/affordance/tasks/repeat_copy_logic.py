@@ -20,7 +20,7 @@ from prompt_library import (llm_similar_tasks, random_tasks,
 from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
                    get_few_shot_prompt, get_subset, gpt3,
                    propose_decomposition, propose_instruction, substring_match)
 
@@ -146,9 +146,43 @@ First, we have the phrase "can you draw." Next, we need to repeat the phrase "sq
 The final answer is "can you draw squiggly line squiggly line"
 ----
 """
+auto_cot_cleaned_prompt = """(Repeat with logic) Repeat the given phrase following logical constraints provided in the question.
+Q: say pickup a pound of green beans twice, replacing a pound with a bunch for even times and a handful for odd
+The final answer should be the repeated phrase.
+A: Let's think step-by-step.
 
+Pick up a pound of green beans.
+
+Pick up a bunch of green beans.
+
+Pick up a handful of green beans.
+
+Pick up a pound of green beans.
+----
+(Repeat with logic) Repeat the given phrase following logical constraints provided in the question.
+Q: repeat a woodchuck chucks lots of wood two times, but replace lots with five pounds the first time and two tons the second time
+The final answer should be the repeated phrase.
+A: Let's think step-by-step.
+
+A woodchuck chucks lots of wood.
+
+A woodchuck chucks five pounds of wood.
+
+A woodchuck chucks two tons of wood.
+----
+(Repeat with logic) Repeat the given phrase following logical constraints provided in the question.
+Q: Repeat squiggly line twice after the phrase can you draw
+The final answer should be the repeated phrase.
+A: Let's think step-by-step.
+
+Squiggly line can you draw
+
+Squiggly line can you draw squiggly line
+----
+"""
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
     global auto_cot_corrected_prompt
+    global auto_cot_cleaned_prompt
     auto_cot_prompt = ""
     for io_pair in io_pairs:
         gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=0.7, quote='---', n=1)
@@ -158,10 +192,12 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
         # Add the final answer with special format so evaluation is easier.
-    print(auto_cot_prompt)
 
+    pdb.set_trace()
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
+    else:
+        auto_cot_prompt = auto_cot_cleaned_prompt
     
     print(auto_cot_prompt)
     f = open("auto_cot_demonstrations.txt","a+")
@@ -223,7 +259,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
                 x = [ex.replace("\nA:", "") for ex in x]
                 answers.extend(predict(x))
                 time.sleep(10)
-            preds = [x.strip() for x in answers]
+            preds = [get_autocot_answer(x) for x in answers]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)
         print("Auto-CoT Performance:")
@@ -325,6 +361,15 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
+
     perf_array = []
     runs = 5
     for run in range(runs): 
@@ -335,7 +380,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(task_description, x))
             time.sleep(10)
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("FS-CoT Performance:")
@@ -696,31 +741,25 @@ if __name__ == "__main__":
     parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
+    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
 
     args = parser.parse_args()
 
     print("Dataset statistics")
     print(task_description)
-    print("Training examples:", len(inputs))
+    print("Training examples:", len(train_inputs))
     print("Dev examples:", len(inputs))
 
     inputs = inputs[:args.num_dev_examples]
     labels = labels[:args.num_dev_examples]
 
     if args.inference_strategy == "few_shot":
-        few_shot_prompt = get_few_shot_prompt(inputs, labels, n=args.num_train_examples)
+        few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=args.num_train_examples)
         print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
-        few_shot_cot(args.temperature, args.model_name)
+        few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name)
-    
-    # repeat_copy_logic(temperature=0.3)
-    # auto_cot(temperature=0.3)
-    # few_shot_cot(temperature=0.3)
-    # dynamic_few_shot_cot(temperature=0.3, strategy="llm_similar")
-    # nl_program(temperature=0.3)
-    # notebook(temperature=0.3, model_name="code-davinci-002")
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)
