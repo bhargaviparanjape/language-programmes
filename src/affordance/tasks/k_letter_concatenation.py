@@ -13,7 +13,7 @@ import numpy as np
 import time
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, chunks, get_answer, get_few_shot_prompt,
+from utils import (OpenAIModel, chunks, get_answer, get_few_shot_prompt, get_autocot_answer,
                    get_subset, gpt3, propose_decomposition,
                    propose_instruction, substring_match)
 
@@ -471,6 +471,15 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
+
     perf_array = []
     runs = 5
     for run in range(runs): 
@@ -478,10 +487,10 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         answers = []
         for x in tqdm(chunks(dev_inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
-            answers.extend(predict(task_description, x))
+            answers.extend(predict_complete(task_description, x))
             time.sleep(10)
         # preds = [[y.strip() for y in x.split("\n")] for x in answers]
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(dev_labels, preds))
         print(perf_array)
     print("FS-CoT performance:")
@@ -585,10 +594,116 @@ The final answer is "i c l a a"
 ----
 """
 
+auto_cot_cleaned_prompt = """Kth letter concatenation: Take the letters at position 3 of the words in a list of words and concatenate them using a space.
+Take the letters at position 3 of the words in "Maya Sylvie Campbell Hussein Francisco" and concatenate them using a space.
+The final answer contains the letters separated by spaces.
+A: Let's think step-by-step.
+
+1. We need to take the third letter from each word.
+2. We need to concatenate them using a space.
+
+So, for step 1, we can use the string indexing method to take the third letter from each word. For step 2, we can use the string concatenation operator (+) to join the letters together with a space in between.
+
+Putting it all together, we get:
+
+"Maya Sylvie Campbell Hussein Francisco".
+
+3. We can use a for loop to iterate over the words in the string, and print out the third letter of each word.
+
+
+def third_letter(string):
+
+for word in string.split():
+
+print(word[2])
+
+ fourth_letter("Maya Sylvie Campbell Hussein Francisco")
+
+c
+l
+m
+s
+F
+----
+Kth letter concatenation: Take the letters at position 3 of the words in a list of words and concatenate them using a space.
+Take the letters at position 3 of the words in "Beatriz Pauline Tang Murmu Idris" and concatenate them using a space.
+The final answer contains the letters separated by spaces.
+A: Let's think step-by-step.
+
+Take the 3rd letter of each word in the list:
+
+B: ea
+P: u
+T: r
+M: i
+I: s
+
+C: Now, we concatenate them using a space:
+
+D: ea u r i s
+----
+Kth letter concatenation: Take the letters at position 3 of the words in a list of words and concatenate them using a space.
+Take the letters at position 3 of the words in "Yousef Emma Uddin Suleiman Zhan" and concatenate them using a space.
+The final answer contains the letters separated by spaces.
+A: Let's think step-by-step.
+
+1) We need to take the letters at position 3 of each word in the list.
+2) We need to concatenate them using a space.
+
+In order to do this, we can use the string method .join().
+
+3) We need to print the final answer.
+
+Putting this all together, we have:
+
+words = "Yousef Emma Uddin Suleiman Zhan"
+
+letters = [word[3] for word in words.split()]
+
+print(" ".join(letters))
+
+This will give us the output:
+
+f m d l n
+----
+Kth letter concatenation: Take the letters at position 3 of the words in a list of words and concatenate them using a space.
+Take the letters at position 3 of the words in "Satish Enrique Sahu Rana Sih" and concatenate them using a space.
+The final answer contains the letters separated by spaces.
+A: Let's think step-by-step.
+
+The first thing we need to do is to split the string into a list of words. We can do this by using the .split() method:
+
+>>> "Satish Enrique Sahu Rana Sih".split()
+['Satish', 'Enrique', 'Sahu', 'Rana', 'Sih']
+
+Now that we have a list of words, we can use a for loop to iterate through each word and take the third letter of each word:
+
+>>> for word in ["Satish", "Enrique", "Sahu", "Rana", "Sih"]:
+...     print(word[2])
+...
+i
+q
+h
+n
+h
+
+Notice that we use the print() function to print each letter on a new line.
+
+Finally, we can concatenate the letters into a single string, separating them with a space:
+
+>>> " ".join(["i", "q", "h", "n", "h"])
+'i q h n h'
+
+Therefore, the answer is:
+
+'i q h n h'
+----
+"""
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
     global auto_cot_corrected_prompt
+    global auto_cot_cleaned_prompt
     auto_cot_prompt = ""
-    for io_pair in io_pairs[:5]:
+    for io_pair in io_pairs:
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=0.7, quote='---', n=1)
         prompt = """%s\n"""% task_description + io_pair[0] + \
             """\nThe final answer contains the letters separated by spaces.\nA: Let's think step-by-step.\n""" 
@@ -596,9 +711,11 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
         # Add the final answer with special format so evaluation is easier.
-    
+
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
+    else:
+        auto_cot_prompt = auto_cot_cleaned_prompt
     
     print(auto_cot_prompt)
     f = open("auto_cot_demonstrations.txt","a+")
@@ -660,15 +777,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
                 x = [ex.replace("\nA:", "") for ex in x]
                 answers.extend(predict(x))
                 time.sleep(10)
-            if use_corrected:
-                preds = []
-                for x in answers:
-                    if re.search("""The final answer is """, x):
-                        preds.append(x[re.search("""The final answer is """, x).span(0)[-1]:])
-                    else:
-                        preds.append(x.strip())
-            else:
-                preds = [x.strip() for x in answers]
+            preds = [get_autocot_answer(x) for x in answers]
             perf_array.append(substring_match(dev_labels, preds))
             print(perf_array)
         print("Auto-CoT Performance:")
@@ -938,6 +1047,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(dev_inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
+    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
 
     args = parser.parse_args()
 
@@ -958,6 +1068,6 @@ if __name__ == "__main__":
     elif args.inference_strategy == "auto_cot_consistent":
         auto_cot(args.temperature, args.model_name, use_corrected=True)
     elif args.inference_strategy == "few_shot_cot":
-        few_shot_cot(args.temperature, args.model_name)
+        few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)

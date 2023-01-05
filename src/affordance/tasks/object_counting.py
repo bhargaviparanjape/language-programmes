@@ -11,7 +11,7 @@ import datasets
 import numpy as np
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
                    get_few_shot_prompt, get_subset, gpt3,
                    propose_decomposition, propose_instruction, substring_match,
                    substring_match_v2)
@@ -239,7 +239,129 @@ Adding all of the vegetables together, we get "thirteen" or "13".
 The final answer is thirteen.
 ----
 """
+auto_cot_cleaned_prompt = """Object counting: You are given a bunch of items and asked to count a specific kind of item.
+Q: I have a trombone, a flute, an accordion, three violins, four clarinets, a drum, a trumpet, and a piano. How many musical instruments do I have?
+The final answer is the count of requested items in words, like "six" or "ten".
+A: Let's think step-by-step.
+
+I have a trombone, a flute, an accordion, three violins, four clarinets, a drum, a trumpet, and a piano.
+I have a trombone, a flute, an accordion, three violins, four clarinets, a drum, a trumpet, and a piano.
+I have a trombone, a flute, an accordion, three violins, four clarinets, a drum, a trumpet, and a piano.
+I have a trombone, a flute, an accordion, three violins, four clarinets, a drum, a trumpet, and a piano.
+I have a trombone, a flute, an accordion, three violins, four clarinets, a drum, a trumpet, and a piano.
+I have a trombone, a flute, an accordion, three violins, four clarinets, a drum, a trumpet, and a piano.
+I have a trombone, a flute, an accordion, three violins, four clarinets, a drum, a trumpet, and a piano.
+I have a trombone, a flute, an accordion, three violins, four clarinets, a drum, a trumpet, and a piano.
+I have a trombone, a flute, an accordion, three violins, four clarinets, a drum, a trumpet, and a piano.
+I have a trombone, a flute, an accordion, three violins, four clarinets, a drum, a trumpet, and a piano.
+
+I have ten musical instruments.
+----
+Object counting: You are given a bunch of items and asked to count a specific kind of item.
+Q: I have a mouse, a goat, and two fish. How many animals do I have?
+The final answer is the count of requested items in words, like "six" or "ten".
+A: Let's think step-by-step.
+
+We can see that we have three animals- a mouse, a goat, and two fish. So, we have a total of three animals.
+----
+Object counting: You are given a bunch of items and asked to count a specific kind of item.
+Q: I have a strawberry, a grape, an apple, an orange, a plum, two nectarines, two bananas, and a peach. How many fruits do I have?
+The final answer is the count of requested items in words, like "six" or "ten".
+A: Let's think step-by-step.
+
+There are a total of nine items.
+Of those nine items, there are seven fruits.
+Therefore, there are seven fruits.
+----
+Object counting: You are given a bunch of items and asked to count a specific kind of item.
+Q: I have a violin, two nectarines, a flute, a banana, an accordion, two strawberries, a clarinet, a drum, a trumpet, a piano, and a trombone. How many musical instruments do I have?
+The final answer is the count of requested items in words, like "six" or "ten".
+A: Let's think step-by-step.
+
+There are a lot of items, so it might be helpful to make a list.
+
+I have a violin, two nectarines, a flute, a banana, an accordion, two strawberries, a clarinet, a drum, a trumpet, a piano, and a trombone.
+
+The question is asking for a count of musical instruments, so we need to identify which items are musical instruments. A violin, flute, accordion, clarinet, drum, trumpet, piano, and trombone are all musical instruments.
+
+There are eight musical instruments.
+----
+Object counting: You are given a bunch of items and asked to count a specific kind of item.
+Q: I have three bananas, a trumpet, a clarinet, a piano, a nectarine, a trombone, a blackberry, and a violin. How many musical instruments do I have?
+The final answer is the count of requested items in words, like "six" or "ten".
+A: Let's think step-by-step.
+
+There are three bananas, a trumpet, a clarinet, a piano, a nectarine, a trombone, a blackberry, and a violin.
+We are looking for musical instruments, so we can ignore the bananas and the nectarine.
+That leaves us with a trumpet, a clarinet, a piano, a trombone, a violin.
+All of these except for the blackberry are musical instruments, so the answer is four.
+----
+Object counting: You are given a bunch of items and asked to count a specific kind of item.
+Q: I have five stoves, a fridge, a lamp, a microwave, a table, and an oven. How many objects do I have?
+The final answer is the count of requested items in words, like "six" or "ten".
+A: Let's think step-by-step.
+
+There are five stoves, so the count is "five."
+
+There is one fridge, so the count is "one."
+
+There is one lamp, so the count is "one."
+
+There is one microwave, so the count is "one."
+
+There is one table, so the count is "one."
+
+There is one oven, so the count is "one."
+
+The total count is "five," "one," "one," "one," "one," and "one," which adds up to twelve.
+----
+Object counting: You are given a bunch of items and asked to count a specific kind of item.
+Q: I have a cabbage, a stalk of celery, a carrot, a lettuce head, a yam, three heads of broccoli, three potatoes, and two cauliflowers. How many vegetables do I have?
+The final answer is the count of requested items in words, like "six" or "ten".
+A: Let's think step-by-step.
+
+There are three heads of broccoli, so we can say "three" right away.
+
+There are two cauliflowers, so we can say "two" right away.
+
+There is one cabbage, so we can say "one" right away.
+
+There is one stalk of celery, so we can say "one" right away.
+
+There is one carrot, so we can say "one" right away.
+
+There is one lettuce head, so we can say "one" right away.
+
+There are three potatoes, so we can say "three" right away.
+
+There is one yam, so we can say "one" right away.
+
+This gives us a total of "twelve" vegetables.
+----
+Object counting: You are given a bunch of items and asked to count a specific kind of item.
+Q: I have a donkey, a cat, two bears, a pig, and a goat. How many animals do I have?
+The final answer is the count of requested items in words, like "six" or "ten".
+A: Let's think step-by-step.
+
+There are a bunch of items.
+You are asked to count a specific kind of item.
+
+In this case, you are asked to count animals.
+
+So, you need to look at each item and decide if it is an animal or not.
+
+The donkey is an animal.
+The cat is an animal.
+The bears are animals.
+The pig is an animal.
+The goat is an animal.
+
+That means there are five animals in total.
+----
+"""
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
+    global auto_cot_corrected_prompt
+    global auto_cot_cleaned_prompt
     auto_cot_prompt = ""
     for io_pair in io_pairs:
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=0.7, quote='---', n=1)
@@ -249,8 +371,11 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
         # Add the final answer with special format so evaluation is easier.
+    
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
+    else:
+        auto_cot_prompt = auto_cot_cleaned_prompt
     
     print(auto_cot_prompt)
     f = open("auto_cot_demonstrations.txt","a+")
@@ -281,7 +406,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
             time.sleep(10)
-        preds = [x.strip() for x in answers]
+        preds = [get_autocot_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("Auto-CoT Performance:")
@@ -435,6 +560,15 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         prompts=[few_shot_cot_prompt% (description + """The final answer is the count of requested items in words, like "six" or "ten".""", x) for x in chunk]
         return gpt3(prompts)
 
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
+
     perf_array = []
     runs = 5
     for run in range(runs): 
@@ -444,10 +578,10 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         new_labels = [[l1, l2] for l1, l2 in zip(labels, numeric_labels)]
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
-            answers.extend(predict(task_description, x))
+            answers.extend(predict_complete(task_description, x))
             time.sleep(10)
         # preds = [[y.strip() for y in x.split("\n")] for x in answers]
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match_v2(new_labels, preds))
         print(perf_array)
     print("FS-CoT performance:")
@@ -509,6 +643,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
+    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
 
     args = parser.parse_args()
 
@@ -527,6 +662,6 @@ if __name__ == "__main__":
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
-        few_shot_cot(args.temperature, args.model_name)
+        few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)

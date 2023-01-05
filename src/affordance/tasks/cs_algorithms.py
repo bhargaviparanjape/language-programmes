@@ -11,7 +11,7 @@ import datasets
 import numpy as np
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
                    get_few_shot_prompt, get_subset, gpt3,
                    propose_decomposition, propose_instruction, substring_match)
 
@@ -320,8 +320,172 @@ Valid
 few_shot_cot_prompt = few_shot_code_prompt
 
 auto_cot_corrected_prompt = """"""
+
+auto_cot_cleaned_prompt = """CS Algorithms: Solve the following simple programming tasks.
+Given two strings, determine the length of the longest common subsequence.
+
+Strings: VIRVRHRSTQBLLSYPZDVYCFPSQRXNA SPLYVHLWMLDJVYMQTOZMVOJF
+Length of longest common subsequence:
+A: Let's think step-by-step.
+
+1. What is the length of the longest common subsequence of the strings "VIRVRHRSTQBLLSYPZDVYCFPSQRXNA" and "SPLYVHLWMLDJVYMQTOZMVOJF"?
+
+2. We can start by finding the length of the longest common subsequence of the strings "VIRVRHRSTQBLLSYPZDVYCFPSQRXNA" and "SPLYVHLWMLDJVYMQTOZM".
+
+3. We can then find the length of the longest common subsequence of the strings "VIRVRHRSTQBLLSYPZDVYCFPSQRXNA" and "SPLYVHLWMLDJVYMQTO".
+
+4. We can continue this process until we find the length of the longest common subsequence of the strings "VIRVRHRSTQBLLSYPZDVYCFPSQRXNA" and "SPLYVHLWMLDJVYMQ".
+
+5. Finally, we can find the length of the longest common subsequence of the strings "VIRVRHRSTQBLLSYPZDVYCFPSQRXNA" and "SPLYVHLWMLDJVY".
+
+The length of the longest common subsequence is 5.
+----
+CS Algorithms: Solve the following simple programming tasks.
+Given two strings, determine the length of the longest common subsequence.
+
+Strings: SCZFZGCCQQLB OJDXI
+Length of longest common subsequence:
+A: Let's think step-by-step.
+
+1. What is the length of the longest common subsequence of the strings "SCZFZGCCQQLB" and "OJDXI"?
+
+2. What is the length of the longest common subsequence of the strings "SCZFZGCCQQL" and "OJDXI"?
+
+3. What is the length of the longest common subsequence of the strings "SCZFZGCCQQ" and "OJDXI"?
+
+4. What is the length of the longest common subsequence of the strings "SCZFZGCCQ" and "OJDXI"?
+
+5. What is the length of the longest common subsequence of the strings "SCZFZGC" and "OJDXI"?
+
+6. What is the length of the longest common subsequence of the strings "SCZFZG" and "OJDXI"?
+
+7. What is the length of the longest common subsequence of the strings "SCZF" and "OJDXI"?
+
+8. What is the length of the longest common subsequence of the strings "SCZ" and "OJDXI"?
+
+9. What is the length of the longest common subsequence of the strings "SC" and "OJDXI"?
+
+10. What is the length of the longest common subsequence of the strings "S" and "OJDXI"?
+
+The length of the longest common subsequence is 3.
+----
+CS Algorithms: Solve the following simple programming tasks.
+Given two strings, determine the length of the longest common subsequence.
+
+Strings: RLXEHVGPC LDOOBAOCQPRJKZWOKUPPEHEAZIZPLSB
+Length of longest common subsequence:
+A: Let's think step-by-step.
+
+1) We can see that the first letter of each string is 'R'. So, we can start our subsequence with 'R'.
+
+2) The next letter in each string is 'L'. So, we can add 'L' to our subsequence.
+
+3) The next letter in each string is 'X'. Since there is no common letter after 'X', we cannot add anything to our subsequence.
+
+4) The next letter in each string is 'E'. So, we can add 'E' to our subsequence.
+
+5) The next letter in each string is 'H'. So, we can add 'H' to our subsequence.
+
+6) The next letter in each string is 'V'. Since there is no common letter after 'V', we cannot add anything to our subsequence.
+
+7) The next letter in each string is 'G'. So, we can add 'G' to our subsequence.
+
+8) The next letter in each string is 'P'. So, we can add 'P' to our subsequence.
+
+9) The next letter in each string is 'C'. So, we can add 'C' to our subsequence.
+
+10) The next letter in each string is 'L'. So, we can add 'L' to our subsequence.
+
+11) The next letter in each string is 'D'. Since there is no common letter after 'D', we cannot add anything to our subsequence.
+
+12) The next letter in each string is 'O'. So, we can add 'O' to our subsequence.
+
+13) The next letter in each string is 'O'. So, we can add 'O' to our subsequence.
+
+14) The next letter in each string is 'B'. So, we can add 'B' to our subsequence.
+
+15) The next letter in each string is 'A'. So, we can add 'A' to our subsequence.
+
+16) The next letter in each string is 'O'. So, we can add 'O' to our subsequence.
+
+17) The next letter in each string is 'C'. So, we can add 'C' to our subsequence.
+
+18) The next letter in each string is 'Q'. Since there is no common letter after
+----
+CS Algorithms: Solve the following simple programming tasks.
+Determine whether the given sequence of parentheses is properly matched.
+
+Sequence: } { ( [
+Valid/Invalid?
+A: Let's think step-by-step.
+
+The first character is a }, which doesn't match with any of the other characters. This already indicates that the sequence is invalid.
+----
+CS Algorithms: Solve the following simple programming tasks.
+Determine whether the given sequence of parentheses is properly matched.
+
+Sequence: [ [ [ { [ [ ] { { } ( ) } [ ] ] } ] ] ]
+Valid/Invalid?
+A: Let's think step-by-step.
+
+The first opening bracket is a '['. We need to find the next matching closing bracket, which would be a ']'. We can see that there is another '[', so we need to find the next matching ']'. There is another '[', so we need to find the next matching ']'. We can see that the next character is a '{', so we need to find the next matching '}'. We can see that the next character is a '[', so we need to find the next matching ']'. We can see that the next character is a '[', so we need to find the next matching ']'. We can see that the next character is a ']', so we move on to the next character. We can see that the next character is a '}', so we move on to the next character. We can see that the next character is a ')', so we move on to the next character. We can see that the next character is a ']', so we move on to the next character. We can see that the next character is a ']', so we move on to the next character. We can see that the next character is a ']', so we move on to the next character.
+
+The sequence is valid.
+----
+CS Algorithms: Solve the following simple programming tasks.
+Determine whether the given sequence of parentheses is properly matched.
+
+Sequence: [ { } ]
+Valid/Invalid?
+A: Let's think step-by-step.
+
+The first character is '[', which is an opening parenthesis. This is fine.
+The next character is '{', which is also an opening parenthesis. This is fine.
+The next character is '}', which is a closing parenthesis. This is fine.
+The next character is ']', which is a closing parenthesis. This is fine.
+
+So far, everything is matching up nicely. The opening parentheses are being closed in the correct order.
+
+The sequence is valid.
+----
+CS Algorithms: Solve the following simple programming tasks.
+Determine whether the given sequence of parentheses is properly matched.
+
+Sequence: ) } { [ ) } [ } { )
+Valid/Invalid?
+A: Let's think step-by-step.
+
+The first character is a closing parenthesis, so that's not good. The next two characters are a closing curly brace and bracket, respectively, so those are also not good. The next character is an opening parenthesis, so that's good. The next two characters are an opening curly brace and bracket, respectively, so those are also good. The next character is a closing parenthesis, so that's not good. The next two characters are a closing curly brace and bracket, respectively, so those are also not good. The next character is an opening parenthesis, so that's good. The next two characters are an opening curly brace and bracket, respectively, so those are also good. The next character is a closing parenthesis, so that's not good.
+
+Therefore, the sequence is invalid.
+----
+CS Algorithms: Solve the following simple programming tasks.
+Determine whether the given sequence of parentheses is properly matched.
+
+Sequence: ( ) [ ( ) ] ( { } )
+Valid/Invalid?
+A: Let's think step-by-step.
+
+The first opening parenthesis is '(', so the next character must be a ')'. The next character is a '[', so the next character must be a ']'. The next character is '(', so the next character must be a ')'. The next character is a '{', so the next character must be a '}'.
+
+The sequence is valid.
+----
+CS Algorithms: Solve the following simple programming tasks.
+Determine whether the given sequence of parentheses is properly matched.
+
+Sequence: [ {
+Valid/Invalid?
+A: Let's think step-by-step.
+
+The first character is an open square bracket, so we'll need to find a corresponding close square bracket later on. The next character is an open curly brace, so we'll need to find a corresponding close curly brace later on. So far, everything is fine.
+
+The next character is a close curly brace, but we don't have an open curly brace that we can match it to! This means the sequence is invalid.
+----
+"""
+
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
     global auto_cot_corrected_prompt
+    global auto_cot_cleaned_prompt
     auto_cot_prompt = ""
     description = "CS Algorithms: Solve the following simple programming tasks."
     for io_pair in io_pairs:
@@ -333,6 +497,8 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         auto_cot_prompt += cot[0] + "\n----\n"
 
     if use_corrected:
+        auto_cot_prompt = auto_cot_corrected_prompt
+    else:
         auto_cot_prompt = auto_cot_corrected_prompt
     
     print(auto_cot_prompt)
@@ -364,7 +530,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
             time.sleep(10)
-        preds = [x.strip() for x in answers]
+        preds = [get_autocot_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("Auto-CoT Performance:")
@@ -433,6 +599,15 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
+
     perf_array = []
     runs = 5
     for run in range(runs): 
@@ -441,7 +616,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(task_description, x))
             time.sleep(10)
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("Few-shot COT performance:")
@@ -483,7 +658,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
             time.sleep(60)
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
     print("FS-CoT Performance:")
     print("Mean", np.mean(perf_array))
@@ -498,6 +673,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
+    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
 
     args = parser.parse_args()
 
@@ -516,6 +692,6 @@ if __name__ == "__main__":
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
-        few_shot_cot(args.temperature, args.model_name)
+        few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)

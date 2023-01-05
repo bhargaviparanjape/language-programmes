@@ -11,7 +11,7 @@ import datasets
 import numpy as np
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
                    get_few_shot_prompt, get_subset, gpt3,
                    propose_decomposition, propose_instruction, substring_match)
 
@@ -269,8 +269,92 @@ Finally, it's plausible that Nylander would score in the shootout, as he is know
 The final answer is Plausible.
 ----
 """
+auto_cot_cleaned_prompt = """Sports Understanding: Determine whether an artificially constructed sentence relating to sports is plausible or implausible. The final answer should be 'plausible' or 'implausible'
+Determine whether the following statement or statements are plausible or implausible:
+Statement: James Harden shot a free throw
+Plausible/implausible?
+A: Let's think step-by-step.
+
+In order for the statement to be plausible, we need to know a few things. First, we need to know who James Harden is. James Harden is an American professional basketball player for the Houston Rockets of the National Basketball Association (NBA). He is one of the best players in the NBA, so it is not implausible that he would be shooting a free throw.
+Next, we need to know what a free throw is. A free throw is a shot that a player takes from the free throw line, which is a line 15 feet from the basket. The player is given one shot and the shot is worth one point.
+Based on the information given, the statement is plausible.
+
+The final answer is plausible.
+----
+Sports Understanding: Determine whether an artificially constructed sentence relating to sports is plausible or implausible. The final answer should be 'plausible' or 'implausible'
+Determine whether the following statement or statements are plausible or implausible:
+Statement: Ben Simmons called for the screen
+Plausible/implausible?
+A: Let's think step-by-step.
+
+In order for the sentence to be plausible, we need to know a few things. First, we need to know who Ben Simmons is. We'll assume that he is a professional basketball player. Second, we need to know what a screen is in the context of basketball. A screen is when one player stands still and another player uses their body to shield the first player from the defender.
+Given this information, the sentence is plausible.
+
+The final answer is plausible.
+----
+Sports Understanding: Determine whether an artificially constructed sentence relating to sports is plausible or implausible. The final answer should be 'plausible' or 'implausible'
+Determine whether the following statement or statements are plausible or implausible:
+Statement: Philipp Lahm threw a touchdown
+Plausible/implausible?
+A: Let's think step-by-step.
+
+Can a soccer player throw a touchdown? No.
+Can a football player throw a touchdown? Yes.
+Therefore, the statement is implausible.
+
+The final answer is implausible.
+----
+Sports Understanding: Determine whether an artificially constructed sentence relating to sports is plausible or implausible. The final answer should be 'plausible' or 'implausible'
+Determine whether the following statement or statements are plausible or implausible:
+Statement: William Nylander scored in the shootout in the Stanley Cup
+Plausible/implausible?
+A: Let's think step-by-step.
+
+First, William Nylander is a professional hockey player. So far, so good.
+Next, we need to see if he could score in a shootout in the Stanley Cup. This is a little more difficult to determine, but we know that shootouts are a part of hockey, and that the Stanley Cup is the biggest prize in hockey. So it's not implausible that William Nylander could score in a shootout in the Stanley Cup.
+
+The final answer is plausible.
+----
+Sports Understanding: Determine whether an artificially constructed sentence relating to sports is plausible or implausible. The final answer should be 'plausible' or 'implausible'
+Determine whether the following statement or statements are plausible or implausible:
+Statement: James Harden shot a free throw
+Plausible/implausible?
+A: Let's think step-by-step.
+
+In order for the statement to be plausible, we need to know a few things. First, we need to know who James Harden is. James Harden is an American professional basketball player for the Houston Rockets of the National Basketball Association (NBA). He is one of the best players in the NBA, so it is not implausible that he would be shooting a free throw.
+Next, we need to know what a free throw is. A free throw is a shot that a player takes from the free throw line, which is a line 15 feet from the basket. The player is given one shot and the shot is worth one point.
+Based on the information given, the statement is plausible.
+
+The final answer is plausible.
+----
+Sports Understanding: Determine whether an artificially constructed sentence relating to sports is plausible or implausible. The final answer should be 'plausible' or 'implausible'
+Determine whether the following statement or statements are plausible or implausible:
+Statement: Ben Simmons called for the screen
+Plausible/implausible?
+A: Let's think step-by-step.
+
+In order for the sentence to be plausible, we need to know a few things. First, we need to know who Ben Simmons is. We'll assume that he is a professional basketball player. Second, we need to know what a screen is in the context of basketball. A screen is when one player stands still and another player uses their body to shield the first player from the defender.
+Given this information, the sentence is plausible.
+
+The final answer is plausible.
+----
+Sports Understanding: Determine whether an artificially constructed sentence relating to sports is plausible or implausible. The final answer should be 'plausible' or 'implausible'
+Determine whether the following statement or statements are plausible or implausible:
+Statement: Philipp Lahm threw a touchdown
+Plausible/implausible?
+A: Let's think step-by-step.
+
+Can a soccer player throw a touchdown? No.
+Can a football player throw a touchdown? Yes.
+Therefore, the statement is implausible.
+
+The final answer is implausible.
+----
+"""
+
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
     global auto_cot_corrected_prompt
+    global auto_cot_cleaned_prompt
     auto_cot_prompt = ""
     description = """Sports Understanding: Determine whether an artificially constructed sentence relating to sports is plausible or implausible. The final answer should be 'plausible' or 'implausible'"""
     for io_pair in io_pairs:
@@ -280,8 +364,11 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         auto_cot_prompt += prompt
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
+    
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
+    else:
+        auto_cot_prompt = auto_cot_cleaned_prompt
     
     print(auto_cot_prompt)
     f = open("auto_cot_demonstrations.txt","a+")
@@ -312,7 +399,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
             # x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
             time.sleep(10)
-        preds = [x.strip() for x in answers]
+        preds = [get_autocot_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("Auto-CoT Performance:")
@@ -341,6 +428,15 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
+
     perf_array = []
     runs = 5
     for run in range(runs): 
@@ -348,9 +444,9 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             # x = [ex.replace("\nA:", "") for ex in x]
-            answers.extend(predict("""Sports Understanding: Determine whether an artificially constructed sentence relating to sports is plausible or implausible. The final answer should be "plausible" or "implausible""", x))
+            answers.extend(predict(task_description, x))
             time.sleep(10)
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("Few-shot COT performance:")
@@ -512,6 +608,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
+    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
 
     args = parser.parse_args()
 
@@ -530,6 +627,6 @@ if __name__ == "__main__":
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
-        few_shot_cot(args.temperature, args.model_name)
+        few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)

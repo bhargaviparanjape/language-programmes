@@ -11,7 +11,7 @@ import datasets
 import numpy as np
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
                    get_few_shot_prompt, get_subset, gpt3,
                    propose_decomposition, propose_instruction, substring_match)
 
@@ -227,7 +227,126 @@ Converting to kilometers per hour, we get 40/3*(18/5). This is 48 km/hr, or opti
 The final answer is E.
 ----
 """
+
+auto_cot_cleaned_prompt = """Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer.
+What is the sum of 100 consecutive integers from -49 inclusive, in a increasing order? A)-29 B)50 C)-30 D)30 E)60
+The final answer one of the five options.
+A: Let's think step-by-step.
+The first number in the sequence is -49.
+The last number in the sequence is 50.
+To find the sum of consecutive integers, we need to add up all the numbers in between.
+The sum of 100 consecutive integers from -49 inclusive to 50 inclusive is 50 + 49 + 48 + 47 + ... + -50 = 0.
+
+The final answer is C.
+----
+Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer.
+A box contains nine bulbs out of which 4 are defective. If four bulbs are chosen at random, find the probability that atleast one bulb is good? A)125/128 B)125/120 C)125/126 D)125/125 E)125/121
+The final answer one of the five options.
+A: Let's think step-by-step.
+There are 9 bulbs in the box, and 4 of them are defective. That means that 5 of them are good.
+There are 5 good bulbs and 9 total bulbs, so the probability of choosing a good bulb is 5/9.
+Now, we need to find the probability of choosing at least one good bulb.
+There are 9 bulbs in the box, and 4 of them are defective. That means that 5 of them are good.
+There are 5 good bulbs and 9 total bulbs, so the probability of choosing a good bulb is 5/9.
+Now, we need to find the probability of choosing at least one good bulb.
+There are 9 bulbs in the box, and 4 of them are defective. That means that 5 of them are good.
+There are 5 good bulbs and 9 total bulbs, so the probability of choosing a good bulb is 5/9.
+Now, we need to find the probability of choosing at least one good bulb.
+There are 9 bulbs in the box, and 4 of them are defective. That means that 5 of them are good.
+There are 5 good bulbs and 9 total bulbs, so the probability of choosing a good bulb is 5/9.
+Now, we need to find the probability of choosing at least one good bulb.
+There are 9 bulbs in the box, and 4 of them are defective. That means that 5 of them are good.
+There are 5 good bulbs and 9 total bulbs, so the probability of choosing a good bulb is 5/9.
+Now, we need to find the probability of choosing at least one good bulb.
+There are 9 bulbs in the box, and 4 of them are defective. That means that 5 of them are good.
+There are 5 good bulbs and 9 total bulbs, so the probability of choosing a good bulb is 5/9.
+Now, we need to find the probability of choosing at least one good bulb.
+The probability of choosing at least one good bulb is 1 - the probability of choosing all defective bulbs.
+There are 4 defective bulbs and 9 total bulbs, so the probability of choosing all defective bulbs is 4/9.
+Therefore, the probability of choosing at least one good bulb is 1 - 4/9, or 5/9.
+
+The final answer is D 125/125.
+----
+Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer.
+Four of the five parts numbered (a), (b), (c), (d) and (e) are exactly equal. Which of the parts is not equal to the other four? The number of that part is the answer. A)16.80 × 4.50 + 4.4 B)1600 ÷ 40 + 16 × 2.5 C)5.5 × 8.4 + 34.6 D)1620 ÷ 20 – 1 E)1856.95 – 1680.65 – 96.3
+The final answer one of the five options.
+A: Let's think step-by-step.
+16.80 × 4.50 + 4.4 = 
+16.80 × 4.50 = 75.60
+75.60 + 4.4 = 80.00
+1600 ÷ 40 + 16 × 2.5 = 
+1600 ÷ 40 = 40
+40 + 16 × 2.5 = 80
+5.5 × 8.4 + 34.6 = 
+5.5 × 8.4 = 46.20
+46.20 + 34.6 = 80.80
+1620 ÷ 20 – 1 = 
+1620 ÷ 20 = 81
+81 – 1 = 80
+1856.95 – 1680.65 – 96.3 = 
+1856.95 – 1680.65 = 176.30
+176.30 – 96.3 = 80.00
+From this, we can see that B, C, D and E are equal, and that A is not equal to the other four.
+
+The final answer is A.
+----
+Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer.
+An investment of $3000 was made in a certain account and earned interest that was compounded annually. The annual interest rate was fixed for the duration of the investment, and after 12 years the $3000 increased to $12000 by earning interest. In how many years after the initial investment was made the $3000 have increased to $24000 by earning interest at that rate? A)16 B)22 C)20 D)18 E)30
+The final answer one of the five options.
+A: Let's think step-by-step.
+The investment of $3,000 was made in a certain account and earned interest that was compounded annually. The annual interest rate was fixed for the duration of the investment, and after 12 years the $3,000 increased to $12,000 by earning interest.
+In how many years after the initial investment was made the $3,000 have increased to $24,000 by earning interest at that rate?
+A) 16
+B) 22
+C) 20
+D) 18
+E) 30
+
+The final answer is C: 20.
+----
+Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer.
+Ramu bought an old car for Rs. 42000. He spent Rs. 13000 on repairs and sold it for Rs. 64900. What is his profit percent? A)16%% B)88%% C)18%% D)14%% E)28%%
+The final answer one of the five options.
+A: Let's think step-by-step.
+Ramu bought an old car for Rs. 42000. He spent Rs. 13000 on repairs and sold it for Rs. 64900.
+We want to calculate his profit percent. We can do this by calculating his profit, which is the selling price minus the cost of the car and repairs, and then dividing by the cost of the car and repairs.
+Profit = 64900 - (42000 + 13000) = 10000
+Profit Percent = (10000 / (42000 + 13000)) x 100 = 23.8%
+
+The final answer is E.
+----
+Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer.
+C and D started a business investing Rs. 49,000 and Rs. 35,000 respectively. In what ratio the profit earned after 4 years be divided between C and D respectively? A)7:4 B)7:5 C)6:4 D)5:5 E)None of these
+The final answer one of the five options.
+A: Let's think step-by-step.
+
+First, we need to calculate the total profit earned after 4 years. We know that C invested Rs. 49,000 and D invested Rs. 35,000, so the total investment is Rs. 84,000. We also know that the profit was split evenly between C and D, so each person earned half of the total profit.
+Now, we need to calculate the total profit. We can do this by multiplying the total investment by the profit percentage. We know that the total investment is Rs. 84,000 and the profit percentage is 4%, so the total profit is Rs. 3,360.
+Finally, we need to calculate how much each person earned. We know that the total profit was Rs. 3,360 and that it was split evenly between C and D, so each person earned Rs. 1,680.
+Therefore, the ratio of the profit earned by C to the profit earned by D is 7:4.
+
+The final answer is A.
+----
+Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer.
+What is the area M of the square with the following coordinates: (x, y), (20, 20), (20, 5), (x, 5)? A)60. B)85. C)125. D)225. E)It cannot be determined from the information given
+The final answer one of the five options.
+A: Let's think step-by-step.
+First, we need to calculate the length of each side of the square.
+The side length is 20 - x.
+Now that we know the side length, we can calculate the area.
+The area of a square is equal to the length of one side squared.
+Therefore, the area of our square is (20 - x)^2.
+Now, we need to plug in the values for x.
+When x = 20, the area is (20 - 20)^2 = 0.
+When x = 5, the area is (20 - 5)^2 = 225.
+
+The final answer is D.
+----
+"""
+
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
+    global auto_cot_corrected_prompt
+    global auto_cot_cleaned_prompt
     auto_cot_prompt = ""
     for io_pair in io_pairs:
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=0.7, quote='---', n=1)
@@ -240,6 +359,8 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
 
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
+    else:
+        auto_cot_prompt = auto_cot_cleaned_prompt
     
     print(auto_cot_prompt)
     f = open("auto_cot_demonstrations.txt","a+")
@@ -271,9 +392,10 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         for x in tqdm(chunks(inputs, 10)):
             # x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
-            time.sleep(10)
-        preds = [x.strip() for x in answers]
-        perf_array.append(substring_match(new_labels, preds))
+            time.sleep(1)
+        preds = [get_autocot_answer(x, answer_prompt="The final answer is ") for x in answers]
+        perf_array.append(substring_match(labels, preds))
+        print(perf_array)
     print("Auto-CoT Performance:")
     print("Perf Array", perf_array)
     print("Mean", np.mean(perf_array))
@@ -422,10 +544,19 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     elif strategy == "llm_similar":
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
     def predict(description, chunk):
         gpt3 = OpenAIModel(model=model_name,  max_length=1024, temperature=temperature, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
 
     perf_array = []
     runs = 5
@@ -434,12 +565,13 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         answers = []
         label_dict = ["ABCDE".index(l) for l in labels]
         new_labels = [re.split('[ABCDE]\)', inp[re.search("A\)", inp).span(0)[0]:])[1:][label_dict[i]].strip() for i, inp in enumerate(inputs)]
-        for x in tqdm(chunks(inputs, 10)):
+        for x in tqdm(chunks(inputs, 5)):
             x = [ex.replace("\nA:", "") for ex in x]
-            answers.extend(predict(task_description, x))
-            time.sleep(10)
+            # answers.extend(predict(task_description, x))
+            answers.extend(predict_complete(task_description, x))
+            time.sleep(5)
         # preds = [[y.strip() for y in x.split("\n")] for x in answers]
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("FS-CoT performance:")
@@ -767,12 +899,18 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
+            time.sleep(10)
         preds = [get_answer(x.strip()) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
+
+        # Report on interpreter performance
+        positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+        positive_rate = sum(positive_calls)/len(interpreter.execution_details)
     print("FS-CoT Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
+    print("Rate of affordance call", positive_rate)
 
 
 if __name__ == "__main__":
@@ -783,6 +921,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
+    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
 
     args = parser.parse_args()
 
@@ -801,9 +940,9 @@ if __name__ == "__main__":
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
-        few_shot_cot(args.temperature, args.model_name)
+        few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)
 
 
 

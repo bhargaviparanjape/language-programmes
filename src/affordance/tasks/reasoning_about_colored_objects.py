@@ -11,7 +11,7 @@ import datasets
 import numpy as np
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
                    get_few_shot_prompt, get_subset, gpt3,
                    propose_decomposition, propose_instruction, substring_match)
 
@@ -195,7 +195,73 @@ That means the furthest item from the bracelet is the keychain on the extreme le
 The final answer is teal.
 ----
 """
+
+auto_cot_cleaned_prompt = """Given a collection of colored objects in the text input, answer the question at the end of the input. THis question requires logical, spatial and arithmetic reasoning about colored objects.
+Q: On the desk, you see a bunch of things arranged in a row: a red textbook, a yellow pencil, a brown puzzle, a silver stress ball, a teal bracelet, and a pink booklet. What is the color of the thing directly to the right of the teal thing?
+The final answer is a color (eg. teal, blue), a number (eg. 1,4) or the words "yes" or "no".
+A: Let's think step-by-step.
+
+The teal thing is the bracelet.
+
+The bracelet is to the right of the silver stress ball.
+
+So the thing directly to the right of the bracelet is the silver stress ball.
+----
+Given a collection of colored objects in the text input, answer the question at the end of the input. THis question requires logical, spatial and arithmetic reasoning about colored objects.
+Q: On the floor, you see a pink jug, a magenta mug, and a teal scrunchiephone charger. Is the jug pink?
+The final answer is a color (eg. teal, blue), a number (eg. 1,4) or the words "yes" or "no".
+A: Let's think step-by-step.
+First, we see that there are three objects on the floor.
+Second, we see that the objects are colored pink, magenta, and teal.
+Third, we see that the question is asking if the jug is pink.
+From this, we can infer that the answer is yes, the jug is pink.
+----
+Given a collection of colored objects in the text input, answer the question at the end of the input. THis question requires logical, spatial and arithmetic reasoning about colored objects.
+Q: On the table, you see the following items arranged in a row: a purple pair of sunglasses, a black teddy bear, an orange fidget spinner, a teal scrunchiephone charger, a mauve paperclip, and a fuchsia sheet of paper. What is the color of the right-most item?
+The final answer is a color (eg. teal, blue), a number (eg. 1,4) or the words "yes" or "no".
+A: Let's think step-by-step.
+
+The right-most item is a fuchsia sheet of paper.
+----
+Given a collection of colored objects in the text input, answer the question at the end of the input. THis question requires logical, spatial and arithmetic reasoning about colored objects.
+Q: On the desk, I see two brown mugs, one brown sheet of paper, one fuchsia sheet of paper, one brown pen, three grey mugs, one grey pen, two fuchsia paperclips, one fuchsia mug, and three grey sheets of paper. If I remove all the grey items from the desk, how many mugs remain on it?
+The final answer is a color (eg. teal, blue), a number (eg. 1,4) or the words "yes" or "no".
+A: Let's think step-by-step.
+
+There are two brown mugs, one brown sheet of paper, one fuchsia sheet of paper, one brown pen, three grey mugs, one grey pen, two fuchsia paperclips, one fuchsia mug, and three grey sheets of paper.
+
+We want to remove all the grey items from the desk.
+
+This means we would remove the three grey mugs, one grey pen, and three grey sheets of paper.
+
+This would leave us with two brown mugs, one brown sheet of paper, one fuchsia sheet of paper, one brown pen, two fuchsia paperclips, and one fuchsia mug.
+
+So, the answer is that there would be five mugs remaining on the desk.
+----
+Given a collection of colored objects in the text input, answer the question at the end of the input. THis question requires logical, spatial and arithmetic reasoning about colored objects.
+Q: On the table, there is a red dog leash, a brown teddy bear, a silver pencil, and a teal paperclip. What color is the paperclip?
+The final answer is a color (eg. teal, blue), a number (eg. 1,4) or the words "yes" or "no".
+A: Let's think step-by-step.
+
+First, we see that there are four objects on the table. Two of the objects are different shades of brown, and two of the objects are different shades of blue.
+
+We also see that the brown teddy bear is next to the red dog leash. This means that the paperclip must be next to the silver pencil.
+
+Now, we know that the silver pencil is to the left of the teal paperclip. This means that the teal paperclip is to the right of the silver pencil.
+
+Therefore, the teal paperclip is to the right of the silver pencil and to the left of the red dog leash. The only object that meets this criteria is the teal paperclip.
+----
+Given a collection of colored objects in the text input, answer the question at the end of the input. THis question requires logical, spatial and arithmetic reasoning about colored objects.
+Q: On the floor, you see a bunch of items arranged in a row: a teal keychain, a turquoise scrunchiephone charger, a blue bracelet, and a pink fidget spinner. What is the color of the item furthest from the bracelet?
+The final answer is a color (eg. teal, blue), a number (eg. 1,4) or the words "yes" or "no".
+A: Let's think step-by-step.
+First, we need to find the bracelet. It's the only blue item, so it must be in the middle. That means the keychain is to the left, and the charger is to the right.
+Now, we need to find the furthest item from the bracelet. The keychain is one item to the left, and the charger is two items to the right. So the charger is further away and the answer is turquoise.
+----
+"""
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
+    global auto_cot_cleaned_prompt
+    global auto_cot_corrected_prompt
     auto_cot_prompt = ""
     for io_pair in io_pairs:
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=0.7, quote='---', n=1)
@@ -205,8 +271,11 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
         # Add the final answer with special format so evaluation is easier.
+
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
+    else:
+        auto_cot_prompt = auto_cot_cleaned_prompt
     
     print(auto_cot_prompt)
     f = open("auto_cot_demonstrations.txt","a+")
@@ -237,7 +306,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
             time.sleep(10)
-        preds = [x.strip() for x in answers]
+        preds = [get_autocot_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("Auto-CoT Performance:")
@@ -391,6 +460,15 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         prompts=[few_shot_cot_prompt% (description + """The final answer is the count of requested items in words, like "six" or "ten".""", x) for x in chunk]
         return gpt3(prompts)
 
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
+
     perf_array = []
     runs = 5
     for run in range(runs): 
@@ -401,7 +479,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
             answers.extend(predict(task_description, x))
             time.sleep(10)
         # preds = [[y.strip() for y in x.split("\n")] for x in answers]
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("FS-CoT performance:")
@@ -632,6 +710,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
+    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
 
     args = parser.parse_args()
 
@@ -650,6 +729,6 @@ if __name__ == "__main__":
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
-        few_shot_cot(args.temperature, args.model_name)
+        few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)

@@ -11,7 +11,7 @@ import datasets
 import numpy as np
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
                    get_few_shot_prompt, get_subset, gpt3,
                    propose_decomposition, propose_instruction, substring_match)
 
@@ -99,7 +99,7 @@ def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
-            time.sleep(10)
+            time.sleep(1)
         preds = [x.strip() for x in answers]
         perf_array.append(exact_match(labels, preds))
     print("No decomposition Performance:")
@@ -161,11 +161,20 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     elif strategy == "llm_similar":
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=0.4, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
+    
     perf_array = []
     runs = 5
     for run in range(runs): 
@@ -173,8 +182,9 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nDoes the preceding sentence contain non-contemporaneous (anachronistic) elements?", "") for ex in x]
-            answers.extend(predict("An anachronism is a mistake in chronology, or a person, thing, or event that is out of its proper time. Figure out whether a sentence contains anachronisms or not, and answer 'yes' or 'no'", x))
-            # time.sleep(10)
+            # answers.extend(predict(task_description, x))
+            answers.extend(predict_complete(task_description, x))
+            time.sleep(15)
         preds = [get_answer(x.strip()) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
@@ -253,9 +263,64 @@ The final answer is "No"
 ----
 """
 
+auto_cot_cleaned_prompt = """Anachronisms: An anachronism is a mistake in chronology, or a person, thing, or event that is out of its proper time. Figure out whether a sentence contains anachronisms or not, and answer 'Yes' or 'No'.
+President Syngman Rhee sent a letter commending Hugo Chavez's election victory.
+The final answer is either "Yes" or "No".
+A: Let's think step-by-step.
+
+First, we need to identify the person, thing, or event that is out of its proper time. In this sentence, it's President Syngman Rhee. He's out of his proper time because he's from the past.
+Next, we need to determine whether the sentence contains a mistake in chronology. In this sentence, there is no mistake in chronology.
+
+The final answer is "No".
+----
+Anachronisms: An anachronism is a mistake in chronology, or a person, thing, or event that is out of its proper time. Figure out whether a sentence contains anachronisms or not, and answer 'Yes' or 'No'.
+President Woodrow Wilson rallied Americans to support the U.S. joining the International Atomic Energy Agency.
+The final answer is either "Yes" or "No".
+A: Let's think step-by-step.
+
+First, we have to determine whether the sentence contains a mistake in chronology. In other words, are there any events, people, or things that are out of their proper time?
+The sentence mentions President Woodrow Wilson, who was in office from 1913 to 1921. It also mentions the International Atomic Energy Agency, which was founded in 1957.
+So, there is a mistake in chronology here. President Wilson could not have rallied Americans to support the U.S. joining the International Atomic Energy Agency, because the Agency didn't exist yet!
+
+The final answer is "Yes".
+----
+Anachronisms: An anachronism is a mistake in chronology, or a person, thing, or event that is out of its proper time. Figure out whether a sentence contains anachronisms or not, and answer 'Yes' or 'No'.
+The recognition of Christianity as the official religion of both Ethiopia and the Roman Empire within the same decade is notable.
+The final answer is either "Yes" or "No".
+A: Let's think step-by-step.
+
+The first part of the sentence, "The recognition of Christianity as the official religion of both Ethiopia and the Roman Empire within the same decade is notable," is discussing two events that happened in different years. So far, there is no anachronism.
+The second part of the sentence, "The final answer is either 'Yes' or 'No'," is discussing the present day. The answer to the question is "No," because there is no anachronism in the sentence.
+
+The final answer is "No".
+----
+Anachronisms: An anachronism is a mistake in chronology, or a person, thing, or event that is out of its proper time. Figure out whether a sentence contains anachronisms or not, and answer 'Yes' or 'No'.
+The T. rex was running toward the herd of Wagyu cattle grazing outside.
+The final answer is either "Yes" or "No".
+A: Let's think step-by-step.
+
+First, we have the T. rex. This creature lived during the Cretaceous period, which means it's definitely not an anachronism.
+Next, we have the Wagyu cattle. These cattle were first bred in Japan in the early 1800s, which means they're also not an anachronism.
+However, the sentence mentions that the T. rex is running toward the Wagyu cattle. This is the anachronism, because T. rex and Wagyu cattle would never have been in the same place at the same time.
+
+The final answer is "Yes".
+----
+Anachronisms: An anachronism is a mistake in chronology, or a person, thing, or event that is out of its proper time. Figure out whether a sentence contains anachronisms or not, and answer 'Yes' or 'No'.
+Sun Tzu dedicated an entire chapter to describing the failure of Babylon.
+The final answer is either "Yes" or "No".
+A: Let's think step-by-step.
+
+First, we need to identify what the anachronism might be. In this sentence, it could be Sun Tzu, Babylon, or the act of dedicating a chapter to describing something.
+Sun Tzu is an ancient Chinese military general, strategist, and philosopher who lived from 544-496 BCE. Babylon was an ancient Mesopotamian city that was first settled around 4,000 BCE.
+Given this information, it is most likely that the anachronism in the sentence is Babylon. Sun Tzu and the act of dedicating a chapter to describing something could have happened in ancient times, but the city of Babylon would not have been around during Sun Tzu's lifetime.
+
+The final answer is "Yes".
+----
+"""
 
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
     global auto_cot_corrected_prompt
+    global auto_cot_cleaned_prompt
     auto_cot_prompt = ""
     for io_pair in io_pairs[:10]:
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
@@ -268,6 +333,8 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
 
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
+    else:
+        auto_cot_prompt = auto_cot_cleaned_prompt
     
     print(auto_cot_prompt)
     f = open("auto_cot_demonstrations.txt","a+")
@@ -324,9 +391,10 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
             answers = []
             for x in tqdm(chunks(inputs, 10)):
                 answers.extend(predict(x))
-                time.sleep(10)
-            preds = [x.strip() for x in answers]
+                time.sleep(1)
+            preds = [get_autocot_answer(x, answer_prompt="The final answer is ") for x in answers]
             perf_array.append(substring_match(labels, preds))
+            print(perf_array)
         print("Auto-CoT Performance:")
         print("Mean", np.mean(perf_array))
         print("Std. Dev", np.std(perf_array))
@@ -421,14 +489,14 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        new_labels = ["Ans: " + label for label in labels]
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nDoes the preceding sentence contain non-contemporaneous (anachronistic) elements?", "") for ex in x]
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
-        preds = [x.strip() for x in answers]
-        perf_array.append(substring_match(new_labels, preds))
+            time.sleep(10)
+        preds = [get_answer(x) for x in answers]
+        perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("FS-CoT Performance:")
     print("Mean", np.mean(perf_array))

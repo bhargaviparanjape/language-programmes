@@ -11,7 +11,7 @@ import datasets
 import numpy as np
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
                    get_few_shot_prompt, get_subset, gpt3,
                    propose_decomposition, propose_instruction, substring_match)
 
@@ -104,7 +104,7 @@ No. Alice's Adventures in Wonderland was published in 1865. Macbeth was first pe
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
-            time.sleep(10)
+            # time.sleep(10)
         preds = [x.strip() for x in answers]
         processed_labels = [l.split()[0] for l in labels]
         processed_preds = [p.split()[0] for p in preds]
@@ -299,8 +299,73 @@ Since Alice's Adventures in Wonderland was published befafterore Macbeth, it's i
 The final answer is No.
 ----
 """
+
+auto_cot_cleaned_prompt = """Strategy QA: Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or the question is implausible.
+Q: Has Johns Hopkins University always treated subjects ethically?
+The final answer should be "Yes" or "No" only.
+A: Let's think step-by-step.
+
+1. Has Johns Hopkins University always conducted clinical research?
+Yes. Johns Hopkins University has been conducting clinical research since its founding in 1876.
+2. Has Johns Hopkins University always followed federal regulations for clinical research?
+Yes. Johns Hopkins University has been following federal regulations for clinical research since the regulations were established in the 1970s.
+3. Has Johns Hopkins University always treated subjects ethically?
+Yes. Johns Hopkins University has been treating subjects ethically since its founding in 1876.
+
+The final answer is Yes.
+----
+Strategy QA: Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or the question is implausible.
+Q: Could Carl Friedrich Gauss speak to someone 100 miles away?
+The final answer should be "Yes" or "No" only.
+A: Let's think step-by-step.
+
+Can Carl Friedrich Gauss speak? Yes. 
+Can he speak 100 miles away? It's possible, but there's no evidence that he could, so we'll say no. 
+
+The final answer is No.
+----
+Strategy QA: Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or the question is implausible.
+Q: Is calling ABBA the Swedish Beatles a preposterous claim?
+The final answer should be "Yes" or "No" only.
+A: Let's think step-by-step.
+
+Is ABBA a popular band?
+Yes
+Did the Beatles originate from Sweden?
+No
+Is it preposterous to compare ABBA to the Beatles?
+Yes
+
+The final answer is Yes
+----
+Strategy QA: Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or the question is implausible.
+Q: Did compact discs make computer gaming more popular?
+The final answer should be "Yes" or "No" only.
+A: Let's think step-by-step.
+
+1. Did compact discs make computer gaming more popular?
+Yes, there is evidence that compact discs made computer gaming more popular. For example, when the Sony PlayStation released in 1994, it used compact discs instead of cartridges. This made it much easier to produce and distribute games, which led to a boom in the video game industry.
+2. Did computer gaming make compact discs more popular?
+No, there is no evidence that computer gaming made compact discs more popular. In fact, it's the other way around: compact discs made computer gaming more popular.
+
+The final answer is Yes.
+----
+Strategy QA: Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or the question is implausible.
+Q: Did Alice's Adventures in Wonderland inspire Macbeth?
+The final answer should be "Yes" or "No" only.
+A: Let's think step-by-step.
+
+1. Did Alice's Adventures in Wonderland come before Macbeth?
+Yes.
+2. Is there evidence that Macbeth was influenced by Alice's Adventures in Wonderland?
+No.
+
+The final answer is No.
+----
+"""
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
     global auto_cot_corrected_prompt
+    global auto_cot_cleaned_prompt
     auto_cot_prompt = ""
     description = """Strategy QA: Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or the question is implausible."""
     for io_pair in io_pairs:
@@ -313,6 +378,8 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
     
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
+    else:
+        auto_cot_prompt = auto_cot_cleaned_prompt
     
     print(auto_cot_prompt)
     f = open("auto_cot_demonstrations.txt","a+")
@@ -344,8 +411,8 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
-            time.sleep(10)
-        preds = [x.strip() for x in answers]
+            # time.sleep(10)
+        preds = [get_autocot_answer(x) for x in answers]
         perf_array.append(substring_match(processed_labels, preds))
         print(perf_array)
     print("Auto-CoT Performance:")
@@ -374,6 +441,15 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
+
     perf_array = []
     runs = 5
     for run in range(runs): 
@@ -382,9 +458,9 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         processed_labels = [l.split()[0] for l in labels]
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
-            answers.extend(predict("""Strategy QA: Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or if the question is implausible.""", x))
-            time.sleep(10)
-        preds = [x.strip() for x in answers]
+            answers.extend(predict_complete("""Strategy QA: Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or if the question is implausible.""", x))
+            # time.sleep(10)
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(processed_labels, preds))
         print(perf_array)
     print("Few-shot COT performance:")
@@ -476,6 +552,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
+    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
 
     args = parser.parse_args()
 
@@ -494,6 +571,6 @@ if __name__ == "__main__":
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
-        few_shot_cot(args.temperature, args.model_name)
+        few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)

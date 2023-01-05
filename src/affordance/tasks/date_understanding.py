@@ -11,7 +11,7 @@ import datasets
 import numpy as np
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
                    get_few_shot_prompt, get_subset, gpt3,
                    propose_decomposition, propose_instruction, substring_match)
 
@@ -271,8 +271,61 @@ Therefore, 1 month ago, it was December 7, 2018. We now need to convert this dat
 Therefore, the required date is 12/07/2018.
 ----
 """
+
+auto_cot_cleaned_prompt = """(Date understanding task) Find the required date in MM/DD/YYYY using information about related events and dates in the input.
+Q: Yesterday was April 30, 2021. What is the date today in MM/DD/YYYY?
+The final answer should be in the MM/DD/YYYY format.
+A: Let's think step-by-step.
+
+Yesterday was April 30, 2021.
+
+The day before yesterday was April 29, 2021.
+
+Today is April 30, 2021.
+----
+(Date understanding task) Find the required date in MM/DD/YYYY using information about related events and dates in the input.
+Q: Today's meeting is rescheduled to 11 am tomorrow, 10/16/1924. What is the date today in MM/DD/YYYY?
+The final answer should be in the MM/DD/YYYY format.
+A: Let's think step-by-step.
+
+First, we need to find out how many days have passed since the original meeting. We know the meeting was rescheduled to tomorrow, which means that one day has passed.
+
+Therefore, the current date is 10/17/1924.
+----
+(Date understanding task) Find the required date in MM/DD/YYYY using information about related events and dates in the input.
+Q: Jane visits the bookstore on the 16th of each month starting from the October of 2009. It is her 5th visit to the bookstore today. What is the date today in MM/DD/YYYY?
+The final answer should be in the MM/DD/YYYY format.
+A: Let's think step-by-step.
+
+Jane's first visit to the bookstore was on October 16th, 2009. 
+5 visits later would be January 16th, 2010.
+
+Therefore, the answer is 01/16/2010.
+----
+(Date understanding task) Find the required date in MM/DD/YYYY using information about related events and dates in the input.
+Q: May 6, 1992 is like yesterday to Jane, but that is actually ten years ago. What is the date a month ago in MM/DD/YYYY?
+The final answer should be in the MM/DD/YYYY format.
+A: Let's think step-by-step.
+
+A month ago from May 6, 1992 would be April 6, 1992.
+
+The answer is 04/06/1992.
+----
+(Date understanding task) Find the required date in MM/DD/YYYY using information about related events and dates in the input.
+Q: The first day of 2019 is a Tuesday, and today is the first Monday of 2019. What is the date a month ago in MM/DD/YYYY?
+The final answer should be in the MM/DD/YYYY format.
+A: Let's think step-by-step.
+
+A month ago from today would be December 3, 2018.
+The first day of 2019 is January 1, 2019.
+Therefore, a month ago from the first day of 2019 would be December 1, 2018.
+
+The final answer is 12/01/2018.
+----
+"""
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
     global auto_cot_corrected_prompt
+    global auto_cot_cleaned_prompt
     auto_cot_prompt = ""
     for io_pair in io_pairs:
         gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=0.7, quote='---', n=1)
@@ -285,6 +338,8 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
 
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
+    else:
+        auto_cot_prompt = auto_cot_cleaned_prompt
     
     print(auto_cot_prompt)
     f = open("auto_cot_demonstrations.txt","a+")
@@ -347,7 +402,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
                 x = [ex.replace("\nA:", "") for ex in x]
                 answers.extend(predict(x))
                 time.sleep(10)
-            preds = [x.strip() for x in answers]
+            preds = [get_autocot_answer(x) for x in answers]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)
         print("Auto-CoT Performance:")
@@ -447,6 +502,15 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         prompts=[few_shot_cot_prompt % (description, x) for x in chunk]
         return gpt3(prompts)
 
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
+
     perf_array = []
     runs = 5
     for run in range(runs): 
@@ -456,7 +520,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict("Find the required date in MM/DD/YYYY using information about related events and dates in the input. Clue: First find what day is today.", x))
             time.sleep(10)
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("FS-CoT Performance:")
@@ -528,15 +592,12 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
             time.sleep(30)
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("FS-CoT Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
-
-
-
 
 
 if __name__ == "__main__":
@@ -547,6 +608,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
+    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
 
     args = parser.parse_args()
 
@@ -565,9 +627,9 @@ if __name__ == "__main__":
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
-        few_shot_cot(args.temperature, args.model_name)
+        few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)
 
         # few_shot_cot(temperature=0.4)
         # few_shot(N=20)

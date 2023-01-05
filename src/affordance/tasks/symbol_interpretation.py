@@ -11,7 +11,7 @@ import datasets
 import numpy as np
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
                    get_few_shot_prompt, get_subset, gpt3,
                    propose_decomposition, propose_instruction, substring_match)
 
@@ -582,7 +582,7 @@ There is at least one eulb elcric.
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
-            time.sleep(10)
+            # time.sleep(10)
         preds = [x.strip() for x in answers]
         perf_array.append(exact_match(labels, preds))
         print(perf_array)
@@ -592,9 +592,208 @@ There is at least one eulb elcric.
 
 
 auto_cot_corrected_prompt = """"""
+
+auto_cot_cleaned_prompt = """In different SIT worlds, a structure is a sequence of six emojis. You are given the emojis used and thier descriptions. You are given two structures and have to choose the sentence from five provided choices that is consistently describes one structure consistently but not another.
+In the SIT-adversarial world a structure is a sequence of six emojis.
+Hereafter are reported the emojis used along with their descriptions.
+ 🔺 is a red circle;
+ 🟦 is a blue circle;
+ 🔴 is a yellow circle;
+ 🟥 is a red triangle pointing up;
+ 🟨 is a red triangle pointing down;
+ 🔻 is a red square;
+ 🟡 is a blue square;
+ _ is a yellow square;
+ 🔵 is an empty space.
+
+Choose the sentence consistent with the structure 🟥 🔻 🟨 _ 🔴 🟨 and not consistent with 🔺 🟥 🟥 🟡 _ 🟦:
+
+  choice: There are at most two blue circles.
+
+  choice: There is exactly one blue piece.
+
+  choice: There is at least one triangle pointing down.
+
+  choice: There are at least two yellow squares.
+
+  choice: There is exactly one blue circle.
+The final answer is one of the five choices.
+A: Let's think step-by-step.
+
+The first part of the question says that we have two structures, and we have to find a sentence that describes one of them, but not the other.
+The first structure is: 🟥 🔻 🟨 _ 🔴 🟨
+The second structure is: 🔺 🟥 🟥 🟡 _ 🟦
+When we look at the first structure, we see that there is a red triangle pointing up, a red square, a red triangle pointing down, and a yellow circle.
+When we look at the second structure, we see that there is a red circle, two yellow circles, and a blue square.
+Now, we need to find a sentence that describes the first structure, but not the second.
+There are a few sentences that could work, but the one that makes the most sense is "There is at least one triangle pointing down."
+This sentence describes the first structure, because it has a red triangle pointing down. But, it does not describe the second structure, because there is no triangle pointing down.
+
+The best answer choice is "There is at least one triangle pointing down."
+----
+In different SIT worlds, a structure is a sequence of six emojis. You are given the emojis used and thier descriptions. You are given two structures and have to choose the sentence from five provided choices that is consistently describes one structure consistently but not another.
+In the SIT-adversarial world a structure is a sequence of six emojis.
+Hereafter are reported the emojis used along with their descriptions.
+ 🔺 is a red circle;
+ 🟦 is a blue circle;
+ 🔴 is a yellow circle;
+ 🟥 is a red triangle pointing up;
+ 🟨 is a red triangle pointing down;
+ 🔻 is a red square;
+ 🟡 is a blue square;
+ _ is a yellow square;
+ 🔵 is an empty space.
+
+Choose the sentence consistent with the structure 🟥 🔴 🟥 🔺 🟥 🟡 and not consistent with 🔴 🔵 _ 🔵 🟨 🔴:
+
+  choice: There are exactly two yellow pieces or exactly one yellow circle.
+
+  choice: There is exactly one red circle and zero red pieces.
+
+  choice: There are zero red squares or exactly one yellow piece.
+
+  choice: There are at most two triangles pointing up and at most one blue square.
+
+  choice: There is at most one triangle pointing down or at least one blue square.
+The final answer is one of the five choices.
+A: Let's think step-by-step.
+
+For the first structure, we have:
+🟥🔴🟥🔺🟥🟡
+We can see that there's one red triangle pointing up, one yellow circle, and one blue square.
+For the second structure, we have:
+🔴🔵__🔵🟨🔴
+We can see that there's one yellow circle, two empty spaces, one red triangle pointing down, and one red circle.
+Since the first structure has a red triangle pointing up and the second structure has a red triangle pointing down, we can eliminate choices (A) and (E).
+Since the first structure has a yellow circle and the second structure has a red circle, we can eliminate choice (B).
+Since the first structure has a blue square and the second structure has no blue squares, we can eliminate choice (C).
+That leaves us with choice (D).
+
+The best answer choice is "There is at most one triangle pointing down or at least one blue square."
+----
+In different SIT worlds, a structure is a sequence of six emojis. You are given the emojis used and thier descriptions. You are given two structures and have to choose the sentence from five provided choices that is consistently describes one structure consistently but not another.
+In the SIT-emoji-agnostic world a structure is a sequence of six emojis.
+Hereafter are reported the emojis used along with their descriptions.
+ 🐮 is a red circle;
+ 🐺 is a blue circle;
+ 🦁 is a yellow circle;
+ 🐷 is a red triangle pointing up;
+ 🐯 is a red triangle pointing down;
+ 🐱 is a red square;
+ 🦝 is a blue square;
+ 🐔 is a yellow square;
+ 🦄 is an empty space.
+
+Choose the sentence consistent with the structure 🐱 🦁 🦁 🦝 🐔 🦁 and not consistent with 🐷 🐱 🦝 🦁 🐱 🦄:
+
+  choice: There are exactly two triangles pointing up touching a triangle pointing up.
+
+  choice: There is exactly one red piece at the left of a yellow circle.
+
+  choice: There are zero red circles surrounded by squares.
+
+  choice: There are at least two yellow circles surrounded by circles.
+
+  choice: There is exactly one blue square at the right of a triangle pointing up.
+The final answer is one of the five choices.
+A: Let's think step-by-step.
+The first structure is 🐱 🦁 🦁 🦝 🐔 🦁.
+We can see that there is 1 red square, 2 yellow circles, 1 blue square, and 1 yellow square.
+There are no red circles or triangles pointing up.
+Now, let's look at the second structure, 🐷 🐱 🦝 🦁 🐱 🦄.
+This time, we see 1 red triangle pointing up, 1 red square, 1 blue square, and 1 yellow square.
+There are no yellow circles or red circles surrounded by squares.
+Based on this information, we can eliminate choices A, B, and D.
+C is not consistent with the first structure because there is at least one red circle surrounded by squares.
+This leaves us with choice E, which is consistent with the first structure and not consistent with the second.
+
+The best answer choice is "There is exactly one blue square at the right of a triangle pointing up."
+----
+In different SIT worlds, a structure is a sequence of six emojis. You are given the emojis used and thier descriptions. You are given two structures and have to choose the sentence from five provided choices that is consistently describes one structure consistently but not another.
+In the SIT-emoji-agnostic world a structure is a sequence of six emojis.
+Hereafter are reported the emojis used along with their descriptions.
+ 🐮 is a red circle;
+ 🐺 is a blue circle;
+ 🦁 is a yellow circle;
+ 🐷 is a red triangle pointing up;
+ 🐯 is a red triangle pointing down;
+ 🐱 is a red square;
+ 🦝 is a blue square;
+ 🐔 is a yellow square;
+ 🦄 is an empty space.
+
+Choose the sentence consistent with the structure 🐯 🐮 🐱 🐮 🐯 🐯 and not consistent with 🦄 🦁 🦁 🐔 🐯 🦄:
+
+  choice: There are at most two yellow squares or at most two blue circles.
+
+  choice: There is exactly one red square and at least two red circles.
+
+  choice: There is at least one blue circle or exactly two triangles.
+
+  choice: There are at most two yellow circles and exactly one triangle.
+
+  choice: There is at most one red circle and exactly two red pieces.
+The final answer is one of the five choices.
+A: Let's think step-by-step.
+
+We know that in the first structure, there is a yellow square, a red square, and a blue square. This means that in the second structure, there can't be more than one red circle.
+We also know that in the first structure, there are two red triangles. This means that in the second structure, there can't be more than two yellow circles.
+This leaves us with two possible answers:
+There is at most one red circle and exactly two red pieces.
+There are at most two yellow circles and exactly one triangle.
+
+The best answer choice is "There are at most two yellow circles and exactly one triangle."
+----
+In different SIT worlds, a structure is a sequence of six emojis. You are given the emojis used and thier descriptions. You are given two structures and have to choose the sentence from five provided choices that is consistently describes one structure consistently but not another.
+In the SIT-name-agnostic world a structure is a sequence of six emojis.
+Hereafter are reported the emojis used along with their descriptions.
+ 🔴 is a X D;
+ 🔵 is a H D;
+ 🟡 is a U D;
+ 🔺 is a X Y G;
+ 🔻 is a X Y A;
+ 🟥 is a X B;
+ 🟦 is a H B;
+ 🟨 is a U B;
+ _ is a T.
+
+Choose the sentence consistent with the structure 🟡 🔵 🔴 🟨 🟦 🔺 and not consistent with 🟡 🟡 🟨 🟥 🟡 🟨:
+
+  choice: There are exactly two H Is and exactly one U I.
+
+  choice: There is at most one U I or at most one H D.
+
+  choice: There are exactly two U Is and at most one H B.
+
+  choice: There are at least two X Ds or exactly one X I.
+
+  choice: There is at least one U B or exactly one Y A.
+The final answer is one of the five choices.
+A: Let's think step-by-step.
+For the first structure, we have:
+🟡=U I
+🔵=H D
+🔴=X D
+🟨=U B
+🟦=H B
+🔺=X Y A
+For the second structure, we have:
+🟡=U I
+🟡=U I
+🟨=U B
+🟥=X B
+🟡=U I
+🟨=U B
+Now, we can see that the first sentence is consistent with the first structure and not consistent with the second structure.
+
+The best answer choice is "There are exactly two H Is and exactly one U I"
+----
+"""
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
+    global auto_cot_cleaned_prompt
+    global auto_cot_corrected_prompt
     auto_cot_prompt = ""
-    for io_pair in io_pairs[:3]:
+    for io_pair in io_pairs[:5]:
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=0.7, quote='---', n=1)
         prompt = """%s\n"""% task_description + io_pair[0] + \
             """\nThe final answer is one of the five choices.\nA: Let's think step-by-step.\n""" 
@@ -604,6 +803,8 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         # Add the final answer with special format so evaluation is easier.
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
+    else:
+        auto_cot_prompt = auto_cot_cleaned_prompt
     
     print(auto_cot_prompt)
     f = open("auto_cot_demonstrations.txt","a+")
@@ -633,8 +834,8 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
-            time.sleep(10)
-        preds = [x.strip() for x in answers]
+            # time.sleep(10)
+        preds = [get_autocot_answer(x, answer_prompt="The best answer choice is") for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("Auto-CoT Performance:")
@@ -788,6 +989,15 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         prompts=[few_shot_cot_prompt% (description + """Clue: Translating the two subsequences will help.""", x) for x in chunk]
         return gpt3(prompts)
 
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
+
     perf_array = []
     runs = 5
     for run in range(runs): 
@@ -795,10 +1005,10 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
-            answers.extend(predict(task_description, x))
-            time.sleep(10)
+            answers.extend(predict_complete(task_description, x))
+            # time.sleep(10)
         # preds = [[y.strip() for y in x.split("\n")] for x in answers]
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("FS-CoT performance:")
@@ -842,7 +1052,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(new_labels, preds))
         print(perf_array)
     print("FS-CoT Performance:")
@@ -859,6 +1069,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
+    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
 
     args = parser.parse_args()
 
@@ -877,6 +1088,6 @@ if __name__ == "__main__":
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
-        few_shot_cot(args.temperature, args.model_name)
+        few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)

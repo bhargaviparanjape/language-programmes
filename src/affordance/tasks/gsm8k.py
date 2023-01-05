@@ -11,7 +11,7 @@ import datasets
 import numpy as np
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
                    get_few_shot_prompt, get_subset, gpt3,
                    propose_decomposition, propose_instruction, substring_match)
 
@@ -160,7 +160,72 @@ Hunter scored a 45 on his math test. John received twice as many points as Hunte
 The final answer is 100
 ----
 """
+
+auto_cot_cleaned_prompt = """Answer the following middle school math word problems, which require multi-step arithmetic reasoning.
+Mason is cleaning out all the junk in his attic. 20%% of the items are useful, 10%% are valuable heirlooms, and 70%% are junk. If Marcus's attic has 8 useful items in it, how many junk items does it have?
+A: Let's think step-by-step.
+
+20% of 8 is 1.6, so we know there are 8 - 1.6 = 6.4 junk items in the attic.
+----
+Answer the following middle school math word problems, which require multi-step arithmetic reasoning.
+A gecko eats 70 crickets every three days.  The first day she eats 30%% of the crickets.  The second day she eats 6 less than the first, and the third day she finishes up the remaining crickets.  How many crickets does she eat on the third day?
+A: Let's think step-by-step.
+
+The gecko eats 70 crickets every three days.
+
+The first day, she eats 30% of 70, which is 21 crickets.
+
+The second day, she eats 6 less than the first, so she eats 15 crickets.
+
+The third day, she finishes up the remaining crickets, so she eats 34 crickets.
+----
+Answer the following middle school math word problems, which require multi-step arithmetic reasoning.
+My new house has 12 medium ceiling lights but I have seen small and large ceiling lights in other rooms. The small ones require 1 bulb, the medium ones require 2, and the large ones need 3 bulbs. How many bulbs should I buy if my wife says she saw twice as many large ceiling lights as medium ceiling lights and ten more small lights than medium ones?
+A: Let's think step-by-step.
+
+There are 12 medium ceiling lights, so that's 24 bulbs right there.
+There are twice as many large ceiling lights as medium ceiling lights. That's 24 more bulbs, for a total of 48.
+There are ten more small ceiling lights than medium ceiling lights. That's 20 more bulbs, for a total of 68.
+
+So, you should buy 68 light bulbs.
+----
+Answer the following middle school math word problems, which require multi-step arithmetic reasoning.
+Tim buys a cabinet for $1200 and gets a 15%% discount.  How much did he pay?
+A: Let's think step-by-step.
+
+First, we need to calculate the 15% discount, which would be $1200 * 0.15 = $180.
+
+Then, we subtract the discount from the original price of the cabinet, so $1200 - $180 = $1020.
+
+This means that Tim paid $1020 for the cabinet.
+----
+Answer the following middle school math word problems, which require multi-step arithmetic reasoning.
+Grant scored 10 points higher on his math test than John.  John received twice as many points as Hunter who scored a 45 on his math test.  What was Grant's test score?
+A: Let's think step-by-step.
+
+Grant scored 10 points higher than John. So, if we know John's score, we can find Grant's. John received twice as many points as Hunter, who scored a 45. So, we can set up the following equation:
+
+2(Hunter's score) = John's score
+
+Solving for Hunter's score, we get:
+
+2(45) = John's score
+
+John's score = 90
+
+Now we can plug John's score into our original equation:
+
+Grant's score = 10 + John's score
+
+Grant's score = 10 + 90
+
+Grant's score = 100
+----
+"""
+
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
+    global auto_cot_corrected_prompt
+    global auto_cot_cleaned_prompt
     auto_cot_prompt = ""
     for io_pair in io_pairs:
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=0.7, quote='---', n=1)
@@ -171,8 +236,11 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         auto_cot_prompt += cot[0] + "\n----\n"
         # Add the final answer with special format so evaluation is easier.
 
+    pdb.set_trace()
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
+    else:
+        auto_cot_prompt = auto_cot_cleaned_prompt
     
     print(auto_cot_prompt)
     f = open("auto_cot_demonstrations.txt","a+")
@@ -203,7 +271,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
             # x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
             time.sleep(10)
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("Auto-CoT Performance:")
@@ -469,15 +537,24 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy = "fix
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
 
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
+
     perf_array = []
     runs = 5
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
-            answers.extend(predict(task_description, x))
+            answers.extend(predict_complete(task_description, x))
             time.sleep(10)
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("FS-CoT performance:")
@@ -519,7 +596,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(new_labels, preds))
         print(perf_array)
     print("FS-CoT Performance:")
@@ -535,6 +612,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
+    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
 
     args = parser.parse_args()
 
@@ -553,6 +631,6 @@ if __name__ == "__main__":
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
-        few_shot_cot(args.temperature, args.model_name)
+        few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)

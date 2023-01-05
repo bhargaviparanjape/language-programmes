@@ -11,7 +11,7 @@ import datasets
 import numpy as np
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
                    get_few_shot_prompt, get_subset, gpt3,
                    propose_decomposition, propose_instruction, substring_match)
 
@@ -162,7 +162,6 @@ A:
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
-            time.sleep(10)
         preds = [x.strip() for x in answers]
         perf_array.append(exact_match(labels, preds))
         print(perf_array)
@@ -249,7 +248,89 @@ That means 1 man and 1 hour can cut down 1 trees.
 The final answer is 8.
 ----
 """
+
+auto_cot_cleaned_prompt = """Select the option that best replaces '()' in each text input given the chocies presented, by solving the arithmetic word problem in the text input. Solving the problem will require reasoning about units of measurement.
+Q: 27 eggs divided by 9 eggs per hen per day is ().
+  choice: 243 hen-days
+  choice: 3 hen-days
+  choice: 3 days
+  choice: 243 eggs
+  choice: 3 eggs
+The final answer is one of the five choices.
+A: Let's think step-by-step.
+
+27 eggs divided by 9 eggs per hen per day is 3 hen-days.
+
+The best answer choice is 3 hen-days.
+----
+Select the option that best replaces '()' in each text input given the chocies presented, by solving the arithmetic word problem in the text input. Solving the problem will require reasoning about units of measurement.
+Q: A newsstand sells 5 newspapers every 2 weeks. It will sell () newspapers in 60 weeks.
+  choice: 120
+  choice: 300
+  choice: 150
+  choice: 12
+  choice: 24
+The final answer is one of the five choices.
+A: Let's think step-by-step.
+
+There are 60 weeks in 5 years, so we need to find out how many newspapers the newsstand will sell in 5 years.
+There are 2 weeks in 1 month, so there are 10 months in 5 years.
+This means that the newsstand will sell 50 newspapers every month.
+Now we need to find out how many newspapers the newsstand will sell in 60 weeks.
+There are 5 weeks in 1 month, so there are 12 months in 60 weeks.
+This means that the newsstand will sell 60 newspapers every month.
+Therefore, the newsstand will sell 120 newspapers in 60 weeks.
+
+The best answer choice is 120.
+----
+Select the option that best replaces '()' in each text input given the chocies presented, by solving the arithmetic word problem in the text input. Solving the problem will require reasoning about units of measurement.
+Q: A bell rings one time every 5 hours. It will ring 20 times in () hours.
+  choice: 20
+  choice: 50
+  choice: 25
+  choice: 100
+  choice: 4
+The final answer is one of the five choices.
+A: Let's think step-by-step.
+
+First, we need to figure out how many times the bell rings in one hour. Since it rings every 5 hours, we can divide 5 into 1 hour to figure this out.
+5 hours = 1 hour
+Since the bell rings every 5 hours, we can divide 5 into 1 hour to figure this out.
+5 hours = 1 hour
+1 hour/5 hours = 1/5
+This means that the bell rings 1/5 times in one hour.
+Now, we need to figure out how many times the bell will ring in 20 hours. We can use the information we just figured out to help us.
+Since 1/5 times the bell rings in one hour, and we want to know how many times it will ring in 20 hours, we can multiply 1/5 by 20 hours.
+1/5 * 20 hours = 4 hours
+This means that the bell will ring 4 times in 20 hours.
+
+The best answer choice is 20.
+----
+Select the option that best replaces '()' in each text input given the chocies presented, by solving the arithmetic word problem in the text input. Solving the problem will require reasoning about units of measurement.
+Q: It takes 2 sausages and 5 buns to make 40 hotdogs. It will take 10 sausages and () buns to make 200 hotdogs.
+  choice: 25
+  choice: 50
+  choice: 4
+  choice: 10
+  choice: 5
+The final answer is one of the five choices.
+A: Let's think step-by-step.
+
+It takes 2 sausages and 5 buns to make 40 hotdogs.
+We can write this as:
+2 sausages + 5 buns = 40 hotdogs
+We want to find out how many buns we need if we have 10 sausages. We can do this by solving for buns:
+buns = 40 hotdogs - 2 sausages
+buns = 40 - 2
+buns = 38
+So, it will take 10 sausages and 38 buns to make 200 hotdogs.
+
+The best answer choice is 38.
+----
+"""
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
+    global auto_cot_cleaned_prompt
+    global auto_cot_corrected_prompt
     auto_cot_prompt = ""
     for io_pair in io_pairs:
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=0.7, quote='---', n=1)
@@ -259,8 +340,11 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
         # Add the final answer with special format so evaluation is easier.
+
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
+    else:
+        auto_cot_prompt = auto_cot_cleaned_prompt
     
     print(auto_cot_prompt)
     f = open("auto_cot_demonstrations.txt","a+")
@@ -291,7 +375,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
             time.sleep(10)
-        preds = [x.strip() for x in answers]
+        preds = [get_autocot_answer(x, answer_prompt="The best answer choice is") for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("Auto-CoT Performance:")
@@ -555,6 +639,15 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         prompts=[few_shot_cot_prompt% (description + """The final answer is the count of requested items in words, like "six" or "ten".""", x) for x in chunk]
         return gpt3(prompts)
 
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
+
     perf_array = []
     runs = 5
     for run in range(runs): 
@@ -563,10 +656,10 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("""Please select the option that best replaces '()' in each text input given the chocies presented.\n\n""", "") for ex in x]
             x = [ex.replace("\nA:", "") for ex in x]
-            answers.extend(predict(task_description, x))
-            time.sleep(10)
+            answers.extend(predict_complete(task_description, x))
+            # time.sleep(10)
         # preds = [[y.strip() for y in x.split("\n")] for x in answers]
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("FS-CoT performance:")
@@ -749,7 +842,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     
     global few_shot_cot_prompt
     task_name = "Unit interpretation"
-    task_description = "(Unit interpretation) Select the option that best replaces '()' in each text input given the chocies presented, by solving the arithmetic word problem in the text input. Solving the problem will require reasoning about units of measurement."
+    task_description = "(Unit interpretation) Select the option that best replaces '()' in each text input given the chocies presented, by solving the arithmetic word problem in the text input. Make sure to select the option with the right unit."
 
     if strategy == "fixed":
         few_shot_cot_prompt = few_shot_cot_prompt
@@ -776,16 +869,24 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
         answers = []
         new_labels = ["Ans: " + label for label in labels]
         for x in tqdm(chunks(inputs, 10)):
-            x = [ex.replace("\nDoes the preceding sentence contain non-contemporaneous (anachronistic) elements?", "") for ex in x]
+            # x = [ex.replace("\nDoes the preceding sentence contain non-contemporaneous (anachronistic) elements?", "") for ex in x]
+            x = [ex.replace("""Please select the option that best replaces '()' in each text input given the chocies presented.\n\n""", "") for ex in x]
+            x = [ex.replace("\nA:", "") for ex in x]
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
+        # Report on interpreter performance
+        positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+        positive_rate = sum(positive_calls)/len(interpreter.execution_details)
+
         preds = [x.strip() for x in answers]
         perf_array.append(substring_match(new_labels, preds))
         print(perf_array)
+
     print("FS-CoT Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
+    print("Rate of affordance call", positive_rate)
 
 
 
@@ -797,6 +898,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
+    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
 
     args = parser.parse_args()
 
@@ -815,6 +917,6 @@ if __name__ == "__main__":
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
-        few_shot_cot(args.temperature, args.model_name)
+        few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)

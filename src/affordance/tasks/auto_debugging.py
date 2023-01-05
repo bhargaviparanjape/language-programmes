@@ -11,7 +11,7 @@ import datasets
 import numpy as np
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer,
+from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
                    get_few_shot_prompt, get_subset, gpt3,
                    propose_decomposition, propose_instruction, substring_match)
 
@@ -316,8 +316,68 @@ What is the element at index 2 of list x? It's 3! Therefore, the output of this 
 The final answer is 3.
 ----
 """
+
+auto_cot_cleaned_prompt = """Auto Debugging: Debug the following code snippets by finding the answer or the error message.
+```
+if x < 5:
+        pass
+```
+What error does this program surface?
+A: Let's think step-by-step.
+
+1. if x < 5:
+
+2.      pass
+
+3.
+
+There's no error message, but the program doesn't do anything either. The 'pass' keyword is used as a placeholder for code that hasn't been written yet. In this case, the program is waiting for an indented code block after the 'if' statement, but there isn't one.
+----
+Auto Debugging: Debug the following code snippets by finding the answer or the error message.
+```
+y = list(map(int, ['1', 'hello', '2']))
+```
+What error does this program produce?
+A: Let's think step-by-step.
+
+First, we run the map function on a list of strings. This returns a map object, which we then convert into a list. So far so good.
+
+However, when we try to convert the map object into a list of integers, we get an error. This is because the map object contains both strings and integers, and you can't convert a mixed data type into a list of integers.
+----
+Auto Debugging: Debug the following code snippets by finding the answer or the error message.
+```
+def sq(x):
+        return x*x
+y = sq(5)
+x = sq(y)
+```
+What is the value of x at the end of this program?
+A: Let's think step-by-step.
+
+The first line defines a function called sq that takes some input x and returns x*x.
+
+The second line defines a variable called y and assigns it the value of sq(5), or 5*5. So y equals 25.
+
+The third line defines a variable called x and assigns it the value of sq(y), or y*y. So x equals 25*25, or 625.
+----
+Auto Debugging: Debug the following code snippets by finding the answer or the error message.
+```
+x = [1, 2, 3]
+print(x[2])
+```
+What is the output of this program?
+A: Let's think step-by-step.
+
+1. We create a list called `x` and assign it the values `[1, 2, 3]`.
+2. We print the element at index `2` of `x`.
+
+What is the element at index `2` of `x`? It's `3`! Therefore, the output of this program is `3`.
+----
+"""
+
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
     global auto_cot_corrected_prompt
+    global auto_cot_cleaned_prompt
     auto_cot_prompt = ""
     description = "Auto Debugging: Debug the following code snippets by finding the answer or the error message."
     for io_pair in io_pairs:
@@ -330,6 +390,8 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
 
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
+    else:
+        auto_cot_prompt = auto_cot_cleaned_prompt
     
     print(auto_cot_prompt)
     f = open("auto_cot_demonstrations.txt","a+")
@@ -360,7 +422,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
             time.sleep(10)
-        preds = [x.strip() for x in answers]
+        preds = [get_autocot_answer(x, answer_prompt="The final answer is ") for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("Auto-CoT Performance:")
@@ -384,10 +446,19 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     elif strategy == "llm_similar":
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
     def predict(description, chunk):
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return gpt3(prompts)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
 
     perf_array = []
     runs = 5
@@ -396,11 +467,13 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             # x = [ex.replace("\nA:", "") for ex in x]
-            answers.extend(predict("""Auto Debugging: Debug the following code snippets by finding the answer or the error message.""", x))
+            # answers.extend(predict(task_description, x))
+            answers.extend(predict_complete(task_description, x))
             time.sleep(10)
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
+        pdb.set_trace()
     print("Few-shot COT performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
@@ -520,7 +593,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
             pdb.set_trace()
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
     print("FS-CoT Performance:")
     print("Mean", np.mean(perf_array))
@@ -535,6 +608,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
+    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
 
     args = parser.parse_args()
 
@@ -551,8 +625,8 @@ if __name__ == "__main__":
         print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
-        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
-        few_shot_cot(args.temperature, args.model_name)
+        few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency)
+        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)
