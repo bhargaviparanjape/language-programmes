@@ -152,7 +152,7 @@ def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
-            time.sleep(10)
+            # time.sleep(10)
         preds = [x.strip() for x in answers]
         perf_array.append(exact_match(labels, preds))
         print(perf_array)
@@ -326,12 +326,11 @@ What error does this program surface?
 A: Let's think step-by-step.
 
 1. if x < 5:
-
 2.      pass
-
 3.
-
 There's no error message, but the program doesn't do anything either. The 'pass' keyword is used as a placeholder for code that hasn't been written yet. In this case, the program is waiting for an indented code block after the 'if' statement, but there isn't one.
+
+The final answer is "the program doesn't do anything either".
 ----
 Auto Debugging: Debug the following code snippets by finding the answer or the error message.
 ```
@@ -341,8 +340,9 @@ What error does this program produce?
 A: Let's think step-by-step.
 
 First, we run the map function on a list of strings. This returns a map object, which we then convert into a list. So far so good.
-
 However, when we try to convert the map object into a list of integers, we get an error. This is because the map object contains both strings and integers, and you can't convert a mixed data type into a list of integers.
+
+The final answer is "the map object contains both strings and integers, and you can't convert a mixed data type into a list of integers."
 ----
 Auto Debugging: Debug the following code snippets by finding the answer or the error message.
 ```
@@ -355,10 +355,10 @@ What is the value of x at the end of this program?
 A: Let's think step-by-step.
 
 The first line defines a function called sq that takes some input x and returns x*x.
-
 The second line defines a variable called y and assigns it the value of sq(5), or 5*5. So y equals 25.
-
 The third line defines a variable called x and assigns it the value of sq(y), or y*y. So x equals 25*25, or 625.
+
+The final answer is 625.
 ----
 Auto Debugging: Debug the following code snippets by finding the answer or the error message.
 ```
@@ -372,6 +372,8 @@ A: Let's think step-by-step.
 2. We print the element at index `2` of `x`.
 
 What is the element at index `2` of `x`? It's `3`! Therefore, the output of this program is `3`.
+
+The final answer is 3.
 ----
 """
 
@@ -421,7 +423,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
-            time.sleep(10)
+            # time.sleep(10)
         preds = [get_autocot_answer(x, answer_prompt="The final answer is ") for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
@@ -469,11 +471,10 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
             # x = [ex.replace("\nA:", "") for ex in x]
             # answers.extend(predict(task_description, x))
             answers.extend(predict_complete(task_description, x))
-            time.sleep(10)
+            # time.sleep(10)
         preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
-        pdb.set_trace()
     print("Few-shot COT performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
@@ -592,12 +593,15 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
-            pdb.set_trace()
         preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
+        print(perf_array)
+        positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+        positive_rate = sum(positive_calls)/len(interpreter.execution_details)
     print("FS-CoT Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
+    print("Rate of affordance call", positive_rate)
 
 
 if __name__ == "__main__":

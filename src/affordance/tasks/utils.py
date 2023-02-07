@@ -21,6 +21,7 @@ subscription_key = '28dc412935f24fb9974d80c30915483a'
 search_url = "https://api.bing.microsoft.com/v7.0/search"
 headers = {"Ocp-Apim-Subscription-Key": subscription_key}
 from IPython.display import HTML
+from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
 with open(os.path.expanduser('~/.openai_api_key'), 'r') as file:
     openai.api_key = file.read().replace('\n', '')
@@ -31,9 +32,33 @@ import subprocess
 import sys
 
 
+class HuggingFaceModel(adatest.Model):
+    def __init__(self, model="google/flan-t5-small", quote="\"", temperature=0.7, top_p=1, max_length=30, n=1, logprobs=None):
+        self.model = AutoModelForSeq2SeqLM.from_pretrained(model)
+        self.tokenizer = AutoTokenizer.from_pretrained(model)
+        self.quote = quote
+        self.temperature = temperature
+        self.top_p = top_p
+        self.max_length = max_length
+        self.n = n
+        self.logprobs = logprobs
+
+    def __call__(self, strings):
+        pdb.set_trace()
+        inputs = self.tokenizer(strings, return_tensors="pt", padding=True)
+        outputs = self.model.generate(**inputs)
+        resp = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+        return resp
+        
+
 class OpenAIModel(adatest.Model):
     def __init__(self, model="text-davinci-002", quote="\"", temperature=0.7, top_p=1, max_length=30, n=1, logprobs=None):
-        self.model = model
+
+        self.model_name = model
+        if "google" in model:
+            self.model = HuggingFaceModel(model, quote, temperature, top_p, max_length, n, logprobs)
+        else:
+            self.model = model
         self.api_key = openai.api_key
         self.quote = quote
         self.temperature = temperature
@@ -42,16 +67,20 @@ class OpenAIModel(adatest.Model):
         self.n = n
         self.logprobs = logprobs
     def __call__(self, strings):
-        resp = openai.Completion.create(
-            model=self.model,
-            prompt=strings,
-            max_tokens=self.max_length,
-            temperature=self.temperature,
-            top_p=self.top_p,
-            n=self.n,
-            stop=self.quote,
-            logprobs = self.logprobs
-        )
+        
+        if "google" in self.model_name:
+            resp = self.model(strings)
+        else:
+            resp = openai.Completion.create(
+                model=self.model,
+                prompt=strings,
+                max_tokens=self.max_length,
+                temperature=self.temperature,
+                top_p=self.top_p,
+                n=self.n,
+                stop=self.quote,
+                logprobs = self.logprobs
+            )
         return [x["text"] for x in resp['choices']]
 
 class OpenAIModelLogProb(adatest.Model):

@@ -181,7 +181,7 @@ Valid
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
-            time.sleep(10)
+            # time.sleep(10)
         preds = [x.strip() for x in answers]
         perf_array.append(exact_match(labels, preds))
         print(perf_array)
@@ -324,22 +324,6 @@ auto_cot_corrected_prompt = """"""
 auto_cot_cleaned_prompt = """CS Algorithms: Solve the following simple programming tasks.
 Given two strings, determine the length of the longest common subsequence.
 
-Strings: VIRVRHRSTQBLLSYPZDVYCFPSQRXNA SPLYVHLWMLDJVYMQTOZMVOJF
-Length of longest common subsequence:
-A: Let's think step-by-step.
-
-1. What is the length of the longest common subsequence of the strings "VIRVRHRSTQBLLSYPZDVYCFPSQRXNA" and "SPLYVHLWMLDJVYMQTOZMVOJF"?
-2. We can start by finding the length of the longest common subsequence of the strings "VIRVRHRSTQBLLSYPZDVYCFPSQRXNA" and "SPLYVHLWMLDJVYMQTOZM".
-3. We can then find the length of the longest common subsequence of the strings "VIRVRHRSTQBLLSYPZDVYCFPSQRXNA" and "SPLYVHLWMLDJVYMQTO".
-4. We can continue this process until we find the length of the longest common subsequence of the strings "VIRVRHRSTQBLLSYPZDVYCFPSQRXNA" and "SPLYVHLWMLDJVYMQ".
-5. Finally, we can find the length of the longest common subsequence of the strings "VIRVRHRSTQBLLSYPZDVYCFPSQRXNA" and "SPLYVHLWMLDJVY".
-The length of the longest common subsequence is 5.
-
-The final answer is 5.
-----
-CS Algorithms: Solve the following simple programming tasks.
-Given two strings, determine the length of the longest common subsequence.
-
 Strings: SCZFZGCCQQLB OJDXI
 Length of longest common subsequence:
 A: Let's think step-by-step.
@@ -385,29 +369,6 @@ A: Let's think step-by-step.
 18) The next letter in each string is 'Q'. Since there is no common letter after 'Q', , we cannot add anything to our subsequence.
 
 The final answer cannot be found.
-----
-CS Algorithms: Solve the following simple programming tasks.
-Determine whether the given sequence of parentheses is properly matched.
-
-Sequence: } { ( [
-Valid/Invalid?
-A: Let's think step-by-step.
-
-The first character is a }, which doesn't match with any of the other characters. This already indicates that the sequence is invalid.
-
-The final answer is invalid.
-----
-CS Algorithms: Solve the following simple programming tasks.
-Determine whether the given sequence of parentheses is properly matched.
-
-Sequence: [ [ [ { [ [ ] { { } ( ) } [ ] ] } ] ] ]
-Valid/Invalid?
-A: Let's think step-by-step.
-
-The first opening bracket is a '['. We need to find the next matching closing bracket, which would be a ']'. We can see that there is another '[', so we need to find the next matching ']'. There is another '[', so we need to find the next matching ']'. We can see that the next character is a '{', so we need to find the next matching '}'. We can see that the next character is a '[', so we need to find the next matching ']'. We can see that the next character is a '[', so we need to find the next matching ']'. We can see that the next character is a ']', so we move on to the next character. We can see that the next character is a '}', so we move on to the next character. We can see that the next character is a ')', so we move on to the next character. We can see that the next character is a ']', so we move on to the next character. We can see that the next character is a ']', so we move on to the next character. We can see that the next character is a ']', so we move on to the next character.
-The sequence is valid.
-
-The final answer is valid.
 ----
 CS Algorithms: Solve the following simple programming tasks.
 Determine whether the given sequence of parentheses is properly matched.
@@ -496,7 +457,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
 
 
     def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=500, temperature=0.2, quote='---', n=1)
+        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=0.2, quote='---', n=1)
         prompts=[auto_cot_prompt + """%s\n""" %description + \
             """%s\nA: Let's think step-by-step.\n"""%x for x in chunk]
         return gpt3(prompts)
@@ -508,7 +469,8 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
-            time.sleep(10)
+            # time.sleep(10)
+            # pdb.set_trace()
         preds = [get_autocot_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
@@ -593,8 +555,8 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         print("Run %d"%run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
-            answers.extend(predict(task_description, x))
-            time.sleep(10)
+            answers.extend(predict_complete(task_description, x))
+            # time.sleep(10)
         preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
@@ -620,7 +582,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     elif strategy == "llm_similar":
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
-    interpreter = TopDownVisitorBeta(model_name=model_name)
+    interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[code generate]"])
 
     def predict(description, chunk):
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
@@ -628,7 +590,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
         return prompts, gpt3(prompts)
 
     perf_array = []
-    runs = 5
+    runs = 1
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
@@ -636,17 +598,22 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
-            time.sleep(60)
+            # pdb.set_trace()
+            # time.sleep(60)
         preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
+        print(perf_array)
+        positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+        positive_rate = sum(positive_calls)/len(interpreter.execution_details)
     print("FS-CoT Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
+    print("Rate of affordance call", positive_rate)
 
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
+    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001", "davinci-codex-002-msft"], default="text-davinci-002")
     parser.add_argument("--temperature", type=float, default="0.3")
     parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
     parser.add_argument("--num_train_examples", type=int, default=10)

@@ -739,13 +739,16 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
             x = [ex.replace("\nA:", "") for ex in x]
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)
-            pdb.set_trace()
             answers.extend(new_answer)
         preds = [x.strip() for x in answers]
         perf_array.append(substring_match(dev_labels, preds))
+        positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+        positive_rate = sum(positive_calls)/len(interpreter.execution_details)
+        print(perf_array)
     print("FS-CoT Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
+    print("Rate of affordance call", positive_rate)
 
 
 if __name__ == "__main__":

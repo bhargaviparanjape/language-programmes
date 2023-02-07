@@ -192,7 +192,6 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         auto_cot_prompt += cot[0] + "\n----\n"
         # Add the final answer with special format so evaluation is easier.
 
-    pdb.set_trace()
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
     else:
@@ -239,8 +238,8 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
                             preds.append(x.strip())
                     for enum, pred in enumerate(ans_chunk):
                         # Only add to the counter if there is a legitimate answer
-                        if re.search("""The final answer is """, pred):
-                            result_counter[chunk_no].update([pred[re.search("""The final answer is """, x).span(0)[-1]:]])
+                        if re.search("""The final answer is""", pred):
+                            result_counter[chunk_no].update([pred[re.search("""The final answer is""", x).span(0)[-1]:]])
                 answers.extend(result_counter)
             preds = [x.most_common(1)[0][0] for x in answers]
             perf_array.append(substring_match(labels, preds))

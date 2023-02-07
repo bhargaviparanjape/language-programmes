@@ -207,7 +207,7 @@ Ans: NameError: name 'x' is not defined""",
 x = set([1, 1, 2, 3])
 ```
 What is the value of x after this program executes?
-Q1: [code edit] Edit the following code to get the value of x
+Q1: [code edit] Edit the following code to print the value of x
 x = set([1, 1, 2, 3])
 #1:
 x = set([1, 1, 2, 3])
@@ -920,7 +920,7 @@ Input:
 x = set([1, 1, 2, 3])
 ```
 What is the value of x after this program executes?
-Q1: [code edit] Edit the following code to get the value of x
+Q1: [code edit] Edit the following code to print the value of x
 x = set([1, 1, 2, 3])
 #1:
 x = set([1, 1, 2, 3])
@@ -1067,7 +1067,7 @@ Ans: D
 ----
 Description: Solve the following middle-school arithmetic problems, writing out intermediate arithmetic calculations as python code. Store your result as a variable named 'ans'.
 Input: Janet’s ducks lay 16 eggs per day. She eats three for breakfast every morning and bakes muffins for her friends every day with four. She sells the remainder at the farmers' market daily for $2 per fresh duck egg. How much in dollars does she make every day at the farmers' market?
-Q1: [generate python code] write down the arithmetic or algebra equations as python code
+Q1: [generate python code] write down the arithmetic or algebra equations as python code, storing the answer as 'ans'
 #1:
 total_eggs = 16
 eaten_eggs = 3
@@ -1083,7 +1083,7 @@ Ans:18
 ----
 Description: Solve the following middle-school arithmetic problems, writing out intermediate arithmetic calculations as python code. Store your result as a variable named 'ans'.
 Input: Every day, Wendi feeds each of her chickens three cups of mixed chicken feed, containing seeds, mealworms and vegetables to help keep them healthy.  She gives the chickens their feed in three separate meals. In the morning, she gives her flock of chickens 15 cups of feed.  In the afternoon, she gives her chickens another 25 cups of feed.  How many cups of feed does she need to give her chickens in the final meal of the day if the size of Wendi's flock is 20 chickens?
-Q1: [generate python code] write down the arithmetic or algebra equations as python code
+Q1: [generate python code] write down the arithmetic or algebra equations as python code, storing the answer as 'ans'
 #1:
 numb_of_chickens = 20
 cups_for_each_chicken = 3
@@ -1099,7 +1099,7 @@ Ans: 20
 ----
 Description: Solve the following middle-school arithmetic problems, writing out intermediate arithmetic calculations as python code. Store your result as a variable named 'ans'.
 Input: Joseph and Getty went to buy ice creams, they together bought 36 ice creams. On the way back, Joseph ate 12 of the ice creasm, and he has 2 ice creams left now. 
-Q1: [generate python code] write down the arithmetic or algebra equations as python code
+Q1: [generate python code] write down the arithmetic or algebra equations as python code, storing the answer as 'ans'
 #1:
 num_ice_creams_bought_by_joseph = 2 + 12
 total_ice_creams = 36
@@ -1112,7 +1112,7 @@ Ans: 22
 ----
 Description: Solve the following problems on financial data in the form of text and tables, writing out intermediate calculations as python code. Store your result as a variable named 'ans'.
 Input: american tower corporation and subsidiaries notes to consolidated financial statements ( 3 ) consists of customer-related intangibles of approximately $75.0 million and network location intangibles of approximately $72.7 million. the customer-related intangibles and network location intangibles are being amortized on a straight-line basis over periods of up to 20 years. For acquired customer-related and network location intangibles, what is the expected annual amortization expenses, in millions?
-Q1: [generate python code] write down the arithmetic or algebra equations as python code
+Q1: [generate python code] write down the arithmetic or algebra equations as python code, storing the answer as 'ans'
 #1:
 customer_related_intangibles = 75
 network_location_intangibles = 72.7

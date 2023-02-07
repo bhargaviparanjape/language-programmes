@@ -27,9 +27,9 @@ from prompt_library import (llm_similar_tasks, random_tasks,
 from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 
 d = datasets.load_dataset('bigbench', 'code_line_description', cache_dir=cache_dir)
-inputs =  d['validation']['inputs']
+inputs =  d['validation']['inputs'] + d['train']['inputs']
 # inputs = [x.split('\n')[0] for x in inputs]
-labels =  d['validation']['targets']
+labels =  d['validation']['targets'] + d['train']['inputs']
 labels = [l[0] for l in labels]
 
 train_inputs = d['train']['inputs']
@@ -121,7 +121,7 @@ def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
         answers = []
         for x in tqdm(chunks(inputs, 20)):
             answers.extend(predict(x))
-            time.sleep(10)
+            # time.sleep(10)
         preds = [x.strip() for x in answers]
         perf_array.append(exact_match(labels, preds))
         print(perf_array)
@@ -518,7 +518,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
             for x in tqdm(chunks(inputs, 20)):
                 x = [ex.replace("\n\nEnglish language description:", "") for ex in x]
                 answers.extend(predict(x))
-                time.sleep(10)
+                # time.sleep(10)
             preds = [get_autocot_answer(x, answer_prompt="The best answer choice is ") for x in answers]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)
@@ -765,7 +765,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
-            time.sleep(60)
+            # time.sleep(60)
         preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)

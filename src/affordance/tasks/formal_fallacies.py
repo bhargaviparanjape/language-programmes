@@ -30,3 +30,4 @@ inputs = d['validation']['inputs']
 labels = d['validation']['targets']
 labels = [l[0] for l in labels]
 print(len(inputs))
+

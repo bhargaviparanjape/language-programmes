@@ -391,6 +391,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
     print("Std. Dev", np.std(perf_array))
 
 
+
 few_shot_cot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use arithmetic and algebra functions in one or more of your substeps.
 Description: Solve the following arithmetic problems on ratios and fractions, , writing out intermediate arithmetic calculations as needed.
 Input: Divide the number 49 into two parts, such that if the greater part is increased by 6 and the lesser part is decreased by 11, their ratio is 9 to 2. What is the greater number?
@@ -513,7 +514,7 @@ Desciption: %s
 Input: %s
 Q1: """
 
-
+few_shot_cot_prompt =few_shot_arithmetic_prompt
 def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
 
     global few_shot_cot_prompt
@@ -541,7 +542,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
 
     def predict_complete(description, chunk):
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        prompts=[few_shot_cot_prompt% (description + """The final answer is the count of requested items in words, like "six" or "ten".""", x) for x in chunk]
         outputs = gpt3(prompts)
         completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
         return completed_outputs
@@ -585,11 +586,11 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     elif strategy == "llm_similar":
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
-    interpreter = TopDownVisitorBeta()
+    interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[generate python code]"])
 
     def predict(description, chunk):
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        prompts=[few_shot_cot_prompt% (description + """The final answer is the count of requested items in words, like "six" or "ten".""", x) for x in chunk]
         return prompts, gpt3(prompts)
 
     perf_array = []
@@ -597,24 +598,28 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        new_labels = ["Ans: " + label for label in labels]
+        numeric_labels = [str(w2n.word_to_num(l)) for l in labels]
+        new_labels = [[l1, l2] for l1, l2 in zip(labels, numeric_labels)]
         for x in tqdm(chunks(inputs, 10)):
-            x = [ex.replace("\nDoes the preceding sentence contain non-contemporaneous (anachronistic) elements?", "") for ex in x]
+            x = [ex.replace("\nA:", "") for ex in x]
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
-        preds = [x.strip() for x in answers]
-        perf_array.append(substring_match(new_labels, preds))
+        preds = [get_answer(x) for x in answers]
+        perf_array.append(substring_match_v2(new_labels, preds))
         print(perf_array)
+        positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+        positive_rate = sum(positive_calls)/len(interpreter.execution_details)
     print("FS-CoT Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
+    print("Rate of affordance call", positive_rate)
 
 
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
+    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001", "davinci-codex-002-msft"], default="text-davinci-002")
     parser.add_argument("--temperature", type=float, default="0.3")
     parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
     parser.add_argument("--num_train_examples", type=int, default=10)

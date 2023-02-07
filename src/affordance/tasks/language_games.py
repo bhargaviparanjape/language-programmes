@@ -254,7 +254,7 @@ Evernay eforebay avehay Iyay eensay uchsay engthstray.
 # Input: %s
 # Q1:"""
 
-few_shot_cot_prompt = few_shot_string_prompt
+few_shot_cot_prompt = few_shot_code_prompt
 
 def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
 
@@ -296,6 +296,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict_complete(task_description, x))
+            # pdb.set_trace()
         # preds = [[y.strip() for y in x.split("\n")] for x in answers]
         preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
@@ -644,7 +645,6 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
                 prompts, answer = predict(task_description, x)
                 new_answer  = interpreter.batch_visit(prompts, answer)
                 answers.extend(new_answer)
-                time.sleep(30)
             preds = [x.strip() for x in answers]
             perf_array.append(substring_match(labels, preds))
 
@@ -660,7 +660,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
+    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001", "davinci-codex-002-msft"], default="text-davinci-002")
     parser.add_argument("--temperature", type=float, default="0.3")
     parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
     parser.add_argument("--num_train_examples", type=int, default=10)

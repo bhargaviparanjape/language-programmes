@@ -531,10 +531,10 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
             answers = []
             for x in tqdm(chunks(inputs, 10)):
                 x = [ex.replace("Identify the physics formula that would be most useful for finding the answer to each of the following word problems.", "") for ex in x]
-                x = [ex.replace("\nA:", "The best answer choice is") for ex in x]
+                x = [ex.replace("\nA:", "") for ex in x]
                 answers.extend(predict(x))
                 # time.sleep(10)
-            preds = [get_autocot_answer(x, answer_prompt="") for x in answers]
+            preds = [get_autocot_answer(x, answer_prompt="The best answer choice is") for x in answers]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)
         print("Auto-CoT Performance:")
@@ -641,13 +641,15 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
             prompts, answer = predict(task_description, x) 
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
-            pdb.set_trace()
-            time.sleep(60)
         preds = [get_answer(x.strip()) for x in answers]
         perf_array.append(substring_match(labels, preds))
+        print(perf_array)
+        positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+        positive_rate = sum(positive_calls)/len(interpreter.execution_details)
     print("FS-CoT Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
+    print("Rate of affordance call", positive_rate)
 
 
 if __name__ == "__main__":
