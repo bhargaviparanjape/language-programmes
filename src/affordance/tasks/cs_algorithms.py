@@ -13,7 +13,8 @@ from tqdm import tqdm
 from transformers import GPT2Tokenizer
 from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
                    get_few_shot_prompt, get_subset, gpt3,
-                   propose_decomposition, propose_instruction, substring_match)
+                   propose_decomposition, propose_instruction, substring_match,
+                   substring_match_v2)
 
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 import urllib.request
@@ -27,6 +28,7 @@ from prompt_library import (llm_similar_tasks, random_tasks,
 from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 
 
+task_name = "CS Algorithms"
 task_description = """(CS Algorithms) Solve the following simple programming tasks using Python."""
 
 io_pairs=[("""Given two strings, determine the length of the longest common subsequence.
@@ -317,9 +319,109 @@ Valid
 # Input: %s
 # Q1:"""
 
-few_shot_cot_prompt = few_shot_code_prompt
+few_shot_cot_prompt = few_shot_arithmetic_prompt
 
-auto_cot_corrected_prompt = """"""
+auto_cot_corrected_prompt = """CS Algorithms: Solve the following simple programming tasks.
+Given two strings, determine the length of the longest common subsequence.
+
+Strings: SCZFZGCCQQLB OJDXI
+Length of longest common subsequence:
+A: Let's think step-by-step.
+
+1. What is the length of the longest common subsequence of the strings "SCZFZGCCQQLB" and "OJDXI"?
+2. What is the length of the longest common subsequence of the strings "SCZFZGCCQQL" and "OJDXI"?
+3. What is the length of the longest common subsequence of the strings "SCZFZGCCQQ" and "OJDXI"?
+4. What is the length of the longest common subsequence of the strings "SCZFZGCCQ" and "OJDXI"?
+5. What is the length of the longest common subsequence of the strings "SCZFZGC" and "OJDXI"?
+6. What is the length of the longest common subsequence of the strings "SCZFZG" and "OJDXI"?
+7. What is the length of the longest common subsequence of the strings "SCZF" and "OJDXI"?
+8. What is the length of the longest common subsequence of the strings "SCZ" and "OJDXI"?
+9. What is the length of the longest common subsequence of the strings "SC" and "OJDXI"?
+10. What is the length of the longest common subsequence of the strings "S" and "OJDXI"?
+The length of the longest common subsequence is 3.
+
+The final answer is 3.
+----
+CS Algorithms: Solve the following simple programming tasks.
+Given two strings, determine the length of the longest common subsequence.
+
+Strings: RLXEHVGPC LDOOBAOCQPRJKZWOKUPPEHEAZIZPLSB
+Length of longest common subsequence:
+A: Let's think step-by-step.
+
+1) We can see that the first letter of each string is 'R'. So, we can start our subsequence with 'R'.
+2) The next letter in each string is 'L'. So, we can add 'L' to our subsequence.
+3) The next letter in each string is 'X'. Since there is no common letter after 'X', we cannot add anything to our subsequence.
+4) The next letter in each string is 'E'. So, we can add 'E' to our subsequence.
+5) The next letter in each string is 'H'. So, we can add 'H' to our subsequence.
+6) The next letter in each string is 'V'. Since there is no common letter after 'V', we cannot add anything to our subsequence.
+7) The next letter in each string is 'G'. So, we can add 'G' to our subsequence.
+8) The next letter in each string is 'P'. So, we can add 'P' to our subsequence.
+9) The next letter in each string is 'C'. So, we can add 'C' to our subsequence.
+10) The next letter in each string is 'L'. So, we can add 'L' to our subsequence.
+11) The next letter in each string is 'D'. Since there is no common letter after 'D', we cannot add anything to our subsequence.
+12) The next letter in each string is 'O'. So, we can add 'O' to our subsequence.
+13) The next letter in each string is 'O'. So, we can add 'O' to our subsequence.
+14) The next letter in each string is 'B'. So, we can add 'B' to our subsequence.
+15) The next letter in each string is 'A'. So, we can add 'A' to our subsequence.
+16) The next letter in each string is 'O'. So, we can add 'O' to our subsequence.
+17) The next letter in each string is 'C'. So, we can add 'C' to our subsequence.
+18) The next letter in each string is 'Q'. Since there is no common letter after 'Q', , we cannot add anything to our subsequence.
+
+The final answer cannot be found.
+----
+CS Algorithms: Solve the following simple programming tasks.
+Determine whether the given sequence of parentheses is properly matched.
+
+Sequence: [ { } ]
+Valid/Invalid?
+A: Let's think step-by-step.
+
+The first character is '[', which is an opening parenthesis. This is fine.
+The next character is '{', which is also an opening parenthesis. This is fine.
+The next character is '}', which is a closing parenthesis. This is fine.
+The next character is ']', which is a closing parenthesis. This is fine.
+So far, everything is matching up nicely. The opening parentheses are being closed in the correct order.
+The sequence is valid.
+
+The final answer is valid.
+----
+CS Algorithms: Solve the following simple programming tasks.
+Determine whether the given sequence of parentheses is properly matched.
+
+Sequence: ) } { [ ) } [ } { )
+Valid/Invalid?
+A: Let's think step-by-step.
+
+The first character is a closing parenthesis, so that's not good. The next two characters are a closing curly brace and bracket, respectively, so those are also not good. The next character is an opening parenthesis, so that's good. The next two characters are an opening curly brace and bracket, respectively, so those are also good. The next character is a closing parenthesis, so that's not good. The next two characters are a closing curly brace and bracket, respectively, so those are also not good. The next character is an opening parenthesis, so that's good. The next two characters are an opening curly brace and bracket, respectively, so those are also good. The next character is a closing parenthesis, so that's not good.
+Therefore, the sequence is invalid.
+
+The final answer is invalid.
+----
+CS Algorithms: Solve the following simple programming tasks.
+Determine whether the given sequence of parentheses is properly matched.
+
+Sequence: ( ) [ ( ) ] ( { } )
+Valid/Invalid?
+A: Let's think step-by-step.
+
+The first opening parenthesis is '(', so the next character must be a ')'. The next character is a '[', so the next character must be a ']'. The next character is '(', so the next character must be a ')'. The next character is a '{', so the next character must be a '}'. The sequence is valid.
+
+The final answer is valid.
+----
+CS Algorithms: Solve the following simple programming tasks.
+Determine whether the given sequence of parentheses is properly matched.
+
+Sequence: [ {
+Valid/Invalid?
+A: Let's think step-by-step.
+
+The first character is an open square bracket, so we'll need to find a corresponding close square bracket later on. The next character is an open curly brace, so we'll need to find a corresponding close curly brace later on. So far, everything is fine.
+The next character is a close curly brace, but we don't have an open curly brace that we can match it to! This means the sequence is invalid.
+
+The final answer is invalid.
+----
+"""
 
 auto_cot_cleaned_prompt = """CS Algorithms: Solve the following simple programming tasks.
 Given two strings, determine the length of the longest common subsequence.
@@ -470,7 +572,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
             # time.sleep(10)
-            # pdb.set_trace()
+        pdb.set_trace()
         preds = [get_autocot_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
@@ -582,7 +684,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     elif strategy == "llm_similar":
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
-    interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[code generate]"])
+    interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[code generate]", "[generate python code]"])
 
     def predict(description, chunk):
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
@@ -594,14 +696,15 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
+        label_dict = {"Invalid": "False", "Valid":"True"}
+        new_labels = [label_dict.get(label, label) for label in labels]
+        combined_labels = [[label, new_label] for label, new_label in zip(labels, new_labels)]
         for x in tqdm(chunks(inputs, 10)):
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
-            # pdb.set_trace()
-            # time.sleep(60)
         preds = [get_answer(x) for x in answers]
-        perf_array.append(substring_match(labels, preds))
+        perf_array.append(substring_match_v2(combined_labels, preds))
         print(perf_array)
         positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
         positive_rate = sum(positive_calls)/len(interpreter.execution_details)
@@ -609,6 +712,332 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
     print("Rate of affordance call", positive_rate)
+
+
+few_shot_human_prompt = """Description: (CS Algorithms) Solve the following simple programming tasks using Python.
+Input: Given two strings, determine the length of the longest common subsequence.
+
+Strings: IGONYTSVDC FFVQURTOILEOJZLQIJFPKCLOG
+Q1: [code generate] Given two strings, determine the length of the longest common subsequence.
+#1:
+def lcs(X, Y):
+    m = len(X)
+    n = len(Y)
+    L = [[0 for x in range(n+1)] for x in range(m+1)]
+    for i in range(m+1):
+        for j in range(n+1):
+            if i == 0 or j == 0:
+                L[i][j] = 0
+            elif X[i-1] == Y[j-1]:
+                L[i][j] = L[i-1][j-1] + 1
+            else:
+                L[i][j] = max(L[i-1][j], L[i][j-1])
+    return L[m][n]
+str1 = "IGONYTSVDC"
+str2 = "FFVQURTOILEOJZLQIJFPKCLOG"
+ans = lcs(str1, str2)
+print(ans)
+Q2: [execute] Execute the following python code snippet.
+def lcs(X, Y):
+    m = len(X)
+    n = len(Y)
+    L = [[0 for x in range(n+1)] for x in range(m+1)]
+    for i in range(m+1):
+        for j in range(n+1):
+            if i == 0 or j == 0:
+                L[i][j] = 0
+            elif X[i-1] == Y[j-1]:
+                L[i][j] = L[i-1][j-1] + 1
+            else:
+                L[i][j] = max(L[i-1][j], L[i][j-1])
+    return L[m][n]
+str1 = "IGONYTSVDC"
+str2 = "FFVQURTOILEOJZLQIJFPKCLOG"
+ans = lcs(str1, str2)
+print(ans)
+#2: 3
+Q3: [EOQ]
+Ans: 3
+----
+Description: (CS Algorithms) Solve the following simple programming tasks using Python.
+Input: Given two strings, determine the length of the longest common subsequence.
+
+Strings: ONOCPYDR WLDZYGSWVEOXOXCPFKRTTZJ
+Q1: [code generate] Given two strings, determine the length of the longest common subsequence.
+#1:
+def lcs(X, Y):
+    m = len(X)
+    n = len(Y)
+    L = [[0 for x in range(n+1)] for x in range(m+1)]
+    for i in range(m+1):
+        for j in range(n+1):
+            if i == 0 or j == 0:
+                L[i][j] = 0
+            elif X[i-1] == Y[j-1]:
+                L[i][j] = L[i-1][j-1] + 1
+            else:
+                L[i][j] = max(L[i-1][j], L[i][j-1])
+    return L[m][n]
+str1 = "ONOCPYDR"
+str2 = "WLDZYGSWVEOXOXCPFKRTTZJ"
+ans = lcs(str1, str2)
+print(ans)
+Q2: [execute] Execute the following python code snippet.
+def lcs(X, Y):
+    m = len(X)
+    n = len(Y)
+    L = [[0 for x in range(n+1)] for x in range(m+1)]
+    for i in range(m+1):
+        for j in range(n+1):
+            if i == 0 or j == 0:
+                L[i][j] = 0
+            elif X[i-1] == Y[j-1]:
+                L[i][j] = L[i-1][j-1] + 1
+            else:
+                L[i][j] = max(L[i-1][j], L[i][j-1])
+    return L[m][n]
+str1 = "ONOCPYDR"
+str2 = "WLDZYGSWVEOXOXCPFKRTTZJ"
+ans = lcs(str1, str2)
+print(ans)
+#2: 5
+Q3: [EOQ]
+Ans: 5
+----
+Description: (CS Algorithms) Solve the following simple programming tasks using Python.
+Input: Given two strings, determine the length of the longest common subsequence.
+
+Strings: GFPTAOVHYDTFQVXAXSGCAWCPCEC TVUDCTXTCRDSELUATDGAZLKCTD
+Q1: [code generate] Given two strings, determine the length of the longest common subsequence.
+#1:
+def lcs(X, Y):
+    m = len(X)
+    n = len(Y)
+    L = [[0 for x in range(n+1)] for x in range(m+1)]
+    for i in range(m+1):
+        for j in range(n+1):
+            if i == 0 or j == 0:
+                L[i][j] = 0
+            elif X[i-1] == Y[j-1]:
+                L[i][j] = L[i-1][j-1] + 1
+            else:
+                L[i][j] = max(L[i-1][j], L[i][j-1])
+    return L[m][n]
+str1 = "GFPTAOVHYDTFQVXAXSGCAWCPCEC"
+str2 = "TVUDCTXTCRDSELUATDGAZLKCTD"
+ans = lcs(str1, str2)
+print(ans)
+Q2: [execute] Execute the following python code snippet.
+def lcs(X, Y):
+    m = len(X)
+    n = len(Y)
+    L = [[0 for x in range(n+1)] for x in range(m+1)]
+    for i in range(m+1):
+        for j in range(n+1):
+            if i == 0 or j == 0:
+                L[i][j] = 0
+            elif X[i-1] == Y[j-1]:
+                L[i][j] = L[i-1][j-1] + 1
+            else:
+                L[i][j] = max(L[i-1][j], L[i][j-1])
+    return L[m][n]
+str1 = "GFPTAOVHYDTFQVXAXSGCAWCPCEC"
+str2 = "TVUDCTXTCRDSELUATDGAZLKCTD"
+ans = lcs(str1, str2)
+print(ans)
+#2: 9
+Q3: [EOQ]
+Ans: 9
+----
+Description: (CS Algorithms) Solve the following simple programming tasks using Python.
+Input: Determine whether the given sequence of parentheses is properly matched.                                                                                                                                                        
+                                                                                                                                                                                                                                       
+Sequence: { [ [ ( ( ) [ ] ( { } ) ) ] ] ( { } ) }                                                                                                                                                                                      
+Q1: [code generate] Determine whether the given sequence of parentheses is properly matched.                                                                                                                                           
+#1:                                                                                                                                                                                                                                    
+def is_matched(expression):                                                                                                                                                                                                                
+    stack = []                                                                                                                                                                                                                         
+    for i in expression:                                                                                                                                                                                                               
+        if i == '{' or i == '[' or i == '(':                                                                                                                                                                                           
+            stack.append(i)    
+        elif i == '}' or i == ']' or i == ')':
+            if len(stack) == 0:
+                return False                     
+            else:              
+                if i == '}' and stack[-1] == '{':  
+                    stack.pop()
+                elif i == ']' and stack[-1] == '[':
+                    stack.pop()
+                elif i == ')' and stack[-1] == '(':
+                    stack.pop()       
+                else:  
+                    return False
+    if len(stack) == 0:
+        return "valid" 
+    else:              
+        return "invalid"
+expression = "{ [ [ ( ( ) [ ] ( { } ) ) ] ] ( { } ) }"
+ans = is_matched(expression)
+print(ans)
+Q2: [execute] Execute python code snippet.
+def is_matched(expression):                                                                                                                                                                                                                
+    stack = []                                                                                                                                                                                                                         
+    for i in expression:                                                                                                                                                                                                               
+        if i == '{' or i == '[' or i == '(':                                                                                                                                                                                           
+            stack.append(i)    
+        elif i == '}' or i == ']' or i == ')':
+            if len(stack) == 0:
+                return False                     
+            else:              
+                if i == '}' and stack[-1] == '{':  
+                    stack.pop()
+                elif i == ']' and stack[-1] == '[':
+                    stack.pop()
+                elif i == ')' and stack[-1] == '(':
+                    stack.pop()       
+                else:  
+                    return False
+    if len(stack) == 0:
+        return "valid" 
+    else:              
+        return "invalid"
+expression = "{ [ [ ( ( ) [ ] ( { } ) ) ] ] ( { } ) }"
+ans = is_matched(expression)
+print(ans)
+#2: valid
+Q3: [EOQ]
+Ans: valid
+----
+Description: (CS Algorithms) Solve the following simple programming tasks using Python.
+Input: Determine whether the given sequence of parentheses is properly matched.                                                                                                                                                        
+                                                                                                                                                                                                                                       
+Sequence: ( } ( ) ) ) ) ) [ [                                                                                                                                                                                    
+Q1: [code generate] Determine whether the given sequence of parentheses is properly matched.                                                                                                                                           
+#1:                                                                                                                                                                                                                                    
+def is_matched(expression):                                                                                                                                                                                                                
+    stack = []                                                                                                                                                                                                                         
+    for i in expression:                                                                                                                                                                                                               
+        if i == '{' or i == '[' or i == '(':                                                                                                                                                                                           
+            stack.append(i)    
+        elif i == '}' or i == ']' or i == ')':
+            if len(stack) == 0:
+                return False                     
+            else:              
+                if i == '}' and stack[-1] == '{':  
+                    stack.pop()
+                elif i == ']' and stack[-1] == '[':
+                    stack.pop()
+                elif i == ')' and stack[-1] == '(':
+                    stack.pop()       
+                else:  
+                    return False
+    if len(stack) == 0:
+        return "valid" 
+    else:              
+        return "invalid"
+expression = "( } ( ) ) ) ) ) [ ["
+ans = is_matched(expression)
+print(ans)
+Q2: [execute] Execute python code snippet.
+def is_matched(expression):                                                                                                                                                                                                                
+    stack = []                                                                                                                                                                                                                         
+    for i in expression:                                                                                                                                                                                                               
+        if i == '{' or i == '[' or i == '(':                                                                                                                                                                                           
+            stack.append(i)    
+        elif i == '}' or i == ']' or i == ')':
+            if len(stack) == 0:
+                return False                     
+            else:              
+                if i == '}' and stack[-1] == '{':  
+                    stack.pop()
+                elif i == ']' and stack[-1] == '[':
+                    stack.pop()
+                elif i == ')' and stack[-1] == '(':
+                    stack.pop()       
+                else:  
+                    return False
+    if len(stack) == 0:
+        return "valid" 
+    else:              
+        return "invalid"
+expression = "( } ( ) ) ) ) ) [ ["
+ans = is_matched(expression)
+print(ans)
+#2: invalid
+Q3: [EOQ]
+Ans: invalid
+----
+Description: %s
+Input: %s
+Q1:"""
+def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+    global few_shot_cot_prompt
+
+    few_shot_cot_prompt = few_shot_human_prompt
+    interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[generate python code]"])
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    def predict_self_consistency(description, chunk, n=9):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    if self_consistency:
+        perf_array = []
+        runs = 2
+        batch_size = 2
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = [] # List of counters
+            for x in tqdm(chunks(inputs, batch_size)):
+                x = [ex.replace("\nEdited:", "") for ex in x]
+                prompts, answer_set = predict_self_consistency(task_description, x)
+                result_counter = [Counter() for i in range(batch_size)]
+                for chunk_no, ans_chunk in enumerate(chunks(answer_set, 9)):
+                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
+                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    for pred in enumerate(processed_answers):
+                        # Only add to the counter if there is a legitimate answer
+                        if pred is not None:
+                            result_counter[chunk_no].update([pred])
+                answers.extend(result_counter)
+            preds = [x.most_common(1)[0][0][1] for x in answers[:len(inputs)]]
+            perf_array.append(substring_match(labels, preds))
+            print(perf_array)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+
+    else:
+        perf_array = []
+        runs = 5
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = []
+            for x in tqdm(chunks(inputs, 10)):
+                x = [ex.replace("\nA:", "") for ex in x]
+                x = [ex.replace("\nLength of longest common subsequence:", "") for ex in x]
+                x = [ex.replace("\nValid/Invalid?", "") for ex in x]
+                x = [ex.replace("Q: ", "") for ex in x]
+                prompts, answer = predict(task_description, x)
+                new_answer  = interpreter.batch_visit(prompts, answer)
+                answers.extend(new_answer)
+            preds = [x.strip() for x in answers]
+            perf_array.append(substring_match(labels, preds))
+            # Report on interpreter performance
+            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+            positive_rate = sum(positive_calls)/(len(interpreter.execution_details) + 1e-6)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+        print("Rate of affordance call", positive_rate)
+
+# human_intervention(0.3, "davinci-codex-002-msft")
+
 
 
 if __name__ == "__main__":
@@ -628,8 +1057,11 @@ if __name__ == "__main__":
     print("Training examples:", len(train_inputs))
     print("Dev examples:", len(inputs))
 
-    inputs = inputs[:args.num_dev_examples]
-    labels = labels[:args.num_dev_examples]
+    # inputs = inputs[:args.num_dev_examples]
+    # labels = labels[:args.num_dev_examples]
+    selected = np.random.choice(len(inputs), size=args.num_dev_examples, replace=False)
+    inputs = [inputs[idx] for idx in selected]
+    labels = [labels[idx] for idx in selected]
 
     if args.inference_strategy == "few_shot":
         few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=args.num_train_examples)

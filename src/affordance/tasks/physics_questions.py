@@ -311,7 +311,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     global few_shot_cot_prompt
     global few_shot_pot_prompt
     task_name = "Physics Questions"
-    task_description = "(Physics Questions) Answer these high-school-level physics multiple-choice questions."
+    task_description = "(Physics Questions) Answer these high-school-level physics questions by applying the right physics formula, making substitutions, and storing the result in 'ans'."
 
     if strategy == "fixed":
         few_shot_cot_prompt = few_shot_cot_prompt
@@ -343,12 +343,13 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
+        new_labels = [label.split(" ")[0] for label in labels]
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
-            answers.extend(predict_complete("Answer these high-school-level physics multiple-choice questions.", x))
+            answers.extend(predict_complete(task_description, x))
             # time.sleep(10)
         preds = [get_answer(x) for x in answers]
-        perf_array.append(substring_match(labels, preds))
+        perf_array.append(substring_match(new_labels, preds))
         print(perf_array)
     print("Few-shot COT performance:")
     print("Mean", np.mean(perf_array))
@@ -518,11 +519,11 @@ def affordance():
 
 
 
-def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+def nl_program(temperature=0.3, model_name="davinci-codex-002-msft", strategy="fixed", self_consistency=False):
     
     global few_shot_cot_prompt
     task_name = "Physics Questions"
-    task_description = "(Physics Questions) Answer these high-school-level physics multiple-choice questions."
+    task_description = "(Physics Questions) Answer these high-school-level physics questions by applying the right physics formula, making substitutions, and storing the result in 'ans'."
 
     if strategy == "fixed":
         few_shot_cot_prompt = few_shot_cot_prompt
@@ -535,7 +536,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     elif strategy == "llm_similar":
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
-    interpreter = TopDownVisitorBeta()
+    interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[generate python code]"])
 
     def predict(description, chunk):
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
@@ -547,23 +548,25 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        new_labels = ["Ans: " + label for label in labels]
+        new_labels = [label.split(" ")[0] for label in labels]
         for x in tqdm(chunks(inputs, 10)):
-            x = [ex.replace("\nDoes the preceding sentence contain non-contemporaneous (anachronistic) elements?", "") for ex in x]
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(new_labels, preds))
         print(perf_array)
+        positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+        positive_rate = sum(positive_calls)/len(interpreter.execution_details)
     print("FS-CoT Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
+    print("Rate of affordance call", positive_rate)
 
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
+    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001", "davinci-codex-002-msft"], default="text-davinci-002")
     parser.add_argument("--temperature", type=float, default="0.3")
     parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
     parser.add_argument("--num_train_examples", type=int, default=10)

@@ -36,7 +36,7 @@ print(len(inputs))
 train_inputs = d['train']['inputs']
 train_labels = d['train']['targets']
 
-task_description = """Shuffled objects: You are given a list of persons or objects that sequentially interact with each other in pairs. Track how the pairs change over the course of the interaction and figure out the pair of the final person or object."""
+task_description = """(Shuffled objects) You are given a list of persons or objects that sequentially interact with each other in pairs. Track how the pairs change over the course of the interaction and figure out the pair of the final person or object."""
 
 io_pairs = [("""Alice, Bob, Claire, Dave, and Eve are playing a game. At the start of the game, they are each holding a ball: Alice has a brown ball, Bob has a purple ball, Claire has a black ball, Dave has a green ball, and Eve has a yellow ball. 
 
@@ -601,7 +601,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        processed_labels = [l.replace('.', '') for l in labels]
+        processed_labels = [label.replace(" ball.", "").replace(" present.", "").replace('.', '') for label in labels]
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict_complete(task_description, x))
             time.sleep(5)
@@ -613,7 +613,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     print("Std. Dev", np.std(perf_array))
 
 
-def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+def nl_program(temperature=0.3, model_name="davinci-codex-002-msft", strategy="fixed", self_consistency=False):
     
     global few_shot_cot_prompt
     task_name = "Tracking shuffled objects"
@@ -630,7 +630,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     elif strategy == "llm_similar":
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
-    interpreter = TopDownVisitorBeta()
+    interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[generate python code]"])
 
     def predict(description, chunk):
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
@@ -642,25 +642,190 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        new_labels = ["Ans: " + label for label in labels]
+        # new_labels = ["Ans: " + label for label in labels]
+        processed_labels = [label.replace(" ball.", "").replace(" present.", "").replace('.', '') for label in labels]
         for x in tqdm(chunks(inputs, 10)):
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
         preds = [get_answer(x) for x in answers]
-        perf_array.append(substring_match(new_labels, preds))
+        perf_array.append(substring_match(processed_labels, preds))
         print(perf_array)
+        positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+        positive_rate = sum(positive_calls)/len(interpreter.execution_details)
     print("FS-CoT Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
+    print("Rate of affordance call", positive_rate)
+
+few_shot_human_prompt = """Description: (Shuffled objects) You are given a list of persons or objects that sequentially interact with each other in pairs. Track how the pairs change over the course of the interaction and figure out the pair of the final person or object.
+Input: Alice, Bob, Claire, Dave, and Eve are playing a game. At the start of the game, they are each holding a ball: Alice has a pink ball, Bob has a white ball, Claire has a red ball, Dave has a purple ball, and Eve has a yellow ball. 
+
+As the game progresses, pairs of players trade balls. First, Alice and Dave swap balls. Then, Claire and Eve swap balls. Then, Alice and Bob swap balls. Then, Dave and Claire swap balls. Finally, Alice and Claire swap balls. At the end of the game, Claire has the
+Q1: [generate python code] write down the arithmetic or algebra equations as python code, storing the answer as 'ans'
+#1:
+players = ['Alice', 'Bob', 'Claire', 'Dave', 'Eve']
+balls = ['pink', 'white', 'red', 'purple', 'yellow']
+
+swap_list = [[0, 3], [2, 4], [0, 1], [3, 2], [0, 2]]
+
+for swap in swap_list:
+    balls[swap[0]], balls[swap[1]] = balls[swap[1]], balls[swap[0]]
+
+ans = [players[i] + ' has a ' + balls[i] for i in range(5)]
+print(ans)
+Q2: [code execute] Execute the python code and get the value of "ans"
+#2:
+['Alice has a pink', 'Bob has a purple', 'Claire has a white', 'Dave has a yellow', 'Eve has a red']
+Q3: [subquestion] At the end, what color does Claire have?
+#3: white
+Q3: [EOQ]
+Ans: white
+----
+Description: (Shuffled objects) You are given a list of persons or objects that sequentially interact with each other in pairs. Track how the pairs change over the course of the interaction and figure out the pair of the final person or object.
+Input: Alice, Bob, Claire, Dave, and Eve are friends and avid readers who occasionally trade books. At the start of the semester, they each buy one new book: Alice gets Catch-22, Bob gets Hound of the Baskervilles, Claire gets Frankenstein, Dave gets The Pearl, and Eve gets The Fellowship of the Ring. 
+
+As the semester proceeds, they start trading around the new books. First, Eve and Alice swap books. Then, Alice and Claire swap books. Then, Alice and Bob swap books. Then, Dave and Alice swap books. Finally, Dave and Claire swap books. At the end of the semester, Alice has
+Q1: [generate python code] write down the arithmetic or algebra equations as python code, storing the answer as 'ans'
+#1:
+persons = ["Alice", "Bob", "Claire", "Dave", "Eve"]
+books = ["Catch-22", "Hound of the Baskervilles", "Frankenstein", "The Pearl", "The Fellowship of the Ring"]
+
+swap_list = [(4,0), (0,2), (0,1), (3,0), (3,2)]
+
+for swap in swap_list:
+    books[swap[0]], books[swap[1]] = books[swap[1]], books[swap[0]]
+
+ans = [persons[i] + ' has a ' + books[i] for i in range(5)]
+print(ans)
+Q2: [code execute] Execute the python code and get the value of "ans"
+#2: ['Alice has a The Pearl', 'Bob has a Frankenstein', 'Claire has a Hound of the Baskervilles', 'Dave has a The Fellowship of the Ring', 'Eve has a Catch-22']
+Q3: [subquestion] At the end, what book does Alice have?
+#3: The Pearl
+Q3: [EOQ]
+Ans: The Pearl
+----
+Description: (Shuffled objects) You are given a list of persons or objects that sequentially interact with each other in pairs. Track how the pairs change over the course of the interaction and figure out the pair of the final person or object.
+Input: Alice, Bob, Claire, Dave, and Eve are holding a white elephant gift exchange. At the start of the event, they are each holding a present of a different color: Alice has a blue present, Bob has a green present, Claire has a pink ball, Dave has a yellow present, and Eve has a black ball. 
+
+As the event progresses, pairs of people swap gifts. First, Bob and Dave swap their gifts. Then, Bob and Alice swap their gifts. Then, Eve and Dave swap their gifts. Then, Bob and Eve swap their gifts. Finally, Eve and Claire swap their gifts. At the end of the event, Bob has the
+Q1: [generate python code] write down the arithmetic or algebra equations as python code, storing the answer as 'ans'
+#1:
+persons = ["Alice", "Bob", "Claire", "Dave", "Eve"]
+color = ["blue", "green", "pink", "yellow", "black"]
+
+swap_list = [(1,3), (1,0), (4,3), (1,4), (4,2)]
+
+for swap in swap_list:
+    color[swap[0]], color[swap[1]] = color[swap[1]], color[swap[0]]
+
+ans = [persons[i] + ' has a ' + color[i] + ' present' for i in range(5)]
+print(ans)
+Q2: [code execute] Execute the python code and get the value of "ans"
+#2: ['Alice has a yellow present', 'Bob has a green present', 'Claire has a blue present', 'Dave has a black present', 'Eve has a pink present']
+Q3: [subquestion] At the end, what gift does Bob have?
+#3: green present
+Q3: [EOQ]
+Ans: green present
+----
+Description: (Shuffled objects) You are given a list of persons or objects that sequentially interact with each other in pairs. Track how the pairs change over the course of the interaction and figure out the pair of the final person or object.
+Input: Alice, Bob, Claire, Dave, and Eve are dancers at a square dance. At the start of a song, they each have a partner: Alice is dancing with Jamie, Bob is dancing with Lola, Claire is dancing with Izzi, Dave is dancing with Rodrigo, and Eve is dancing with Ophelia. 
+
+Throughout the song, the dancers often trade partners. First, Bob and Eve switch partners. Then, Alice and Bob switch partners. Then, Dave and Alice switch partners. Then, Dave and Claire switch partners. Finally, Bob and Claire switch partners. At the end of the dance, Dave is dancing with
+Q1: [generate python code] write down the arithmetic or algebra equations as python code, storing the answer as 'ans'
+#1:
+persons = ["Alice", "Bob", "Claire", "Dave", "Eve"]
+partner = ["Jamie", "Lola", "Izzi", "Rodrigo", "Ophelia"]
+
+swap_list = [(1,4), (0,1), (3,0), (3,2), (1,2)]
+
+for swap in swap_list:
+    partner[swap[0]], partner[swap[1]] = partner[swap[1]], partner[swap[0]]
+
+ans = [persons[i] + ' is with ' + partner[i] for i in range(5)]
+print(ans)
+Q2: [code execute] Execute the python code and get the value of "ans"
+#2: ['Alice is with Rodrigo', 'Bob is with Ophelia', 'Claire is with Jamie', 'Dave is with Izzi', 'Eve is with Lola']
+Q3: [subquestion] At the end, who is Dave dancing with?
+#3: Izzi
+Q3: [EOQ]
+Ans: Izzi
+----
+Description: %s
+Input: %s
+Q1:"""
+def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+    global few_shot_cot_prompt
+
+    few_shot_cot_prompt = few_shot_human_prompt
+    interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[generate python code]"])
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    def predict_self_consistency(description, chunk, n=9):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    if self_consistency:
+        perf_array = []
+        runs = 2
+        batch_size = 2
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = [] # List of counters
+            for x in tqdm(chunks(inputs, batch_size)):
+                x = [ex.replace("\nEdited:", "") for ex in x]
+                prompts, answer_set = predict_self_consistency(task_description, x)
+                result_counter = [Counter() for i in range(batch_size)]
+                for chunk_no, ans_chunk in enumerate(chunks(answer_set, 9)):
+                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
+                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    for pred in enumerate(processed_answers):
+                        # Only add to the counter if there is a legitimate answer
+                        if pred is not None:
+                            result_counter[chunk_no].update([pred])
+                answers.extend(result_counter)
+            preds = [x.most_common(1)[0][0][1] for x in answers[:len(inputs)]]
+            perf_array.append(substring_match(labels, preds))
+            print(perf_array)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+
+    else:
+        perf_array = []
+        runs = 1
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = []
+            processed_labels = [label.replace(" ball.", "").replace(" present.", "").replace('.', '') for label in labels]
+            for x in tqdm(chunks(inputs, 10)):
+                prompts, answer = predict(task_description, x)
+                new_answer  = interpreter.batch_visit(prompts, answer)
+                answers.extend(new_answer)
+            preds = [get_answer(x) for x in answers]
+            perf_array.append(substring_match(processed_labels, preds))
+            # Report on interpreter performance
+            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+            positive_rate = sum(positive_calls)/(len(interpreter.execution_details) + 1e-6)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+        print("Rate of affordance call", positive_rate)
+
+# human_intervention(0.3, "davinci-codex-002-msft")
 
 
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
+    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001", "davinci-codex-002-msft"], default="text-davinci-002")
     parser.add_argument("--temperature", type=float, default="0.3")
-    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "auto_cot_corrected", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
@@ -682,6 +847,8 @@ if __name__ == "__main__":
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
+    elif args.inference_strategy == "auto_cot_corrected":
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":

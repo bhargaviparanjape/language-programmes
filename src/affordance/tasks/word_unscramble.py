@@ -226,7 +226,72 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     print("Std. Dev", np.std(perf_array))
 
 
-auto_cot_corrected_prompt = """"""
+auto_cot_corrected_prompt = """Unscramble the given word into a word in English.
+Q: The word untamqu is a scrambled version of the English word
+The final answer is the unscrambled English word.
+A: Let's think step-by-step.
+
+1) The first letter is 'u', so the word might start with 'un-' or 'u'.
+2) The second letter is 'n', so the word might start with 'un-'.
+3) The third letter is 't', so the word might start with 'un-t'.
+4) The fourth letter is 'a', so the word might be 'un-ta-'.
+5) The fifth letter is 'm', so the word might be 'un-ta-m'.
+6) The sixth letter is 'q', so the word might be 'un-ta-mq'.
+7) The seventh letter is 'u', so the word might be 'un-ta-mqu'.
+The word is 'un-ta-mqu', so the unscrambled word is 'quantum'.
+
+The final answer is 'quantum'
+----
+Unscramble the given word into a word in English.
+Q: The word mnoeg is a scrambled version of the English word
+The final answer is the unscrambled English word.
+A: Let's think step-by-step.
+
+1. The word "mnoeg" is a scrambled version of the English word "menge."
+2. The word "menge" is a German word meaning "crowd" or "group."
+3. Therefore, the unscrambled English word is "crowd."
+
+The final answer is 'crowd'
+----
+Unscramble the given word into a word in English.
+Q: The word agknkbo is a scrambled version of the English word
+The final answer is the unscrambled English word.
+A: Let's think step-by-step.
+
+1. The word agknkbo is a scrambled version of the English word
+2. The final answer is the unscrambled English word.
+3. The word agknkbo is a scrambled version of the English word "book".
+
+The final answer is 'book'
+----
+Unscramble the given word into a word in English.
+Q: The word mgiaein is a scrambled version of the English word
+The final answer is the unscrambled English word.
+A: Let's think step-by-step.
+
+1. The first letter is 'm'. This could be the beginning of the word 'magic' or 'magician'.
+2. The second letter is 'g'. This could be the beginning of the word 'game' or 'garden'.
+3. The third letter is 'i'. This could be the beginning of the word 'is' or 'in'.
+4. The fourth letter is 'a'. This could be the beginning of the word 'am' or 'are'.
+5. The fifth letter is 'e'. This could be the beginning of the word 'eat' or 'end'.
+6. The sixth letter is 'n'. This could be the beginning of the word 'now' or 'not'.
+7. The seventh letter is 'i'. This could be the beginning of the word 'it' or 'is'.
+The word is 'magician'.
+
+The final answer is 'magician'
+----
+Unscramble the given word into a word in English.
+Q: The word eacperlfi is a scrambled version of the English word
+The final answer is the unscrambled English word.
+A: Let's think step-by-step.
+
+1. The word eacperlfi is a scrambled version of the English word
+2. The final answer is the unscrambled English word.
+3. Therefore, the word eacperlfi is a scrambled version of the English word "fireplace."
+
+The final answer is 'fireplace'
+----
+"""
 auto_cot_cleaned_prompt = """Unscramble the given word into a word in English.
 Q: The word untamqu is a scrambled version of the English word
 The final answer is the unscrambled English word.

@@ -518,7 +518,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
-    interpreter = TopDownVisitorBeta()
+    interpreter = TopDownVisitorBeta(model_name=model_name)
 
     def predict(description, chunk):
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
@@ -530,25 +530,28 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        new_labels = ["Ans: " + label for label in labels]
+        processed_labels = [label.split(".")[0] for label in labels]
         for x in tqdm(chunks(inputs, 10)):
-            x = [ex.replace("\nDoes the preceding sentence contain non-contemporaneous (anachronistic) elements?", "") for ex in x]
+            x = [ex.replace("\nA:", "") for ex in x]
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
-        preds = [x.strip() for x in answers]
-        perf_array.append(substring_match(new_labels, preds))
+        preds = [get_answer(x) for x in answers]
+        perf_array.append(substring_match(processed_labels, preds))
         print(perf_array)
+        positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+        positive_rate = sum(positive_calls)/len(interpreter.execution_details)
     print("FS-CoT Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
+    print("Rate of affordance call", positive_rate)
 
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()
     parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
     parser.add_argument("--temperature", type=float, default="0.3")
-    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "auto_cot_corrected", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
@@ -569,6 +572,8 @@ if __name__ == "__main__":
         print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
+    elif args.inference_strategy == "auto_cot_corrected":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)

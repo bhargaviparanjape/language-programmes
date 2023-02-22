@@ -88,7 +88,7 @@ def code_generate(instruction, code_input):
     # )
     if instruction in code_input:
         # Code input is sufficient to write code
-        comment = "\"\"\"\n{0}\nStore the final result as a variable named 'ans' and print it.\n\"\"\"\n\ndef".format(code_input)
+        comment = "\"\"\"\n{0}\nStore the final result as a variable named 'ans' and print it.\n\"\"\"\n\n".format(code_input)
     else:
         if re.search("#[0-9]+", instruction):
             input_string = re.search("#[0-9]+", instruction).group(0)
@@ -159,7 +159,7 @@ def code_execute(code_snippet, code_input=None):
     except:
         pass
 
-    if "error" in code_snippet or "error" in code_input:
+    if "error" in code_snippet or (code_input and "error" in code_input):
         return code_error(code_snippet, code_input)
 
     try:
@@ -460,7 +460,6 @@ class TopDownVisitorBeta(Interpreter):
 
     def visit(self, prefix, program):
         
-        
         program_ends = self.syntax_check(program)
         program = prefix.rsplit("----\n", 1)[1].split("\n", 1)[1] + program
         # If program does not end correctly, rerun GPT-3 further to end it. 
@@ -494,7 +493,7 @@ class TopDownVisitorBeta(Interpreter):
 
         previous_input = input_node.text
 
-        while  command_node_list[i].command_name != "[EOQ]":
+        while i < len(command_node_list) and command_node_list[i].command_name != "[EOQ]":
 
             node = command_node_list[i]
             command_name = node.command_name
@@ -567,6 +566,5 @@ class TopDownVisitorBeta(Interpreter):
         self.execution_details.append(stack_trace)
         
         return program
-
 
 

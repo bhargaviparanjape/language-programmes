@@ -776,7 +776,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
+    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001", "davinci-codex-002-msft"], default="text-davinci-002")
     parser.add_argument("--temperature", type=float, default="0.3")
     parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
     parser.add_argument("--num_train_examples", type=int, default=10)

@@ -576,7 +576,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     elif strategy == "llm_similar":
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
-    interpreter = TopDownVisitorBeta()
+    interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[code generate]"])
 
     def predict(description, chunk):
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
@@ -589,7 +589,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
         print("Run %d"%run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
-            x = [ex.replace("\nEdited:", "") for ex in x]
+            # x = [ex.replace("\nEdited:", "") for ex in x]
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
@@ -604,11 +604,256 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     print("Rate of affordance call", positive_rate)
 
 
+few_shot_human_prompt = """Description: (Auto Debugging) Debug the following code snippets by finding the answer or the error message.
+Input: 
+```
+if x < 5:
+    pass
+```
+What error does this program surface?
+Q1: [execute] Execute the following python code snippet.
+if x < 5:
+    pass
+#1:
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+NameError: name 'x' is not defined
+Q2: [generate answer] What is the final error message?
+#2: NameError: name 'x' is not defined
+Q3: [EOQ]
+Ans: NameError: name 'x' is not defined
+----
+Description: (Auto Debugging) Debug the following code snippets by finding the answer or the error message.
+Input:
+```
+x = set([1, 1, 2, 3])
+```
+What is the value of x after this program executes?
+Q1: [code edit] Edit the following code to print the value of x
+x = set([1, 1, 2, 3])
+#1:
+x = set([1, 1, 2, 3])
+print(x)
+Q2: [execute] Execute the following python code snippet.
+x = set([1, 1, 2, 3])
+print(x)
+#2: {1, 2, 3}
+Q3: [EOQ]
+Ans: {1, 2, 3}
+----
+Description: (Auto Debugging) Debug the following code snippets by finding the answer or the error message.
+Input: ```
+class MyClass():
+        def __init__(self):
+                print(param)
+x = MyClass(5)
+```
+What is the value of x.param at the end of this program?
+Q1: [code edit] Edit the following code to print the value of x.param
+class MyClass():
+        def __init__(self):
+                print(param)
+x = MyClass(5)
+#1:
+class MyClass():
+    def __init__(self, param):
+        self.param = param
+x = MyClass(5)
+print(x.param)
+Q2: [execute] Execute the following python code snippet.
+class MyClass():
+    def __init__(self, param):
+        self.param = param
+x = MyClass(5)
+print(x.param)
+#2: 5
+Q3: [EOQ]
+Ans: 5
+----
+Description: (Auto Debugging) Debug the following code snippets by finding the answer or the error message.
+Input: ```
+sum = 0
+for i in range(100, 0, -2):
+        sum += i
+```
+What is the value of sum at the end of this program?
+Q1: [code edit] Edit the following code to print the value of sum
+sum = 0
+for i in range(100, 0, -2):
+        sum += i
+#1:
+sum = 0
+for i in range(100, 0, -2):
+        sum += i
+print(sum)
+Q2: [execute] Execute the following python code snippet.
+sum = 0
+for i in range(100, 0, -2):
+        sum += i
+print(sum)
+#2: 2550
+Q3: [EOQ]
+Ans: 2550
+----
+Description: (Auto Debugging) Debug the following code snippets by finding the answer or the error message.
+Input: ```
+def sq(x):
+        return x*x
+y = sq(5)
+x = sq(y)
+```
+What is the value of x at the end of this program?
+Q1: [code edit] Edit the following code to print the value of x
+def sq(x):
+        return x*x
+y = sq(5)
+x = sq(y)
+print(x)
+#1:
+def sq(x):
+        return x*x
+y = sq(5)
+x = sq(y)
+print(x)
+Q2: [execute] Execute the following python code snippet.
+def sq(x):
+        return x*x
+y = sq(5)
+x = sq(y)
+print(x)
+#2: 625
+Q3: [EOQ]
+Ans: 625
+----
+Description: (Auto Debugging) Debug the following code snippets by finding the answer or the error message.
+Input: ```
+def r(n):
+        if n == 1:
+                return 1
+        else:
+                return n + r(n-1)
+z = r(10)
+```
+What is the value of z at immediately after line 7 has executed?
+Q1: [code edit] Edit the following code to print the value of z
+def r(n):
+        if n == 1:
+                return 1
+        else:
+                return n + r(n-1)
+z = r(10)
+#1:
+def r(n):
+        if n == 1:
+                return 1
+        else:
+                return n + r(n-1)
+z = r(10)
+print(z)
+Q2: [execute] Execute the following python code snippet.
+def r(n):
+        if n == 1:
+                return 1
+        else:
+                return n + r(n-1)
+z = r(10)
+print(z)
+#2: 55
+Q3: [EOQ]
+Ans: 55
+----
+Description: (Auto Debugging) Debug the following code snippets by finding the answer or the error message.
+Input: ```
+x = [2*i for i in range(10)]
+```
+What is x[7] after this program executes?
+Q1: [code edit] Edit the following code to print the value of x[7]
+x = [2*i for i in range(10)]
+#1:
+x = [2*i for i in range(10)]
+print(x[7])
+Q2: [execute] Execute the following python code snippet.
+x = [2*i for i in range(10)]
+print(x[7])
+#2:
+14
+Q3: [EOQ]
+Ans: 14
+----
+Description: %s
+Input: %s
+Q1:"""
+def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+    global few_shot_cot_prompt
+
+    few_shot_cot_prompt = few_shot_human_prompt
+    interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[generate python code]", "[code edit]"])
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    def predict_self_consistency(description, chunk, n=9):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    if self_consistency:
+        perf_array = []
+        runs = 2
+        batch_size = 2
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = [] # List of counters
+            for x in tqdm(chunks(inputs, batch_size)):
+                x = [ex.replace("Q: ", "") for ex in x]
+                prompts, answer_set = predict_self_consistency(task_description, x)
+                result_counter = [Counter() for i in range(batch_size)]
+                for chunk_no, ans_chunk in enumerate(chunks(answer_set, 9)):
+                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
+                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    for pred in enumerate(processed_answers):
+                        # Only add to the counter if there is a legitimate answer
+                        if pred is not None:
+                            result_counter[chunk_no].update([pred])
+                answers.extend(result_counter)
+            preds = [x.most_common(1)[0][0][1] for x in answers[:len(inputs)]]
+            perf_array.append(substring_match(labels, preds))
+            print(perf_array)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+
+    else:
+        perf_array = []
+        runs = 5
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = []
+            for x in tqdm(chunks(inputs, 10)):
+                prompts, answer = predict(task_description, x)
+                new_answer  = interpreter.batch_visit(prompts, answer)
+                answers.extend(new_answer)
+            preds = [x.strip() for x in answers]
+            perf_array.append(substring_match(labels, preds))
+            # Report on interpreter performance
+            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+            positive_rate = sum(positive_calls)/(len(interpreter.execution_details) + 1e-6)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+        print("Rate of affordance call", positive_rate)
+
+# human_intervention(0.3, "code-davinci-002")
+
+
+
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
+    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001", "davinci-codex-002-msft"], default="text-davinci-002")
     parser.add_argument("--temperature", type=float, default="0.3")
-    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "auto_cot_corrected", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
@@ -630,6 +875,8 @@ if __name__ == "__main__":
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
+    elif args.inference_strategy == "auto_cot_corrected":
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":

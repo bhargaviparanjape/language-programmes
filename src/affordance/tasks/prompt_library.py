@@ -181,7 +181,6 @@ Q4: [compare] Which option is the answer in #3 most similar to?
 Q5: [EOQ]
 Ans: Shiva"""]
 },
-
 "auto_debugging":{
     "name": "Auto Debugging",
     "description": "Debug the following code snippets by finding the answer or the error message.",
@@ -491,60 +490,69 @@ Q2: [code execute] Execute the python code and get the value of "ans"
 Q3: [EOQ]
 Ans: 6"""]
 },
-"finqa":{
-    "name": "Financial Question Answering",
-    "description": """Read the following text and table. To answer a question, write out intermediate arithmetic calculations arithmetic calculations as python code. Store your result as a variable named 'ans'.""",
-    "instances": ["""Input: the aggregate commitment under the liquidity asset purchase agreements was approximately $ 23.59 billion and $ 28.37 billion at december 31 , 2008 and 2007 , respectively .
-( dollars in billions ) | 2008 amount | 2008 percent of total conduit assets | 2008 amount | percent of total conduit assets
-united states | $ 11.09 | 46% ( 46 % ) | $ 12.14 | 42% ( 42 % )
-australia | 4.30 | 17 | 6.10 | 21
-great britain | 1.97 | 8 | 2.93 | 10
-spain | 1.71 | 7 | 1.90 | 7
-italy | 1.66 | 7 | 1.86 | 7
-portugal | 0.62 | 3 | 0.70 | 2
-germany | 0.57 | 3 | 0.70 | 2
-netherlands | 0.40 | 2 | 0.55 | 2
-belgium | 0.29 | 1 | 0.31 | 1
-greece | 0.27 | 1 | 0.31 | 1
-other | 1.01 | 5 | 1.26 | 5
-total conduit assets | $ 23.89 | 100% ( 100 % ) | $ 28.76 | 100% ( 100 % )
-what is percentage change in total conduit asset from 2007 to 2008?
-Q1: [generate python code] write down the arithmetic or algebra equations as python code
-#1:
-total_conduit_assets_2007 = 28.76
-total_conduit_assets_2008 = 23.89
-net_change_in_total_conduit_assets = total_conduit_assets_2008 - total_conduit_assets_2007
-percent_change_in_total_conduit_assets = net_change_in_total_conduit_assets / total_conduit_assets_2007
-ans = percent_change_in_total_conduit_assets
-print(ans)
-Q2: [code execute] Execute the python code and get the value of "ans"
-#2: -0.1693
-Q3: [EOQ]
-Ans: -0.1693""",
-"""Input:american tower corporation and subsidiaries notes to consolidated financial statements ( 3 ) consists of customer-related intangibles of approximately $ 75.0 million and network location intangibles of approximately $ 72.7 million . the customer-related intangibles and network location intangibles are being amortized on a straight-line basis over periods of up to 20 years .
-- | preliminary purchase price allocation
-current assets | $ 8763
-non-current assets | 2332
-property and equipment | 26711
-intangible assets ( 1 ) | 21079
-other non-current liabilities | -1349 ( 1349 )
-fair value of net assets acquired | $ 57536
-goodwill ( 2 ) | 5998
-for acquired customer-related and network location intangibles , what is the expected annual amortization expenses , in millions?
-Q1: [generate python code] write down the arithmetic or algebra equations as python code
-#1:
-customer_related_intangibles = 75
-network_location_intangibles = 72.7
-straight_line_basis = 20
-amortization_expenses = ( customer_related_intangibles + network_location_intangibles ) / straight_line_basis
-ans = amortization_expenses
-print(ans)
-Q2: [code execute] Execute the python code and get the value of "ans"
-#2: 7.385
-Q3: [EOQ]
-Ans: 7.385"""]
+# "musique":{
+#     "name" : "Multi-step question answering",
+#     "description": "Answer complex questions that require decompositions into sub-questions and composing intermediate answers.",
+#     "instances": [
+#         """Input: """,
+#         """Input: """,
+#     ]
+# },
+# "finqa":{
+#     "name": "Financial Question Answering",
+#     "description": """Read the following text and table. To answer a question, write out intermediate arithmetic calculations arithmetic calculations as python code. Store your result as a variable named 'ans'.""",
+#     "instances": ["""Input: the aggregate commitment under the liquidity asset purchase agreements was approximately $ 23.59 billion and $ 28.37 billion at december 31 , 2008 and 2007 , respectively .
+# ( dollars in billions ) | 2008 amount | 2008 percent of total conduit assets | 2008 amount | percent of total conduit assets
+# united states | $ 11.09 | 46% ( 46 % ) | $ 12.14 | 42% ( 42 % )
+# australia | 4.30 | 17 | 6.10 | 21
+# great britain | 1.97 | 8 | 2.93 | 10
+# spain | 1.71 | 7 | 1.90 | 7
+# italy | 1.66 | 7 | 1.86 | 7
+# portugal | 0.62 | 3 | 0.70 | 2
+# germany | 0.57 | 3 | 0.70 | 2
+# netherlands | 0.40 | 2 | 0.55 | 2
+# belgium | 0.29 | 1 | 0.31 | 1
+# greece | 0.27 | 1 | 0.31 | 1
+# other | 1.01 | 5 | 1.26 | 5
+# total conduit assets | $ 23.89 | 100% ( 100 % ) | $ 28.76 | 100% ( 100 % )
+# what is percentage change in total conduit asset from 2007 to 2008?
+# Q1: [generate python code] write down the arithmetic or algebra equations as python code
+# #1:
+# total_conduit_assets_2007 = 28.76
+# total_conduit_assets_2008 = 23.89
+# net_change_in_total_conduit_assets = total_conduit_assets_2008 - total_conduit_assets_2007
+# percent_change_in_total_conduit_assets = net_change_in_total_conduit_assets / total_conduit_assets_2007
+# ans = percent_change_in_total_conduit_assets
+# print(ans)
+# Q2: [code execute] Execute the python code and get the value of "ans"
+# #2: -0.1693
+# Q3: [EOQ]
+# Ans: -0.1693""",
+# """Input:american tower corporation and subsidiaries notes to consolidated financial statements ( 3 ) consists of customer-related intangibles of approximately $ 75.0 million and network location intangibles of approximately $ 72.7 million . the customer-related intangibles and network location intangibles are being amortized on a straight-line basis over periods of up to 20 years .
+# - | preliminary purchase price allocation
+# current assets | $ 8763
+# non-current assets | 2332
+# property and equipment | 26711
+# intangible assets ( 1 ) | 21079
+# other non-current liabilities | -1349 ( 1349 )
+# fair value of net assets acquired | $ 57536
+# goodwill ( 2 ) | 5998
+# for acquired customer-related and network location intangibles , what is the expected annual amortization expenses , in millions?
+# Q1: [generate python code] write down the arithmetic or algebra equations as python code
+# #1:
+# customer_related_intangibles = 75
+# network_location_intangibles = 72.7
+# straight_line_basis = 20
+# amortization_expenses = ( customer_related_intangibles + network_location_intangibles ) / straight_line_basis
+# ans = amortization_expenses
+# print(ans)
+# Q2: [code execute] Execute the python code and get the value of "ans"
+# #2: 7.385
+# Q3: [EOQ]
+# Ans: 7.385"""]
+# }
 }
-}
+
 
 
 additional_arithmetic_tasks = {
@@ -1129,6 +1137,182 @@ Descripton: %s
 Input: %s
 Q1:"""
 
+
+few_shot_free_prompt = """In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. Thinking though the problem explicitly can be one of the substeps you use.
+Description: (Sports Understanding) Determine whether an artificially constructed sentence relating to sports is plausible. The final answer should be "yes" or "no".
+Input: Is the following sentence plausible? "Santi Cazorla scored a touchdown."
+Q1: [think step-by-step] 
+#1: Let's think step-by-step. Santi Cazorla is a soccer player. Touchdown is part of American football and rugby. So the answer is no.
+Q2: [EOQ]
+Ans: no
+----
+Description: (Hyperbation) Identify correct adjective ordering from the two choices. This involves selecting what would be considered the more inexplicably "intuitive" sentence by a native English speaker.
+Input: Which sentence has the correct adjective order:
+Options:
+(A) repulsive small Brazilian exercise ship
+(B) Brazilian repulsive exercise small ship
+Q1: [think step-by-step] 
+#1: Let's think step-by-step. When there is more than one adjective before a noun, the adjectives need to respect the following order before a noun: "[1. opinion] [2. size] [3. age] [4. shape] [5. color] [6. origin] [7. material] [8. purpose] noun".
+Option (A): "repulsive small Brazilian exercise ship". (1) "repulsive" falls into the opinion category. (2) "small" falls into the size category. (3) "Brazilian" falls into the origin category. (4) "exercise" falls into the purpose category. Option (A) has the following adjective order: [1. opinion] [2. size] [6. origin] [8. purpose] (or, in numeric terms, 1 2 6 8). Because 1 < 2 < 6 < 8 is correct, (A) has the correct ordering.
+Option (B): "Brazilian repulsive exercise small ship". Option (B) has the following adjective order: [6. origin] [1. opinion] [8. purpose] [2. size] (or, in numeric terms, 6 1 8 2). Because 6 < 1 < 8 < 2 is not correct, (B) does not have the correct ordering. So the answer is (A).
+Q2: [EOQ]
+Ans: (A)
+----
+Description: (Sports Understanding) Determine whether an artificially constructed sentence relating to sports is plausible. The final answer should be "yes" or "no".
+Input: Is the following sentence plausible? "Bam Adebayo scored a reverse layup in the Western Conference Finals."
+Q1: [think step-by-step] 
+#1: Let's think step-by-step. Bam Adebayo is an American basketball player. Scoring a reverse layup in the Western Conference Finals is part of the NBA Finals. So the answer is yes.
+Q2: [EOQ]
+Ans: yes
+----
+Description: (Formal Fallacies) Distinguish deductively valid syllogistic arguments from formal fallacies, paying specific attention to negations.
+Input: "It is not always easy to see who is related to whom -- and in which ways. The following argument pertains to this question: To begin with, Lesley is a close friend of Fernando. Moreover, being a close friend of Fernando or a schoolmate of Lowell is sufficient for being a great-grandfather of Leroy. It follows that Lesley is a great-grandfather of Leroy."
+Is the argument, given the explicitly stated premises, deductively valid or invalid?
+Options:
+- valid
+- invalid
+Q1: [think step-by-step] 
+#1:
+Let's think step-by-step.
+(1) Lesley is a close friend of Fernando: Lesley = friend(Fernando).
+(2) Being a close friend of Fernando or a schoolmate of Lowell is sufficient for being a great-grandfather of Leroy: If X = friend(Fernando) OR SCHOOLMATE(Lowell), then X = great-grandfather(Leroy).
+Hypothesis: Does it follow that Lesley is a great-grandfather of Leroy: Lesley = great-grandfather(Leroy)?
+Let’s see whether the Hypothesis can be deduced from the arguments (1) and (2) by logical reasoning?
+By (1), we have Lesley = friend(Fernando). By (2), we have if Lesley = friend(Fernando), then Lesley = great-grandfather(Leroy).
+So, it is true that Lesley is a great-grandfather of Leroy. So the answer is valid.
+Q2: [EOQ]
+Ans: valid
+----
+Description: (Hyperbation) Identify correct adjective ordering from the two choices. This involves selecting what would be considered the more inexplicably "intuitive" sentence by a native English speaker.
+Input:  Which sentence has the correct adjective order:
+Options:
+(A) rubber terrible ship
+(B) terrible rubber ship
+Q1: [think step-by-step] 
+#1: Let's think step-by-step. When there is more than one adjective before a noun, the adjectives need to respect the following order before a noun: "[1. opinion] [2. size] [3. age] [4. shape] [5. color] [6. origin] [7. material] [8. purpose] noun".
+Option (A): "rubber terrible ship". (1) rubber" falls into the material category. (2) "terrible" falls into the opinion category. Option (A) has the following adjective order: [7. material] [1. opinion] (or, in numeric terms, 7 1). Because 7 < 1 is not correct, (A) does not have the correct ordering.
+Option (B): "terrible rubber ship". Option (B) has the following adjective order: [1. opinion] [7. material] (or, in numeric terms, 1 7). Because 1 < 7 is correct, (B) has the correct ordering. So the answer is (B).
+Q2: [EOQ]
+Ans: (B)
+----
+Description: (Reasoning about colored objects) Given a collection of colored objects in the text input, answer the question at the end of the input.
+Input: On the nightstand, there is a red pencil, a purple mug, a burgundy keychain, a fuchsia teddy bear, a black plate, and a blue stress ball. What color is the stress ball?
+Q1: [think step-by-step] 
+#1: Let's think step-by-step. According to this question, the color of the stress ball is blue. So the answer is blue.
+Q2: [EOQ]
+Ans: blue
+----
+Description: (Formal Fallacies) Distinguish deductively valid syllogistic arguments from formal fallacies, paying specific attention to negations.
+Input: "It is not always easy to grasp who is consuming which products. The following argument pertains to this question: Every infrequent user of Paul Mitchell shampoo is either a rare consumer of Nioxin shampoo or a loyal buyer of Caress soap, or both. No regular consumer of Lush soap is a rare consumer of Nioxin shampoo and, in the same time, a loyal buyer of Caress soap. It follows that whoever is an infrequent user of Paul Mitchell shampoo is not a regular consumer of Lush soap."
+Is the argument, given the explicitly stated premises, deductively valid or invalid?
+Options:
+- valid
+- invalid
+Q1: [think step-by-step] 
+#1: Let's think step by step.
+(1) Every infrequent user of Paul Mitchell shampoo is either a rare consumer of Nioxin shampoo or a loyal buyer of Caress soap, or both: If X = infrequent-user(Paul Mitchell), then X = rare-consumer(Nioxin) OR X = loyal-buyer(Caress).
+(2): No regular consumer of Lush soap is a rare consumer of Nioxin shampoo and a loyal buyer of Caress soap at the same time. If X = regular-consumer(Lush), then X = NOT (rare-consumer(Nioxin) AND loyal-buyer(Caress)).
+Hypothesis: Does it follow that whoever is an infrequent user of Paul Mitchell shampoo is not a regular consumer of Lush soap: If X = infrequent-user(Paul Mitchell), then X = NOT (regular-consumer(Lush))?
+Let’s see whether the Hypothesis can be deduced from the arguments (1) and (2) by logical reasoning?
+By (1), we have if X = infrequent-user(Paul Mitchell), then X = rare-consumer(Nioxin) OR X = loyal-buyer(Caress). We need to consider both cases separately:
+The case X = rare-consumer(Nioxin) does not appear in (2).
+The case X = loyal-buyer(Caress) does not appear in (2), either.
+So, from (1) and (2), we cannot necessarily deduce the Hypothesis. So the answer is invalid.
+Q2: [EOQ]
+Ans: invalid
+----
+Description: (Movie Recommendations) Propose relevant movie predictions to a user, based on an input prompt sentence enumerating 4 liked movies.
+Input: Find a movie similar to Minority Report, Total Recall, Inside Out, Forrest Gump:
+Options:
+(A) Phenomena
+(B) Lilting
+(C) Catwoman
+(D) Edge of Tomorrow
+Q1: [think step-by-step] 
+#1: Let's think step-by-step. What genre are all these movies about and when were they released.
+- Minority Report (action, crime, mystery; 2002)
+- Total Recall (action, adventure, science-fiction; 2012)
+- Inside Out (animation, family, comedy; 2015)
+- Forrest Gump (comedy, drama, romance; 1994)
+These are all famous movies produced in the past few decades.Amongst all the options, the only movie similar to these ones seems to be Edge of Tomorrow (action, adventure, crime, mystery; 2014), as it is also a science-fiction movie and features Tom Cruise. So the answer is (D).
+Q2: [EOQ]
+Ans: (D)
+----
+Descripton: %s
+Input: %s
+Q1:"""
+
+additional_free_tasks = """Description: (Formal Fallacies) Distinguish deductively valid syllogistic arguments from formal fallacies, paying specific attention to negations.
+Input: "It is not always easy to grasp who is consuming which products. The following argument pertains to this question: Every infrequent user of Paul Mitchell shampoo is either a rare consumer of Nioxin shampoo or a loyal buyer of Caress soap, or both. No regular consumer of Lush soap is a rare consumer of Nioxin shampoo and, in the same time, a loyal buyer of Caress soap. It follows that whoever is an infrequent user of Paul Mitchell shampoo is not a regular consumer of Lush soap."
+Is the argument, given the explicitly stated premises, deductively valid or invalid?
+Options:
+- valid
+- invalid
+Q1: [think step-by-step] 
+#1: Let's think step by step.
+(1) Every infrequent user of Paul Mitchell shampoo is either a rare consumer of Nioxin shampoo or a loyal buyer of Caress soap, or both: If X = infrequent-user(Paul Mitchell), then X = rare-consumer(Nioxin) OR X = loyal-buyer(Caress).
+(2): No regular consumer of Lush soap is a rare consumer of Nioxin shampoo and a loyal buyer of Caress soap at the same time. If X = regular-consumer(Lush), then X = NOT (rare-consumer(Nioxin) AND loyal-buyer(Caress)).
+Hypothesis: Does it follow that whoever is an infrequent user of Paul Mitchell shampoo is not a regular consumer of Lush soap: If X = infrequent-user(Paul Mitchell), then X = NOT (regular-consumer(Lush))?
+Let’s see whether the Hypothesis can be deduced from the arguments (1) and (2) by logical reasoning?
+By (1), we have if X = infrequent-user(Paul Mitchell), then X = rare-consumer(Nioxin) OR X = loyal-buyer(Caress). We need to consider both cases separately:
+The case X = rare-consumer(Nioxin) does not appear in (2).
+The case X = loyal-buyer(Caress) does not appear in (2), either.
+So, from (1) and (2), we cannot necessarily deduce the Hypothesis. So the answer is invalid.
+Q2: [EOQ]
+Ans: invalid
+----
+Description: (Movie Recommendations) Propose relevant movie predictions to a user, based on an input prompt sentence enumerating 4 liked movies.
+Input: Find a movie similar to Twister, The Silence of the Lambs, Independence Day, Braveheart:
+Options:
+(A) They Shoot Horses
+(B) Don't They
+(C) Forrest Gump
+(D) The Salton Sea
+(E) Extreme Days
+Q1: [think step-by-step] 
+#1: Let's think step-by-step. What genre are all these movies about and when were they released.
+- Twister (action, adventure, thriller; 1996)
+- The Silence of the Lambs (crime, drama, thriller; 1991)
+- Independence Day (action, science-fiction, drama; 1996)
+- Braveheart (biography, drama, epic; 1995)
+These are all famous Hollywood movies produced around the 1990s. Amongst all the options, the only movie similar to these ones seems to be Forrest Gump (comedy, drama, romance; 1994). So the answer is (C).
+Q2: [EOQ]
+Ans: (C)
+----
+Description: (Reasoning about colored objects) Given a collection of colored objects in the text input, answer the question at the end of the input.
+Input: On the nightstand, there is a red pencil, a purple mug, a burgundy keychain, a fuchsia teddy bear, a black plate, and a blue stress ball. What color is the stress ball?
+Q1: [think step-by-step] 
+#1: Let's think step-by-step. According to this question, the color of the stress ball is blue. So the answer is blue.
+Q2: [EOQ]
+Ans: blue
+----
+Description: (Reasoning about colored objects) Given a collection of colored objects in the text input, answer the question at the end of the input.
+Input: On the table, you see a bunch of objects arranged in a row: a purple paperclip, a pink stress ball, a brown keychain, a green scrunchiephone charger, a mauve fidget spinner, and a burgundy pen. What is the color of the object directly to the right of the stress ball?
+Q1: [think step-by-step] 
+#1: Let's think step by step.
+According to this question, the objects are arranged in a row, from left to right, as follows: (1) a purple paperclip, (2) a pink stress ball, (3) a brown keychain, (4) a green scrunchiephone charger, (5) a mauve fidget spinner, (6) a burgundy pen.
+The stress ball is the second object on the list, namely (2). The object that is to the right of the stress ball corresponds to (3), which is a brown keychain.
+The color of the keychain is brown. So the answer is brown.
+Q2: [EOQ]
+Ans: brown
+----
+Description: (Reasoning about colored objects) Given a collection of colored objects in the text input, answer the question at the end of the input.
+Input: On the nightstand, there is a red pencil, a purple mug, a burgundy keychain, a fuchsia teddy bear, a black plate, and a blue stress ball. What color is the stress ball?
+Q1: [think step-by-step] 
+#1: Let's think step-by-step. According to this question, the color of the stress ball is blue. So the answer is blue.
+Q2: [EOQ]
+Ans: blue
+----
+Description: (Reasoning about colored objects) Given a collection of colored objects in the text input, answer the question at the end of the input.
+Input: On the table, you see a bunch of objects arranged in a row: a purple paperclip, a pink stress ball, a brown keychain, a green scrunchiephone charger, a mauve fidget spinner, and a burgundy pen. What is the color of the object directly to the right of the stress ball?
+Q1: [think step-by-step] 
+#1: Let's think step by step.
+According to this question, the objects are arranged in a row, from left to right, as follows: (1) a purple paperclip, (2) a pink stress ball, (3) a brown keychain, (4) a green scrunchiephone charger, (5) a mauve fidget spinner, (6) a burgundy pen.
+The stress ball is the second object on the list, namely (2). The object that is to the right of the stress ball corresponds to (3), which is a brown keychain.
+The color of the keychain is brown. So the answer is brown.
+Q2: [EOQ]
+Ans: brown
+----"""
 
 def random_tasks(N=5):
     random_tasks = np.random.choice(len(TASKS), N, replace=False)

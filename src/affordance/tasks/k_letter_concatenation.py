@@ -41,7 +41,7 @@ data = json.loads(response.read())
 train_inputs = [d['question'] for d in data['1']['qa_pairs']]
 train_labels = [d['answer']['spans'] for d in data['1']['qa_pairs']]
 
-task_description = "Kth letter concatenation: Take the letters at position 3 of the words in a list of words and concatenate them using a space."
+task_description = "(Kth letter concatenation) Take the letters at position 3 of the words in a list of words and concatenate them using a space."
 
 io_pairs=[("""Take the letters at position 3 of the words in "Maya Sylvie Campbell Hussein Francisco" and concatenate them using a space.""",
 "y l m s a"),
@@ -303,7 +303,7 @@ r i n y
 
 def cot_rollout(temperature=0.3, model_name="text-davinci-002"):
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name, max_length=1000, temperature=temperature, quote='---', n=1)
         prompts = ["""Take the last letters of the words in "Augusta Ada King" and concatenate them using a space. 
 Work: The words in "Augusta Ada King" are "Augusta", "Ada" and "King". The letters and their positions in "Augusta" are "[(A, 1), (u, 2), (g, 3), (u, 4), (s, 5), (t, 6), (a, 7)]". The last letter in this sequence is "a". The letters and their positions in "Ada" are "[(A, 1), (d, 2), (a, 3)]". The last letter in this sequence is "a". The letters and their positions in "King" are "[(K, 1), (i, 2), ( n, 3), (g, 4)]". The last letter in this sequence is "g". Concatenating "a", "a", "g" using a space leads to "a a g". So, "Augusta Ada King" outputs "a a g".
 Answer: a a g
@@ -449,6 +449,7 @@ Also show how you used the steps provided to arrive at the answer.''' % (task_de
 # Q1:"""
 
 few_shot_cot_prompt = few_shot_string_prompt
+# few_shot_cot_prompt = few_shot_code_prompt
 
 def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
     global few_shot_cot_prompt
@@ -489,6 +490,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict_complete(task_description, x))
             # time.sleep(10)
+            # pdb.set_trace()
         # preds = [[y.strip() for y in x.split("\n")] for x in answers]
         preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(dev_labels, preds))
@@ -839,7 +841,7 @@ def affordance(temperature=0.3):
 
 few_shot_cot_prompt = few_shot_arithmetic_prompt
 
-def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+def nl_program(temperature=0.3, model_name="davinci-codex-002-msft", strategy="fixed", self_consistency=False):
     global few_shot_cot_prompt
     task_name = "Simple Text Editing"
     task_description = "(Simple Text Editing) Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is."
@@ -1036,6 +1038,132 @@ def notebook(temperature=0.3, model_name="text-davinci-002"):
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
+
+few_shot_human_prompt = """Description: (Kth letter concatenation) Take the letters at position 3 of the words in a list of words and concatenate them using a space.
+Input: Take the letters at position 3 of the words in "Musa Haiying Schmidt Robinson Afzal" and concatenate them using a space.
+Q1: [generate python code] write down the code to solve the problem, storing the answer as 'ans'
+#1:
+words = "Musa Haiying Schmidt Robinson Afzal"
+words_list = words.split(' ')
+ans = ''
+third_letters = [word[2] for word in words_list]
+ans = ' '.join(third_letters)
+print(ans)
+Q2: [code execute] Execute the python code and get the value of "ans"
+#2: s i h b z
+Q3: [EOQ]
+Ans: s i h b z
+----
+Description: (Kth letter concatenation) Take the letters at position 3 of the words in a list of words and concatenate them using a space.
+Input: Take the letters at position 3 of the words in "Gang Ping Mendez Cabrera Uddin" and concatenate them using a space.
+Q1: [generate python code] write python code to solve the problem
+#1:
+words = "Gang Ping Mendez Cabrera Uddin"
+words_list = words.split(' ')
+third_letters = [word[2] for word in words_list]
+ans = ' '.join(third_letters)
+print(ans)
+Q2: [code execute] Execute the python code in #1 and get the value of "ans"
+#2: n n n b d
+Q3: [EOQ]
+Ans: n n n b d
+----
+Description: (Kth letter concatenation) Take the letters at position 3 of the words in a list of words and concatenate them using a space.
+Input: Take the letters at position 3 of the words in "Anne Shyam Watson Bux Malik" and concatenate them using a space.
+Q1: [generate python code] write down the arithmetic or algebra equations as python code, storing the answer as 'ans'
+#1:
+words = "Anne Shyam Watson Bux Malik"
+words_list = words.split(' ')
+third_letters = [word[2] for word in words_list]
+ans = ' '.join(third_letters)
+print(ans)
+Q2: [code execute] Execute the python code and get the value of "ans"
+#2: n y t x l
+Q3: [EOQ]
+Ans: n y t x l
+----
+Description: (Kth letter concatenation) Take the letters at position 3 of the words in a list of words and concatenate them using a space.
+Input: Take the letters at position 3 of the words in "Melissa Vicente Gao Teng Abdou" and concatenate them using a space.
+Q1: [generate python code] write python code to solve the problem, using math and sympy.
+#1:
+words = "Melissa Vicente Gao Teng Abdou"
+words_list = words.split(' ')
+third_letters = [word[2] for word in words_list]
+ans = ' '.join(third_letters)
+print(ans)
+Q2: [code execute] Execute the python code in #1 and get the value of "ans"
+#2: l c o n d
+Q3: [EOQ]
+Ans: l c o n d
+----
+Descriptio: %s
+Input: %s
+Q1:"""
+def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+    global few_shot_cot_prompt
+
+    few_shot_cot_prompt = few_shot_human_prompt
+    interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[generate python code]"])
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    def predict_self_consistency(description, chunk, n=9):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    if self_consistency:
+        perf_array = []
+        runs = 2
+        batch_size = 2
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = [] # List of counters
+            for x in tqdm(chunks(inputs, batch_size)):
+                x = [ex.replace("\nEdited:", "") for ex in x]
+                prompts, answer_set = predict_self_consistency(task_description, x)
+                result_counter = [Counter() for i in range(batch_size)]
+                for chunk_no, ans_chunk in enumerate(chunks(answer_set, 9)):
+                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
+                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    for pred in enumerate(processed_answers):
+                        # Only add to the counter if there is a legitimate answer
+                        if pred is not None:
+                            result_counter[chunk_no].update([pred])
+                answers.extend(result_counter)
+            preds = [x.most_common(1)[0][0][1] for x in answers[:len(inputs)]]
+            perf_array.append(substring_match(labels, preds))
+            print(perf_array)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+
+    else:
+        perf_array = []
+        runs = 1
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = []
+            for x in tqdm(chunks(dev_inputs, 10)):
+                x = [ex.replace("\nA:", "") for ex in x]
+                prompts, answer = predict(task_description, x)
+                new_answer  = interpreter.batch_visit(prompts, answer)
+                answers.extend(new_answer)
+            preds = [get_answer(x) for x in answers]
+            perf_array.append(substring_match(dev_labels, preds))
+            # Report on interpreter performance
+            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+            positive_rate = sum(positive_calls)/(len(interpreter.execution_details) + 1e-6)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+        print("Rate of affordance call", positive_rate)
+
+# human_intervention(0.3, "davinci-codex-002-msft")
+cot_rollout()
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()

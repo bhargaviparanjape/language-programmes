@@ -733,7 +733,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     print("Std. Dev", np.std(perf_array))
 
 
-def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+def nl_program(temperature=0.3, model_name="davinci-codex-002-msft", strategy="fixed", self_consistency=False):
     global few_shot_pot_prompt
     global few_shot_cot_prompt
     task_name = "Elementary Math"

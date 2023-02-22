@@ -13,7 +13,8 @@ from tqdm import tqdm
 from transformers import GPT2Tokenizer
 from utils import (OpenAIModel, cache_dir, chunks, get_answer,
                    get_few_shot_prompt, get_subset, gpt3,
-                   propose_decomposition, propose_instruction, substring_match)
+                   propose_decomposition, propose_instruction, substring_match, substring_match_v2,
+                   get_autocot_answer)
 
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 import urllib.request
@@ -21,12 +22,328 @@ from collections import Counter
 
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 from prompt_library import (llm_similar_tasks, random_tasks,
-                            similar_auto_breakdowns, similar_tasks)
+                            similar_auto_breakdowns, similar_tasks,
+                            few_shot_retrieval_prompt, few_shot_code_prompt, 
+                            few_shot_arithmetic_prompt, few_shot_string_prompt,
+                            few_shot_free_prompt)
 from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 
 d = datasets.load_dataset('bigbench', 'disambiguation_qa', cache_dir=cache_dir)
-inputs = d['validation']['inputs']
+inputs = d['validation']['inputs'] + d['train']['inputs']
 # inputs = [x.split('\n')[0] for x in inputs]
-labels = d['validation']['targets']
-labels = [l[0] for l in labels]
+labels = d['validation']['targets'] + d['train']['targets']
+labels = [l[0] for l in labels] 
 print(len(inputs))
+
+io_pairs = [('In the following sentences, explain the antecedent of the pronoun (which thing the pronoun refers to), or state that it is ambiguous.\n\nSentence: The chief encouraged the writer because she wrote a good book.\n  choice: Ambiguous\n  choice: The chief wrote a good book\n  choice: The writer wrote a good book', 'The writer wrote a good book' ),
+("In the following sentences, explain the antecedent of the pronoun (which thing the pronoun refers to), or state that it is ambiguous.\n\nSentence: The pathologist obtained tissue samples from the victim to look at under his microscope.\n  choice: Ambiguous\n  choice: It was the pathologist's microscope\n  choice: It was the victim's microscope", "It was the pathologist's microscope" ),
+('In the following sentences, explain the antecedent of the pronoun (which thing the pronoun refers to), or state that it is ambiguous.\n\nSentence: The paralegal forgot to file paperwork for the client so she was fired.\n  choice: Ambiguous\n  choice: The client was fired\n  choice: The paralegal was fired', 'The paralegal was fired'),
+('In the following sentences, explain the antecedent of the pronoun (which thing the pronoun refers to), or state that it is ambiguous.\n\nSentence: The mechanic greets the receptionist because they are standing in front of the door.\n  choice: Ambiguous\n  choice: The mechanic is standing in front of the door\n  choice: The receptionist is standing in front of the door', 'Ambiguous'),
+('In the following sentences, explain the antecedent of the pronoun (which thing the pronoun refers to), or state that it is ambiguous.\n\nSentence: The taxpayer met with the accountant to find out if he could help with tax preparation.\n  choice: Ambiguous\n  choice: The accountant could help\n  choice: The taxpayer could help', 'The accountant could help'),
+('In the following sentences, explain the antecedent of the pronoun (which thing the pronoun refers to), or state that it is ambiguous.\n\nSentence: The patient was referred to the specialist because they had a rare skin condition.\n  choice: Ambiguous\n  choice: The patient had a skin condition\n  choice: The specialist had a skin condition', 'The patient had a skin condition'),]
+
+train_inputs = d['train']['inputs']
+train_labels = d['train']['targets']
+
+task_name = "Disambiguation QA"
+task_description = """(Disambiguation QA) Given a sentence with a pronoun, choose the person to whom the pronoun refers to. The final answer should be one of the choices."""
+
+
+def exact_match(labels, predictions):
+    correct = 0
+    count = 0
+    for label, predict in zip(labels, predictions):
+        if label.lower() == predict.lower():
+            correct += 1
+        count += 1
+    return (1.0*correct)/count
+
+
+def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
+
+    few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=N)
+    print(len(tokenizer(few_shot_prompt)['input_ids']))
+
+    def predict(chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=200, temperature=temperature, quote='---', n=1)
+        prompts = ["""%s\
+%s""" % (few_shot_prompt, x) for x in chunk]
+        return gpt3(prompts)
+    
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 10)):
+            answers.extend(predict(x))
+        preds = [x.strip() for x in answers]
+        perf_array.append(exact_match(labels, preds))
+    print("No decomposition Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
+
+auto_cot_corrected_prompt = """"""
+
+auto_cot_cleaned_prompt = """(Disambiguation QA) Given a sentence with an ambiguous pronoun, choose the person to whom the pronoun refers. When the meaning of the sentence is ambiguous, return the answer "ambiguous".
+In the following sentences, explain the antecedent of the pronoun (which thing the pronoun refers to), or state that it is ambiguous.
+
+Sentence: The chief encouraged the writer because she wrote a good book.
+  choice: Ambiguous
+  choice: The chief wrote a good book
+  choice: The writer wrote a good book
+The final answer is one of the choices.
+A: Let's think step-by-step.
+
+1) "The chief encouraged the writer" - we know that the chief encouraged someone, but we don't know who.
+2) "because she wrote a good book" - we know that the reason the chief encouraged the writer is because the writer wrote a good book.
+
+From this, we can infer that the antecedent of "she" is the writer.
+
+The final answer is "The writer wrote a good book"
+----
+(Disambiguation QA) Given a sentence with an ambiguous pronoun, choose the person to whom the pronoun refers. When the meaning of the sentence is ambiguous, return the answer "ambiguous".
+In the following sentences, explain the antecedent of the pronoun (which thing the pronoun refers to), or state that it is ambiguous.
+
+Sentence: The pathologist obtained tissue samples from the victim to look at under his microscope.
+  choice: Ambiguous
+  choice: It was the pathologist's microscope
+  choice: It was the victim's microscope
+The final answer is one of the choices.
+A: Let's think step-by-step.
+The pronoun in question is "his." "His" could refer to the pathologist or the victim.
+The pathologist is the subject of the sentence and is male, so "his" could refer to the pathologist's microscope.
+The victim is also male, so "his" could refer to the victim's microscope.
+We need more information to determine which antecedent "his" is referring to.
+
+The final answer is "Ambiguous"
+----
+(Disambiguation QA) Given a sentence with an ambiguous pronoun, choose the person to whom the pronoun refers. When the meaning of the sentence is ambiguous, return the answer "ambiguous".
+In the following sentences, explain the antecedent of the pronoun (which thing the pronoun refers to), or state that it is ambiguous.
+
+Sentence: The paralegal forgot to file paperwork for the client so she was fired.
+  choice: Ambiguous
+  choice: The client was fired
+  choice: The paralegal was fired
+The final answer is one of the choices.
+A: Let's think step-by-step.
+
+The antecedent of "she" is the most recently mentioned female noun or pronoun, which in this case is "the paralegal."
+
+The final answer is "The paralegal was fired"
+----
+(Disambiguation QA) Given a sentence with an ambiguous pronoun, choose the person to whom the pronoun refers. When the meaning of the sentence is ambiguous, return the answer "ambiguous".
+In the following sentences, explain the antecedent of the pronoun (which thing the pronoun refers to), or state that it is ambiguous.
+
+Sentence: The mechanic greets the receptionist because they are standing in front of the door.
+  choice: Ambiguous
+  choice: The mechanic is standing in front of the door
+  choice: The receptionist is standing in front of the door
+The final answer is one of the choices.
+A: Let's think step-by-step.
+
+The pronoun in question is "they." We can try to figure out its antecedent by looking at the other nouns in the sentence and seeing which one makes the most sense.
+The mechanic greets the receptionist because they are standing in front of the door.
+In this sentence, it makes the most sense that "they" is referring to the mechanic and the receptionist. This is because the mechanic is greeting the receptionist, and they are both standing in front of the door.
+
+The final answer is "Ambiguous"
+----
+(Disambiguation QA) Given a sentence with an ambiguous pronoun, choose the person to whom the pronoun refers. When the meaning of the sentence is ambiguous, return the answer "ambiguous".
+In the following sentences, explain the antecedent of the pronoun (which thing the pronoun refers to), or state that it is ambiguous.
+
+Sentence: The taxpayer met with the accountant to find out if he could help with tax preparation.
+  choice: Ambiguous
+  choice: The accountant could help
+  choice: The taxpayer could help
+The final answer is one of the choices.
+A: Let's think step-by-step.
+
+First, we need to identify the pronoun in question: "he." Next, we need to ask ourselves what this pronoun could be referring to. In this sentence, there are two potential antecedents for "he"--the taxpayer or the accountant. Because both of these nouns are masculine, we can't use pronoun agreement to help us determine the antecedent.
+In this case, we need to look at the context of the sentence to try to determine which antecedent is more likely. Based on the context, it seems more likely that the pronoun "he" is referring to the accountant. This is because the sentence is talking about the taxpayer meeting with the accountant to discuss tax preparation. It seems more likely that the pronoun "he" would be referring to the accountant in this context, rather than the taxpayer.
+
+The final answer is "The accountant could help"
+----
+(Disambiguation QA) Given a sentence with an ambiguous pronoun, choose the person to whom the pronoun refers. When the meaning of the sentence is ambiguous, return the answer "ambiguous".
+In the following sentences, explain the antecedent of the pronoun (which thing the pronoun refers to), or state that it is ambiguous.
+
+Sentence: The patient was referred to the specialist because they had a rare skin condition.
+  choice: Ambiguous
+  choice: The patient had a skin condition
+  choice: The specialist had a skin condition
+The final answer is one of the choices.
+A: Let's think step-by-step.
+
+"The patient" is the subject of the sentence, so we know that the pronoun "they" is referring to the patient.
+"They" is referred to the specialist because "they" had a rare skin condition.
+The pronoun "they" refers to the patient.
+
+The final answer is "The patient had a skin condition"
+----
+"""
+
+def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
+    global auto_cot_corrected_prompt
+    global auto_cot_cleaned_prompt
+    auto_cot_prompt = ""
+    for io_pair in io_pairs[:10]:
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompt = """%s\n"""% task_description + io_pair[0] + \
+            """\nThe final answer is one of the choices.\nA: Let's think step-by-step.\n""" 
+        auto_cot_prompt += prompt
+        cot = gpt3(prompt)
+        auto_cot_prompt += cot[0] + "\n----\n"
+        # Add the final answer with special format so evaluation is easier.
+
+    if use_corrected:
+        auto_cot_prompt = auto_cot_corrected_prompt
+    else:
+        auto_cot_prompt = auto_cot_cleaned_prompt
+
+    print(auto_cot_prompt)
+    f = open("auto_cot_demonstrations.txt","a+")
+    f.write("Formal Fallacies\n\n")
+    f.write(auto_cot_prompt)
+
+    
+    if not predict:
+        return
+
+    def predict_self_consistency(description, chunk, n=5):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
+            """%s\nThe final answer is one of the choices.\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        return gpt3(prompts)
+
+    def predict(chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=temperature, quote='---', n=1)
+        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
+            """%s\nThe final answer is one of the choices.\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        return gpt3(prompts)
+
+    if self_consistency:
+        perf_array = []
+        runs = 1
+        batch_size = 2
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = [] # List of counters
+            for x in tqdm(chunks(inputs, batch_size)):
+                answer_set = predict_self_consistency(task_description, x)
+                result_counter = [Counter() for i in range(batch_size)]
+                for chunk_no, ans_chunk in enumerate(chunks(answer_set, 5)):
+                    preds = []
+                    for x in ans_chunk:
+                        if re.search("""The final answer is """, x):
+                            preds.append(x[re.search("""The final answer is """, x).span(0)[-1]:])
+                        else:
+                            preds.append(x.strip())
+                    for enum, pred in enumerate(ans_chunk):
+                        # Only add to the counter if there is a legitimate answer
+                        if re.search("""The final answer is """, pred):
+                            result_counter[chunk_no].update([pred[re.search("""The final answer is """, x).span(0)[-1]:]])
+                answers.extend(result_counter)
+            preds = [x.most_common(1)[0][0] for x in answers]
+            perf_array.append(substring_match(labels, preds))
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+    else:
+        perf_array = []
+        runs = 5
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = []
+            for x in tqdm(chunks(inputs, 10)):
+                x = [ex.replace("\nPronoun identification:", "") for ex in x]
+                answers.extend(predict(x))
+            preds = [get_autocot_answer(x, answer_prompt="The final answer is ") for x in answers]
+            perf_array.append(substring_match(labels, preds))
+            print(perf_array)
+        print("Auto-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+
+few_shot_cot_prompt = few_shot_free_prompt
+
+def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
+
+    global few_shot_cot_prompt
+
+    if strategy == "fixed":
+        few_shot_cot_prompt = few_shot_cot_prompt
+    elif strategy == "random":
+        few_shot_cot_prompt = random_tasks(N=6)
+    elif strategy == "similar":
+        few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
+    elif strategy == "similar_auto_decomp":
+        few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
+    elif strategy == "llm_similar":
+        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
+
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return gpt3(prompts)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
+    
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        label_dict = {0:"(A)", 1:"(B)", 2:"(C)"}
+        choices = [[ans.strip() for ans in inp.replace("\nPronoun identification:", "").split("choice: ")][1:] for inp in inputs]
+        new_labels = [label_dict[choice.index(label)] for label, choice in zip(labels, choices)]
+        joint_labels = [[label, new_label] for label, new_label in zip(labels, new_labels)]
+        for x in tqdm(chunks(inputs, 10)):
+            x = [ex.replace("In the following sentences, explain the antecedent of the pronoun (which thing the pronoun refers to), or state that it is ambiguous.\n\n", "") for ex in x]
+            x = [ex.replace("\nPronoun identification:", "") for ex in x]
+            # answers.extend(predict(task_description, x))
+            answers.extend(predict_complete(task_description, x))
+        preds = [get_answer(x.strip()) for x in answers]
+        perf_array.append(substring_match_v2(joint_labels, preds))
+        print(perf_array)
+    print("Few-shot COT performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
+
+
+if __name__ == "__main__":
+    parser  = argparse.ArgumentParser()
+    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001", "davinci-codex-002-msft"], default="text-davinci-002")
+    parser.add_argument("--temperature", type=float, default="0.3")
+    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument("--num_train_examples", type=int, default=10)
+    parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
+    parser.add_argument("--self_consistency", default=False, action='store_true')
+    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
+
+    args = parser.parse_args()
+
+    print("Dataset statistics")
+    print(task_description)
+    print("Training examples:", len(train_inputs))
+    print("Dev examples:", len(inputs))
+
+    inputs = inputs[:args.num_dev_examples]
+    labels = labels[:args.num_dev_examples]
+
+
+    if args.inference_strategy == "few_shot":
+        few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=args.num_train_examples)
+        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
+        few_shot(args.num_train_examples, args.temperature, args.model_name)
+    elif args.inference_strategy == "auto_cot":
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
+    elif args.inference_strategy == "few_shot_cot":
+        few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)

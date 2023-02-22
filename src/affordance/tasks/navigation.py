@@ -37,7 +37,7 @@ labels = [l[0] for l in labels]
 train_inputs = d['train']['inputs']
 train_labels = d['train']['targets']
 
-task_description = "If you follow these instructions, do you return to the starting point?"
+task_description = "(Navigation) If you follow these instructions, do you return to the starting point? Answer True or False."
 
 io_pairs = [("Q: Turn left. Take 4 steps. Turn around. Take 4 steps.",
 "True"),
@@ -674,7 +674,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
         return prompts, gpt3(prompts)
 
     perf_array = []
-    runs = 1
+    runs = 5
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
@@ -696,11 +696,178 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
 
 
 
+few_shot_human_prompt = """Description: (Navigation) If you follow these instructions, do you return to the starting point? Answer True or False.
+Input: If you follow these instructions, do you return to the starting point?
+Always face forward. Take 5 steps backward. Take 7 steps backward. Take 8 steps forward. Take 10 steps backward.
+Q1: [generate python code] write down the arithmetic or algebra equations as python code, storing the answer as 'ans'
+#1:
+steps_forward = 8
+steps_backward = 5 + 7 + 10
+steps_right = 0
+steps_left = 0
+vertical = steps_forward - steps_backward
+horizontal = steps_right - steps_left
+print((vertical,horizontal))
+Q2: [code execute] Execute the python code snippet.
+#2: (-2,0)
+Q3: [get answer] The final displacement is (0,0). True or False?
+#3: False
+Q4: [EOQ]
+Ans: False
+----
+Description: (Navigation) If you follow these instructions, do you return to the starting point? Answer True or False.
+Input: If you follow these instructions, do you return to the starting point?
+Face forward. Turn left. Turn left. Turn right. Take 4 steps. Turn around. Take 1 step. Take 2 steps. Take 1 step.
+Q1: [generate python code] write down the arithmetic or algebra equations as python code, storing the answer as 'ans'
+#1:
+steps_forward = 0
+steps_backward = 0
+steps_right = 1 + 2 + 1
+steps_left = 4
+vertical = steps_forward - steps_backward
+horizontal = steps_right - steps_left
+print((vertical,horizontal))
+Q2: [code execute] Execute the python code snippet.
+#2: (0,0)
+Q3: [get answer] The final displacement is (0,0). True or False?
+#3: True
+Q4: [EOQ]
+Ans: True
+----
+Description: (Navigation) If you follow these instructions, do you return to the starting point? Answer True or False.
+Input: If you follow these instructions, do you return to the starting point?
+Always face forward. Take 6 steps left. Take 3 steps right. Take 4 steps right. Take 9 steps right. Take 10 steps left.
+Q1: [generate python code] write down the arithmetic or algebra equations as python code, storing the answer as 'ans'
+#1:
+steps_forward = 0
+steps_backward = 0
+steps_right = 3 + 4 + 9
+steps_left = 6 + 10
+vertical = steps_forward - steps_backward
+horizontal = steps_right - steps_left
+print((vertical,horizontal))
+Q2: [code execute] Execute the python code snippet.
+#2: (0,0)
+Q3: [get answer] The final displacement is (0,0). True or False?
+#3: True
+Q4: [EOQ]
+Ans: True
+----
+Description: (Navigation) If you follow these instructions, do you return to the starting point? Answer True or False.
+Input: If you follow these instructions, do you return to the starting point?
+Always face forward. Take 2 steps left. Take 4 steps backward. Take 7 steps left. Take 8 steps right. Take 5 steps forward. Take 1 step left.
+Q1: [generate python code] write down the arithmetic or algebra equations as python code, storing the answer as 'ans'
+#1:
+steps_forward = 5
+steps_backward = 4
+steps_right = 8
+steps_left = 2 + 7 + 1
+vertical = steps_forward - steps_backward
+horizontal = steps_right - steps_left
+print((vertical,horizontal))
+Q2: [code execute] Execute the python code and get the value of "ans"
+#2: (1,-2)
+Q3: [get answer] The final displacement is (0,0). True or False?
+#3: False
+Q4: [EOQ]
+Ans: False
+----
+Description: (Navigation) If you follow these instructions, do you return to the starting point? Answer True or False.
+Input: If you follow these instructions, do you return to the starting point?
+Always face forward. Take 6 steps. Take 5 steps. Turn right. Take 5 steps.
+Q1: [generate python code] write down the arithmetic or algebra equations as python code, storing the answer as 'ans'
+#1:
+steps_forward = 6 + 5
+steps_backward = 0
+steps_right = 5
+steps_left = 0
+vertical = steps_forward - steps_backward
+horizontal = steps_right - steps_left
+print((vertical,horizontal))
+Q2: [code execute] Execute the python code and get the value of "ans"
+#2: (11,5)
+Q3: [get answer] The final displacement is (0,0). True or False?
+#3: False
+Q4: [EOQ]
+Ans: False
+----
+Description: %s
+Input: %s
+Q1:"""
+def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+    global few_shot_cot_prompt
+
+    few_shot_cot_prompt = few_shot_human_prompt
+    interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[generate python code]"])
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    def predict_self_consistency(description, chunk, n=9):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    if self_consistency:
+        perf_array = []
+        runs = 2
+        batch_size = 2
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = [] # List of counters
+            for x in tqdm(chunks(inputs, batch_size)):
+                x = [ex.replace("repeat with logic:\n\n", "") for ex in x]
+                x = [ex.replace("\nA:", "") for ex in x]
+                x = [ex.replace("Q: ", "") for ex in x]
+                prompts, answer_set = predict_self_consistency(task_description, x)
+                result_counter = [Counter() for i in range(batch_size)]
+                for chunk_no, ans_chunk in enumerate(chunks(answer_set, 9)):
+                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
+                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    for pred in enumerate(processed_answers):
+                        # Only add to the counter if there is a legitimate answer
+                        if pred is not None:
+                            result_counter[chunk_no].update([pred])
+                answers.extend(result_counter)
+            preds = [x.most_common(1)[0][0][1] for x in answers[:len(inputs)]]
+            perf_array.append(substring_match(labels, preds))
+            print(perf_array)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+
+    else:
+        perf_array = []
+        runs = 5
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = []
+            for x in tqdm(chunks(inputs, 10)):
+                x = [ex.replace("\nA:", "") for ex in x]
+                x = [ex.replace("Q: ", "") for ex in x]
+                prompts, answer = predict(task_description, x)
+                new_answer  = interpreter.batch_visit(prompts, answer)
+                answers.extend(new_answer)
+            preds = [get_answer(ans) for ans in answers]
+            perf_array.append(substring_match(labels, preds))
+            # Report on interpreter performance
+            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+            positive_rate = sum(positive_calls)/(len(interpreter.execution_details) + 1e-6)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+        print("Rate of affordance call", positive_rate)
+
+# human_intervention(0.3, "code-davinci-002")
+
+
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()
     parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001", "davinci-codex-002-msft"], default="text-davinci-002")
     parser.add_argument("--temperature", type=float, default="0.3")
-    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "auto_cot_corrected", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
@@ -722,6 +889,8 @@ if __name__ == "__main__":
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
+    elif args.inference_strategy == "auto_cot_corrected":
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":

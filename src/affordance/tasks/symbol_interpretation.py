@@ -1015,7 +1015,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-
+few_shot_cot_prompt = few_shot_code_prompt
 
 def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
     
@@ -1034,7 +1034,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     elif strategy == "llm_similar":
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
-    interpreter = TopDownVisitorBeta()
+    interpreter = TopDownVisitorBeta(model_name=model_name)
 
     def predict(description, chunk):
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
@@ -1048,22 +1048,90 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
         answers = []
         new_labels = ["Ans: " + label for label in labels]
         for x in tqdm(chunks(inputs, 10)):
-            x = [ex.replace("\nDoes the preceding sentence contain non-contemporaneous (anachronistic) elements?", "") for ex in x]
+            x = [ex.replace("\nA:", "") for ex in x]
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
         preds = [get_answer(x) for x in answers]
-        perf_array.append(substring_match(new_labels, preds))
+        perf_array.append(substring_match(labels, preds))
         print(perf_array)
+        positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+        positive_rate = sum(positive_calls)/len(interpreter.execution_details)
     print("FS-CoT Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
+    print("Rate of affordance call", positive_rate)
 
+few_shot_human_prompt = """"""
+def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+    global few_shot_cot_prompt
 
+    few_shot_cot_prompt = few_shot_code_prompt
+    interpreter = TopDownVisitorBeta(model_name=model_name)
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    def predict_self_consistency(description, chunk, n=9):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    if self_consistency:
+        perf_array = []
+        runs = 2
+        batch_size = 2
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = [] # List of counters
+            for x in tqdm(chunks(inputs, batch_size)):
+                x = [ex.replace("\nEdited:", "") for ex in x]
+                prompts, answer_set = predict_self_consistency(task_description, x)
+                result_counter = [Counter() for i in range(batch_size)]
+                for chunk_no, ans_chunk in enumerate(chunks(answer_set, 9)):
+                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
+                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    for pred in enumerate(processed_answers):
+                        # Only add to the counter if there is a legitimate answer
+                        if pred is not None:
+                            result_counter[chunk_no].update([pred])
+                answers.extend(result_counter)
+            preds = [x.most_common(1)[0][0][1] for x in answers[:len(inputs)]]
+            perf_array.append(substring_match(labels, preds))
+            print(perf_array)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+
+    else:
+        perf_array = []
+        runs = 5
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = []
+            for x in tqdm(chunks(inputs, 10)):
+                x = [ex.replace("\nA:", "") for ex in x]
+                prompts, answer = predict(task_description, x)
+                new_answer  = interpreter.batch_visit(prompts, answer)
+                answers.extend(new_answer)
+                pdb.set_trace()
+            preds = [x.strip() for x in answers]
+            perf_array.append(substring_match(labels, preds))
+            # Report on interpreter performance
+            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+            positive_rate = sum(positive_calls)/(len(interpreter.execution_details) + 1e-6)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+        print("Rate of affordance call", positive_rate)
+
+human_intervention(0.3, "davinci-codex-002-msft")
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
+    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001", "davinci-codex-002-msft"], default="text-davinci-002")
     parser.add_argument("--temperature", type=float, default="0.3")
     parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
     parser.add_argument("--num_train_examples", type=int, default=10)

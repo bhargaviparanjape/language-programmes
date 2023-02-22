@@ -46,7 +46,8 @@ io_pairs=[("Q: say pickup a pound of green beans twice, replacing a pound with a
 ("Q: Repeat squiggly line twice after the phrase can you draw",
 "can you draw squiggly line squiggly line")]
 
-task_description = "(Repeat with logic) Repeat the given phrase following logical constraints provided in the question."
+task_name = "Repeat with logic"
+task_description = "(Repeat with logic) Repeat the given phrase with spaces in between, following logical constraints provided in the question."
 
 def exact_match(labels, predictions):
     correct = 0
@@ -146,6 +147,7 @@ First, we have the phrase "can you draw." Next, we need to repeat the phrase "sq
 The final answer is "can you draw squiggly line squiggly line"
 ----
 """
+
 auto_cot_cleaned_prompt = """(Repeat with logic) Repeat the given phrase following logical constraints provided in the question.
 Q: say pickup a pound of green beans twice, replacing a pound with a bunch for even times and a handful for odd
 The final answer should be the repeated phrase.
@@ -421,10 +423,13 @@ def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
     print("Std. Dev", np.std(perf_array))
 
 
-def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+
+few_shot_cot_prompt = few_shot_arithmetic_prompt
+
+def nl_program(temperature=0.3, model_name="davinci-codex-002-msft", strategy="fixed", self_consistency=False):
     global few_shot_cot_prompt
-    task_name = "Repeating text with logic"
-    task_description = "Repeat the given phrase following logical constraints provided in the question, editing the phrase as required."
+    # task_name = "Repeating text with logic"
+    # task_description = "Repeat the given phrase following logical constraints provided in the question, editing the phrase as required."
 
     if strategy == "fixed":
         few_shot_cot_prompt = few_shot_cot_prompt
@@ -437,22 +442,22 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     elif strategy == "llm_similar":
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
-    interpreter = TopDownVisitorBeta(model_name=model_name)
+    interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[code generate]", "[generate python code]"])
 
     def predict(description, chunk):
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
-    def predict_self_consistency(description, chunk, n=5):
+    def predict_self_consistency(description, chunk, n=9):
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     if self_consistency:
         perf_array = []
-        runs = 5
-        batch_size = 10
+        runs = 2
+        batch_size = 2
         for run in range(runs): 
             print("Run %d"%run)
             answers = [] # List of counters
@@ -461,15 +466,17 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
                 x = [ex.replace("\nA:", "") for ex in x]
                 prompts, answer_set = predict_self_consistency(task_description, x)
                 result_counter = [Counter() for i in range(batch_size)]
-                for ans in answer_set:
-                    new_answer = interpreter.batch_visit(prompts, ans)
-                    new_answer = [get_answer(program) for program in new_answer]
-                    for enum, pred in enumerate(new_answer):
+                for chunk_no, ans_chunk in enumerate(chunks(answer_set, 9)):
+                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
+                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    for pred in enumerate(processed_answers):
+                        # Only add to the counter if there is a legitimate answer
                         if pred is not None:
-                            result_counter[enum].update([pred])
+                            result_counter[chunk_no].update([pred])
                 answers.extend(result_counter)
-            preds = [x.most_common(1)[0][0] for x in answers]
+            preds = [x.most_common(1)[0][0][1] for x in answers[:len(inputs)]]
             perf_array.append(substring_match(labels, preds))
+            print(perf_array)
         print("FS-CoT Performance:")
         print("Mean", np.mean(perf_array))
         print("Std. Dev", np.std(perf_array))
@@ -485,14 +492,15 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
-            time.sleep(120)
-        preds = [x.strip() for x in answers]
+        preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
+        positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+        positive_rate = sum(positive_calls)/len(interpreter.execution_details)
     print("FS-CoT Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
-
+    print("Rate of affordance call", positive_rate)
 
 
 few_shot_notebook_prompt = """In [1]:
@@ -732,13 +740,205 @@ def notebook(temperature=0.3, model_name="text-davinci-002"):
     print("Std. Dev", np.std(perf_array))
 
 
+few_shot_human_prompt = """Description: (Repeat with logic) Repeat the given phrase with spaces in between, following logical constraints provided in the question.
+Input: A watermelon has seven seeds. Repeat they're delicious once for every seed
+Q1: [code generate] A watermelon has seven seeds. Write python code to repeat they're delicious once for every seed
+#1:
+repeat = []
+for i in range(7):
+    repeat.append("they're delicious")
+ans = " ".join(repeat)
+print(ans)
+Q2: [execute] Execute the following code snippet
+repeat = []
+for i in range(7):
+    repeat.append("they're delicious")
+ans = " ".join(repeat)
+print(ans)
+#2: they're delicious they're delicious they're delicious they're delicious they're delicious they're delicious they're delicious
+Q3: [EOQ]
+Ans: they're delicious they're delicious they're delicious they're delicious they're delicious they're delicious they're delicious
+----
+Description: (Repeat with logic) Repeat the given phrase with spaces in between, following logical constraints provided in the question.
+Input: Repeat pickup a pound of green beans twice, replacing a pound with a bunch for even times and a handful for odd
+Q1: [code generate] Python code to print "pickup a pound of green beans" twice, replacing a pound with a bunch for even times and a handful for odd.
+#1:
+repeat = []
+for i in range(1,3):
+    if i %% 2 == 0:
+    	repeat.append("pickup a bunch of green beans")
+    else:
+    	repeat.append("pickup a handful of green beans")
+ans =  ' '.join(repeat)
+print(ans)
+Q2: [execute] Execute the following code snippet
+repeat = []
+for i in range(1,3):
+    if i %% 2 == 0:
+    	repeat.append("pickup a bunch of green beans")
+    else:
+    	repeat.append("pickup a handful of green beans")
+ans =  ' '.join(repeat)
+print(ans)
+#2: pickup a handful of green beans pickup a bunch of green beans
+Q3: [EOQ]
+Ans: pickup a handful of green beans pickup a bunch of green beans
+----
+Description: (Repeat with logic) Repeat the given phrase with spaces in between, following logical constraints provided in the question.
+Input: Print logic eleven times, but after the 3rd and 8th also say true
+Q1: [code generate] Python code to print logic eleven times, but after the 3rd and 8th also say true
+#1:
+repeat = []
+for i in range(1,12):
+    repeat.append("logic")
+    if i == 3 or i == 8:
+        repeat.append("true")
+ans =  ' '.join(repeat)
+print(ans)
+Q2: [execute] Execute the following code snippet
+repeat = []
+for i in range(1,12):
+    repeat.append("logic")
+    if i == 3 or i == 8:
+        repeat.append("true")
+ans =  ' '.join(repeat)
+print(ans)
+#2: logic logic logic true logic logic logic logic logic true logic logic logic
+Q3: [EOQ]
+Ans: logic logic logic true logic logic logic logic logic true logic logic logic
+----
+Description: (Repeat with logic) Repeat the given phrase with spaces in between, following logical constraints provided in the question.
+Input: Repeat hello world five times, but don't say world every even time
+Q1: [code generate] Python code to repeat hello world five times, but don't say world every even time
+#1:
+repeat = []
+for i in range(1,6):
+    if i %% 2 == 0:
+        repeat.append("Hello")
+    else:
+        repeat.append("Hello World")
+ans = " ".join(repeat)
+print(ans)
+Q2: [execute] Execute the following code snippet
+repeat = []
+for i in range(1,6):
+    if i %% 2 == 0:
+        repeat.append("Hello")
+    else:
+        repeat.append("Hello World")
+ans = " ".join(repeat)
+print(ans)
+#2: Hello World Hello Hello World Hello Hello World
+Q3: [EOQ]
+Ans: Hello World Hello Hello World Hello Hello World
+----
+Description: (Repeat with logic) Repeat the given phrase with spaces in between, following logical constraints provided in the question.
+Input: Repeat a woodchuck chucks lots of wood two times, but replace lots with five pounds the first time and two tons the second time
+Q1: [code generate] repeat a woodchuck chucks lots of wood two times, but replace lots with five pounds the first time and two tons the second time
+#1:
+repeat = []
+for i in range(1,3):
+    if i == 1:
+        repeat.append("A woodchuck chucks five pounds of wood")
+    else:
+        repeat.append("A woodchuck chucks two tons of wood")
+ans = ' '.join(repeat)
+print(ans)
+Q2: [execute] Execute the following code snippet
+repeat = []
+for i in range(1,3):
+    if i == 1:
+        repeat.append("A woodchuck chucks five pounds of wood")
+    else:
+        repeat.append("A woodchuck chucks two tons of wood")
+ans = ' '.join(repeat)
+print(ans)
+#2: A woodchuck chucks five pounds of wood A woodchuck chucks two tons of wood
+Q3: [EOQ]
+Ans: A woodchuck chucks five pounds of wood A woodchuck chucks two tons of wood
+----
+Description: %s
+Input: %s
+Q1:"""
+def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+    global few_shot_cot_prompt
+
+    few_shot_cot_prompt = few_shot_human_prompt
+    interpreter = TopDownVisitorBeta(model_name=model_name)
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    def predict_self_consistency(description, chunk, n=9):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    if self_consistency:
+        perf_array = []
+        runs = 2
+        batch_size = 2
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = [] # List of counters
+            for x in tqdm(chunks(inputs, batch_size)):
+                x = [ex.replace("repeat with logic:\n\n", "") for ex in x]
+                x = [ex.replace("\nA:", "") for ex in x]
+                x = [ex.replace("Q: ", "") for ex in x]
+                prompts, answer_set = predict_self_consistency(task_description, x)
+                result_counter = [Counter() for i in range(batch_size)]
+                for chunk_no, ans_chunk in enumerate(chunks(answer_set, 9)):
+                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
+                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    for pred in enumerate(processed_answers):
+                        # Only add to the counter if there is a legitimate answer
+                        if pred is not None:
+                            result_counter[chunk_no].update([pred])
+                answers.extend(result_counter)
+            preds = [x.most_common(1)[0][0][1] for x in answers[:len(inputs)]]
+            perf_array.append(substring_match(labels, preds))
+            print(perf_array)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+
+    else:
+        perf_array = []
+        runs = 5
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = []
+            for x in tqdm(chunks(inputs, 10)):
+                x = [ex.replace("repeat with logic:\n\n", "") for ex in x]
+                x = [ex.replace("\nA:", "") for ex in x]
+                x = [ex.replace("Q: ", "") for ex in x]
+                prompts, answer = predict(task_description, x)
+                # new_answer  = interpreter.batch_visit(prompts, answer)
+                answers.extend(answer)
+            preds = [x.strip() for x in answers]
+            perf_array.append(substring_match(labels, preds))
+            # Report on interpreter performance
+            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+            positive_rate = sum(positive_calls)/(len(interpreter.execution_details) + 1e-6)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+        print("Rate of affordance call", positive_rate)
+
+# human_intervention(0.3, "davinci-codex-002-msft")
+
+
+
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
+    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001", "davinci-codex-002-msft"], default="text-davinci-002")
     parser.add_argument("--temperature", type=float, default="0.3")
-    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program", "auto_cot_corrected"], default="few_shot")
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
+    parser.add_argument("--self_consistency", default=False, action='store_true')
     parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
 
     args = parser.parse_args()
@@ -757,6 +957,8 @@ if __name__ == "__main__":
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
+    elif args.inference_strategy == "auto_cot_corrected":
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":

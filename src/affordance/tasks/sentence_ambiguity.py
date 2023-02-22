@@ -598,7 +598,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     elif strategy == "llm_similar":
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
-    interpreter = TopDownVisitorBeta()
+    interpreter = TopDownVisitorBeta(model_name=model_name)
 
     def predict(description, chunk):
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
@@ -616,21 +616,150 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
-            pdb.set_trace()
-            time.sleep(30)
-        preds = [x.strip() for x in answers]
-        perf_array.append(substring_match(new_labels, preds))
+        preds = [get_answer(x) for x in answers]
+        perf_array.append(substring_match(labels, preds))
         print(perf_array)
+        positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+        positive_rate = sum(positive_calls)/len(interpreter.execution_details)
     print("FS-CoT Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
+    print("Rate of affordance call", positive_rate)
+
+
+few_shot_human_prompt = """Description: Determine if the claim is true or false based on whether facts stated in the sentence have evidence. The final answer should be one of "True" or "False".
+Input: Abraham Lincoln was the tallest president to serve the United States, followed by James Madison.
+Q1: [search] How tall was Abraham Lincoln?
+#1: Abraham Lincoln was 6 feet 4 inches tall.
+Q2: [search] How tall was James Madison?
+#2: James Madison was 5 feet 4 inches tall. 5′ 4″ 5′ 4″
+Q3: [search] Who is the tallest president of US
+#3: The tallest U.S. president was Abraham Lincoln at 6 feet 4 inches (193 centimeters), while the shortest was James Madison at 5 feet 4 inches (163 centimeters).
+Q4: [subquestion] Is the claim true, given this information?
+#4: No, James Madison was actually the shortest president to serve the United States, not the second tallest. The claim is false.
+Q5: [EOQ]
+Ans: False
+----
+Description: Determine if the claim is true or false based on whether facts stated in the sentence have evidence. The final answer should be one of "True" or "False".
+Input: The North Pole is likely not located on a continent.
+Q1: [search] Where is the North Pole located?
+#1:
+The North Pole, also known as the Geographic North Pole or Terrestrial North Pole, is (subject to the caveats mentioned below) defined as the point in the 
+northern hemisphere where the Earth's axis of rotation meets its surface. The nearest land is usually said to be Kaffeklubben Island, off the northern coast of Greenland about 700 km (430 mi) away. 
+Q2: [search] Is the north pole located on a land mass?
+#2: Unlike Antarctica, there's no land at the North Pole. Instead it's all ice that's floating on top of the Arctic Ocean. 
+Q3: [subquestion] Is the claim true, given this information?
+#3: Yes. The North Pole is not one of Earth's seven main divisions of land. The claim is true.
+Q4: [EOQ]
+Ans: True
+----
+Description: Determine if the claim is true or false based on whether facts stated in the sentence have evidence. The final answer should be one of "True" or "False".
+Input: There is only one even prime number, and it occurs between 3 and 17.
+Q1: [search] Is there an even prime number?
+#1: The unique even prime number 2. All other primes are odd primes.
+Q2: [subquestion] Is 2 between 3 and 17. 
+#2: No.
+Q3: [subquestion] Is the claim true, given this information?
+#3: No. There is no even prime between 3 and 17. The claim is false.
+Q4: [EOQ]
+Ans: False
+----
+Description: Determine if the claim is true or false based on whether facts stated in the sentence have evidence. The final answer should be one of "True" or "False".
+Input: The capital of India is likely not New Delhi.
+Q1: [search] What is the capital of India?
+#1: New Delhi is the capital of India. New Delhi, national capital of India. It is situated in the north-central part of the country on the west bank of the Yamuna River, ...
+Q2: [subquestion] Is the claim true, given this information?
+#2: No. The capital of India is infact New Delhi. The claim is false.
+Q3: [EOQ]
+Ans: False
+----
+Description: Determine if the claim is true or false based on whether facts stated in the sentence have evidence. The final answer should be one of "True" or "False".
+Input: The population of Guangdong, a province in China, was more than twice that of South Korea in 2019.
+Q1: [search] What was the population of Guangdong province of Chinain in 2019?
+#1: With a population of 126.01 million (as of 2020) across a total area of about 179,800 km2 (69,400 sq mi), Guangdong is the most populous province of China and the 15th-largest by area as well as the second-most populous country subdivision in the world (after Uttar Pradesh in India).
+Q2: [search] What was the population of South Korea in 2019?
+#2: The population of South Korea was 51,225,308 in 2019. Population of South Korea (2020 and historical) ; 2019, 51,225,308, 0.10 %% ; 2018, 51,171,706, 0.15 %% ; 2017, 51,096,415, 0.22 %% ; 2016, 50,983,457, 0.32 %% ...
+Q3: [subquestion]  Is the claim true, given this information?
+#3: Yes, the population of Guangdong is more than twice that of South Korea since 126.01 million is more than 51,225,308 times 2. The claim is true.
+Q4: [EOQ]
+Ans: True
+----
+Description: %s
+Input: %s
+Q1:"""
+def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+    global few_shot_cot_prompt
+
+    few_shot_cot_prompt = few_shot_human_prompt
+    interpreter = TopDownVisitorBeta(model_name=model_name)
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    def predict_self_consistency(description, chunk, n=9):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    if self_consistency:
+        perf_array = []
+        runs = 2
+        batch_size = 2
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = [] # List of counters
+            for x in tqdm(chunks(inputs, batch_size)):
+                x = [ex.replace("\nEdited:", "") for ex in x]
+                prompts, answer_set = predict_self_consistency(task_description, x)
+                result_counter = [Counter() for i in range(batch_size)]
+                for chunk_no, ans_chunk in enumerate(chunks(answer_set, 9)):
+                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
+                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    for pred in enumerate(processed_answers):
+                        # Only add to the counter if there is a legitimate answer
+                        if pred is not None:
+                            result_counter[chunk_no].update([pred])
+                answers.extend(result_counter)
+            preds = [x.most_common(1)[0][0][1] for x in answers[:len(inputs)]]
+            perf_array.append(substring_match(labels, preds))
+            print(perf_array)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+
+    else:
+        perf_array = []
+        runs = 5
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = []
+            for x in tqdm(chunks(inputs, 10)):
+                x = [ex.replace("Claim: ", "") for ex in x]
+                x = [ex.replace("\nTrue or False?", "") for ex in x]
+                prompts, answer = predict(task_description, x)
+                new_answer  = interpreter.batch_visit(prompts, answer)
+                answers.extend(new_answer)
+            preds = [x.strip() for x in answers]
+            perf_array.append(substring_match(labels, preds))
+            # Report on interpreter performance
+            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+            positive_rate = sum(positive_calls)/(len(interpreter.execution_details) + 1e-6)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+        print("Rate of affordance call", positive_rate)
+
+# human_intervention(0.3, "text-davinci-002")
+
 
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()
     parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
     parser.add_argument("--temperature", type=float, default="0.3")
-    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program", "auto_cot_corrected"], default="few_shot")
     parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
@@ -652,6 +781,8 @@ if __name__ == "__main__":
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
+    elif args.inference_strategy == "auto_cot_corrected":
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":

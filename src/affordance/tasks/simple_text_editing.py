@@ -105,7 +105,7 @@ Turing was one of the people who worked on the first computers. He created the t
 
 def human_decomposition():
     def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, quote='---', n=1)
+        gpt3 = OpenAIModel(model="text-davinci-002", temperature=0.3,  max_length=2000, quote='---', n=1)
         prompts = ["""Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: add 'bcd' after each 'a' in the entire text
 Step1: Split the text into a list of words.
 #1: ['Turing', 'was', 'one', 'of', 'the', 'people', 'who', 'worked', 'on', 'the', 'first', 'computers.', 'He', 'created', 'the', 'theoretical', 'Turing', 'machine', 'in', '1936.', 'The', 'machine', 'was', 'imaginary,', 'but', 'it', 'included', 'the', 'idea', 'of', 'a', 'computer', 'program.']
@@ -139,7 +139,7 @@ Edited:
 Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program. SENTENCE TO BE APPENDED.
 ----
 %s
-""" % x for x in chunk]
+Step1:""" % x for x in chunk]
         return gpt3(prompts)
 
     perf_array = []
@@ -149,8 +149,8 @@ Turing was one of the people who worked on the first computers. He created the t
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
-        preds = [x.strip().split("\n") for x in answers]
-        perf_array.append(token_match(labels, preds))
+        preds = [get_autocot_answer(x, answer_prompt="Edited:\n") for x in answers]
+        perf_array.append(substring_match(labels, preds))
     print("No decomposition Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
@@ -543,42 +543,8 @@ def affordance(temperature=0.3):
     print("Std. Dev", np.std(perf_array))
 
 
-def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
-
-    task_name = "Simple Text Editing"
-    task_description = "Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is."
-
-    if strategy == "random":
-        few_shot_cot_prompt = random_tasks(N=6)
-    elif strategy == "similar":
-        few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
-    elif strategy == "similar_auto_decomp":
-        few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
-    elif strategy == "llm_similar":
-        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
-
-
-    def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=2048, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
-        return gpt3(prompts)
-
-    perf_array = []
-    runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
-        answers = []
-        for x in tqdm(chunks(inputs, 10)):
-            x = [ex.replace("\nEdited:", "") for ex in x]
-            answers.extend(predict(task_description, x))
-        preds = [x.strip() for x in answers]
-        perf_array.append(substring_match(labels, preds))
-    print("Few-shot COT performance:")
-    print("Mean", np.mean(perf_array))
-    print("Std. Dev", np.std(perf_array))
-
-
-def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+few_shot_cot_prompt = few_shot_code_prompt
+def nl_program(temperature=0.3, model_name="davinci-codex-002-msft", strategy="fixed", self_consistency=False):
     global few_shot_cot_prompt
     task_name = "Simple Text Editing"
     task_description = "Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is."
@@ -594,22 +560,22 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     elif strategy == "llm_similar":
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
-    interpreter = TopDownVisitorBeta(model_name=model_name)
+    interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[generate python code]", "[code generate]"])
 
     def predict(description, chunk):
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
-    def predict_self_consistency(description, chunk, n=5):
+    def predict_self_consistency(description, chunk, n=15):
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     if self_consistency:
         perf_array = []
-        runs = 5
-        batch_size = 10
+        runs = 2
+        batch_size = 2
         for run in range(runs): 
             print("Run %d"%run)
             answers = [] # List of counters
@@ -617,15 +583,18 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
                 x = [ex.replace("\nEdited:", "") for ex in x]
                 prompts, answer_set = predict_self_consistency(task_description, x)
                 result_counter = [Counter() for i in range(batch_size)]
-                for ans in answer_set:
-                    new_answer = interpreter.batch_visit(prompts, ans)
-                    new_answer = [get_answer(program) for program in new_answer]
-                    for enum, pred in enumerate(new_answer):
+                for chunk_no, ans_chunk in enumerate(chunks(answer_set, 15)):
+                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
+                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    for pred in enumerate(processed_answers):
+                        # Only add to the counter if there is a legitimate answer
                         if pred is not None:
-                            result_counter[enum].update([pred])
+                            result_counter[chunk_no].update([pred])
                 answers.extend(result_counter)
-            preds = [x.most_common(1)[0][0] for x in answers]
+                time.sleep(5)
+            preds = [x.most_common(1)[0][0][1] for x in answers[:len(inputs)]]
             perf_array.append(substring_match(labels, preds))
+            print(perf_array)
         print("FS-CoT Performance:")
         print("Mean", np.mean(perf_array))
         print("Std. Dev", np.std(perf_array))
@@ -643,11 +612,9 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
                 answers.extend(new_answer)
             preds = [x.strip() for x in answers]
             perf_array.append(substring_match(labels, preds))
-
             # Report on interpreter performance
             positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
             positive_rate = sum(positive_calls)/len(interpreter.execution_details)
-            
         print("FS-CoT Performance:")
         print("Mean", np.mean(perf_array))
         print("Std. Dev", np.std(perf_array))
@@ -896,13 +863,239 @@ def notebook(temperature=0.3, model_name="text-davinci-002"):
     print("Std. Dev", np.std(perf_array))
 
 
+few_shot_human_prompt = """Description: (Simple text editing) Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is.
+Input: Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: add the word 'WORD' after every other word in the 1st sentence
+Q1: [code generate] Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: add the word 'WORD' after every other word in the 1st sentence
+#1:
+text = 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.'
+
+import re
+pat = re.compile(r'([A-Z][^\.!?]*[\.!?])', re.M)
+
+ans = []
+for i, sent in enumerate(pat.findall(text)):
+    if i == 0:
+        ans.append(re.sub(r'(\w+)', r'\1 WORD', sent))
+    else:
+        ans.append(sent)
+print(" ".join(ans))
+Q2: [execute] Execute the following python code snippet.
+text = 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.'
+
+import re
+pat = re.compile(r'([A-Z][^\.!?]*[\.!?])', re.M)
+
+ans = []
+for i, sent in enumerate(pat.findall(text)):
+    if i == 0:
+        ans.append(re.sub(r'(\w+)', r'\1 WORD', sent))
+    else:
+        ans.append(sent)
+print(" ".join(ans))
+#2: Turing was WORD one of WORD the people WORD who worked WORD on the WORD first computers WORD. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.
+Q3: [EOQ]
+Ans: Turing was WORD one of WORD the people WORD who worked WORD on the WORD first computers WORD. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.
+----
+Description: (Simple text editing) Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is.
+Input: Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: swap every first and last character of each word in the 1st sentence
+Q1: [code generate] Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: swap every first and last character of each word in the 1st sentence
+#1:
+text = 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.'
+
+import re
+pat = re.compile(r'([A-Z][^\.!?]*[\.!?])', re.M)
+
+def swap_chars(word):
+    if word[-1] in [".", "!", "?"]:
+        return word[-2] + word[1:-2] + word[0] + word[-1]
+    return word[-1] + word[1:-1] + word[0]
+    
+
+ans = []
+for i, sent in enumerate(pat.findall(text)):
+    if i == 0:
+        ans.append(' '.join([swap_chars(word) for word in sent.split()]))
+    else:
+        ans.append(sent)
+
+print(' '.join(ans))
+Q2: [execute] Execute the following python code snippet.
+text = 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.'
+
+import re
+pat = re.compile(r'([A-Z][^\.!?]*[\.!?])', re.M)
+
+def swap_chars(word):
+    if word[-1] in [".", "!", "?"]:
+        return word[-2] + word[1:-2] + word[0] + word[-1]
+    return word[-1] + word[1:-1] + word[0]
+    
+
+ans = []
+for i, sent in enumerate(pat.findall(text)):
+    if i == 0:
+        ans.append(' '.join([swap_chars(word) for word in sent.split()]))
+    else:
+        ans.append(sent)
+
+print(' '.join(ans))
+#2: gurinT saw eno fo eht eeoplp ohw dorkew no eht tirsf somputerc. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.
+Q3: [EOQ]
+Ans: gurinT saw eno fo eht eeoplp ohw dorkew no eht tirsf somputerc. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.
+----
+Description: (Simple text editing) Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is.
+Input: Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: remove all space characters in the 2nd sentence
+Q1: [code generate] Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: remove all space characters in the end sentence
+#1:
+text = 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.'
+
+import re
+pat = re.compile(r'([A-Z][^\.!?]*[\.!?])', re.M)
+
+ans = []
+for i, sent in enumerate(pat.findall(text)):
+    if i == 1:
+        sent = sent.replace(" ", "")
+        ans.append(sent)
+    else:
+        ans.append(sent)
+
+print(' '.join(ans))
+Q2: [execute] Execute the following python code snippet.
+text = 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.'
+
+import re
+pat = re.compile(r'([A-Z][^\.!?]*[\.!?])', re.M)
+
+ans = []
+for i, sent in enumerate(pat.findall(text)):
+    if i == 1:
+        sent = sent.replace(" ", "")
+        ans.append(sent)
+    else:
+        ans.append(sent)
+
+print(' '.join(ans))
+#2: Turing was one of the people who worked on the first computers. HecreatedthetheoreticalTuringmachinein1936. The machine was imaginary, but it included the idea of a computer program.
+Q3: [EOQ]
+Ans: Turing was one of the people who worked on the first computers. HecreatedthetheoreticalTuringmachinein1936. The machine was imaginary, but it included the idea of a computer program.
+----
+Description: (Simple text editing) Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is.
+Input: Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: add the word 'WORD' after every other word in all the sentences (treat each sentence independently)
+Q1: [code generate] Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: add the word 'WORD' after every other word in all the sentences (treat each sentence independently)
+#1:
+text = 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.'
+
+import re
+pat = re.compile(r'([A-Z][^\.!?]*[\.!?])', re.M)
+
+ans = []
+for i, sent in enumerate(pat.findall(text)):
+    for j, word in enumerate(sent.split()):
+         ans.append(word)
+         if j %% 2:
+             ans.append('WORD')
+    ans.append('\n')
+
+print(' '.join(ans))
+Q2: [execute] Execute the following python code snippet
+text = 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.'
+
+import re
+pat = re.compile(r'([A-Z][^\.!?]*[\.!?])', re.M)
+
+ans = []
+for i, sent in enumerate(pat.findall(text)):
+    for j, word in enumerate(sent.split()):
+         ans.append(word)
+         if j %% 2:
+             ans.append('WORD')
+    ans.append('\n')
+
+print(' '.join(ans))
+#2: Turing was WORD one of WORD the people WORD who worked WORD on the WORD first computers WORD. He created WORD the theoretical WORD Turing machine WORD in 1936 WORD. The machine WORD was imaginary WORD, but it WORD included the WORD idea of WORD a computer WORD program.
+Q3: [EOQ]
+Ans: Turing was WORD one of WORD the people WORD who worked WORD on the WORD first computers WORD. He created WORD the theoretical WORD Turing machine WORD in 1936 WORD. The machine WORD was imaginary WORD, but it WORD included the WORD idea of WORD a computer WORD program.
+----
+Description: %s
+Input: %s
+Q1:"""
+def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+    global few_shot_cot_prompt
+    task_name = "Simple Text Editing"
+    task_description = "Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is."
+
+    few_shot_cot_prompt = few_shot_human_prompt
+    interpreter = TopDownVisitorBeta(model_name=model_name)
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    def predict_self_consistency(description, chunk, n=15):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    if self_consistency:
+        perf_array = []
+        runs = 2
+        batch_size = 2
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = [] # List of counters
+            for x in tqdm(chunks(inputs, batch_size)):
+                x = [ex.replace("\nEdited:", "") for ex in x]
+                prompts, answer_set = predict_self_consistency(task_description, x)
+                result_counter = [Counter() for i in range(batch_size)]
+                for chunk_no, ans_chunk in enumerate(chunks(answer_set, 15)):
+                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
+                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    for pred in processed_answers:
+                        # Only add to the counter if there is a legitimate answer
+                        if pred is not None:
+                            result_counter[chunk_no].update([pred])
+                answers.extend(result_counter)
+            preds = [x.most_common(1)[0][0] for x in answers[:len(inputs)]]
+            perf_array.append(substring_match(labels, preds))
+            print(perf_array)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+
+    else:
+        perf_array = []
+        runs = 5
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = []
+            for x in tqdm(chunks(inputs, 10)):
+                x = [ex.replace("\nEdited:", "") for ex in x]
+                prompts, answer = predict(task_description, x)
+                new_answer  = interpreter.batch_visit(prompts, answer)
+                answers.extend(new_answer)
+            preds = [x.strip() for x in answers]
+            perf_array.append(substring_match(labels, preds))
+            # Report on interpreter performance
+            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+            positive_rate = sum(positive_calls)/(len(interpreter.execution_details) + 1e-6)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+        print("Rate of affordance call", positive_rate)
+
+# human_intervention(0.3, "davinci-codex-002-msft")
+
+
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
+    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001", "davinci-codex-002-msft"], default="text-davinci-002")
     parser.add_argument("--temperature", type=float, default="0.3")
     parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
+    parser.add_argument("--self_consistency", default=False, action='store_true')
     parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
 
     args = parser.parse_args()

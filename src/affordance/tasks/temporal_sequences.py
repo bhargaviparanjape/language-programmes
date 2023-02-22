@@ -36,7 +36,7 @@ labels = [l[0] for l in labels]
 train_inputs = d['train']['inputs']
 train_labels = d['train']['targets']
 
-task_description = """Temporal sequences: Given the daily schedule of activities of a person and a final activity that they need to find time for, choose one of the four provided options when they could do the activity."""
+task_description = """(Temporal sequences) Given the daily schedule of activities of a person and a final activity that they need to find time for, choose one of the four provided options when they could do the activity."""
 
 io_pairs = [("""Today, Elizabeth went to the construction site. Between what times could they have gone?
 We know that: 
@@ -298,7 +298,7 @@ Possible times:
 # NameError: name 'x' is not defined
 # Q2: What is the final error message?
 # #2: NameError: name 'x' is not defined
-# Q3: [EOC]
+# Q3: [EOQ]
 # NameError: name 'x' is not defined
 # ----
 # Desciption:
@@ -316,7 +316,7 @@ Possible times:
 # x = set([1, 1, 2, 3])
 # print(x)
 # #2: {1, 2, 3}
-# Q3: [EOC]
+# Q3: [EOQ]
 # {1, 2, 3}
 # ----
 # Description:
@@ -366,7 +366,7 @@ Possible times:
 #     print "enter integer values only"
 # Q5: Which of the generated code snippets are most like the original one?
 # #5: prints sum of two input numbers only if they are integers otherwise raises error
-# Q6: [EOC]
+# Q6: [EOQ]
 # ----
 # Desciption: %s
 # Input: %s
@@ -899,6 +899,127 @@ def affordance(temperature=0.3, model_name = "text-davinci-002"):
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
+few_shot_cot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use arithmetic and algebra functions in one or more of your substeps.
+Description: Solve the following arithmetic problems on ratios and fractions, , writing out intermediate arithmetic calculations as needed.
+Input: Divide the number 49 into two parts, such that if the greater part is increased by 6 and the lesser part is decreased by 11, their ratio is 9 to 2. What is the greater number?
+    choice: 29 
+    choice: 30 
+    choice: 31 
+    choice: 32 
+    choice: None
+Q1: [algebra] Let the greater part be x. What is the lesser part?
+#1: 49-x
+Q2: [algebra] What is the greater part if increased by 6
+#2: x+6
+Q2: [algebra] What is the lesser part if decreased by 11
+#2: 49-x-11
+Q3: [algebra] What is the ratio of greater to lesser after the change?
+#3: (x+6):(49-x-11)
+Q4: [algebra] Write down the equation to solve for x
+#4: (x+6):(49-x-11) = 9:2
+Q5: [solve] Solve for x: (x+6):(49-x-11) = 9:2
+#5: x = 30
+Q6: [compare] Which option is closes to this answer?
+#6: 30
+Q7: [EOQ]
+30
+----
+Description: Find the date based on provided information.
+Input: Today is the last day of the first quarter of 2008. What is the date one week from today in MM/DD/YYYY?
+Q1: [search] What is the first quarter of a year?
+#1: The traditional calendar quarters that make up the year are: Dates for Q1: January 1 – March 31. Dates for Q2: April 1 – June 3. Dates for Q3: July 1 – September 30. Dates for Q4: October 1 – December 31.
+Q2: [arithmetic] What is the last day of the first quarter?
+#2: March 31
+Q3: [arithmetic] What day is today?  
+#3: March 31, 2008
+Q4: [string reformat] March 31, 2008
+#4: 03/31/2008
+Q5: [arithmetic] What is 1 week from today?
+#5: 04/07/2008
+Q6: [EOQ]
+04/07/2008
+----
+Description: Solve the following arithmetic word problems, writing out intermediate arithmetic calculations as needed.
+Input: A toy manufacturer receives an order for 400 toys. 5 workers are available to work on the order. 2 of the workers produce 6 toys an hour, and another 2 workers produce 4 toys an hour. They all work on the order during their 10-hour shift, and by the end of their shift the manufacturer still needs another 20 toys to be able to ship the order. How many toys per hour does the fifth worker produce?
+Q1: What is total number of toys that need to be made?
+#1: 400
+Q2: How many workers in total?
+#2: 5
+Q3: [arithmetic] How many toys do 2 of the workers produce?
+#3: 2 workers working for 10 hours making 6 toys per hour produce 2*10*6 = 120 toys.
+Q4: [arithmetic] How many toys do another 2 of workers produce?
+#4: 2 workers working for 10 hours making 4 toys per hour produce 2*10*4 = 80 toys.
+Q5: [arithmetic] How many toys did the last worker make?
+#5: Out of 400 toys, 120+80=200 toys were made by the first 4 workers. The 5th worker didn't finish the job, since 20 toys were still remaining to be made. So they made 400-200-20=180 toys.
+Q6: [arithmetic] How many toys per hour does the fifth worker produce if he worked for 10 hours?
+#6: The 5th worker made 180/10 = 18 toys per hour.
+Q7: [EOQ]
+18
+----
+Description: What is the result of the following arithmetic operations? Write out intermediate arithmetic calculations as needed.
+Input: add 70 to 90, subtract 20 from result, subtract result from 200.
+ choice:130
+ choice:80
+ choice:150
+ choice:100
+ choice:60
+Q1: [arithmetic] add 70 to 90
+#1: 70+90=160
+Q2: [arithmetic] subtract 20 from 160
+#2: 160-20=140
+Q3: [arithmetic] subtract result 140 from 200
+#3: 200-140=60
+Q4: [compare] Which option does the final answer match?
+#4: 60
+Q5: [EOQ]
+60
+----
+Description: Solve the following arithmetic word problems, writing out intermediate arithmetic calculations as needed.
+Input: Viola had 167 Bread. Nancy took 137 from him. Now How many Bread Viola have difference?
+Q1: [arithmetic] How much bread does Viola have if he had 167 loafs before and Nancy too 137 of them?
+#1: 167-137=30
+Q2: [EOQ]
+30
+----
+Description: Determine if following the given navigation instructions, you return to the starting point. If yes, say "Yes", otherwise, say "No"
+Input: Take 7 steps. Turn right. Take 8 steps. Turn around.
+Q1: Does this question require vector arithmetic?
+#1: Yes.
+Q2: [subquestion] Which way are you facing when you start? If unknown, assume you face forward?
+#2: Face forward
+Q3: [subquestion] What is the distance moved forward?
+#3: 7 steps
+Q4: [subquestion] What is the distance moved right?
+#4: 8 steps
+Q5: [subquestion] What is the distance moved backward?
+#5: 0 steps
+Q6: [subquestion] What is the distance moved left?
+#6: 0 steps
+Q7: [arithmetic] What is total distance moved from starting point?
+#7: 7 steps vertically, 8 steps horizontally 
+Q8: [subquestion] Is the total distance moved, both vertically and horizontally, 0? 
+#8: No
+Q9: [EOQ]
+No
+----
+Description: 
+Input: If two trains depart from a station in opposite directions, and one train is traveling 60 miles an hour while the other is traveling half that distance per hour, how far apart are they from each other after 3 hours?
+Q1: [arithmetic] What is the speed of the second train? 
+#1: 60/2=30 miles an hour
+Q2: [arithmetic] What is distance travelled by first train?
+#2: 60*3=180 miles
+Q3: [arithmetic] What is distance travelled by first train?
+#3: 30*3=90 miles
+Q4: [subquestion] Are the trains moving towards or away from each other?
+#4: Away from each other.
+Q5: [arithmetic] How far apart are the trains after 3 hours?
+#5: 180+90=270 miles
+Q6: [EOQ]
+270 miles
+----
+Desciption: %s
+Input: %s
+Q1: """
 
 def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
     global few_shot_pot_prompt
@@ -917,7 +1038,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     elif strategy == "llm_similar":
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
-    interpreter = TopDownVisitorBeta()
+    interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[generate python code]"])
 
     def predict(description, chunk):
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
@@ -925,22 +1046,20 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
         return prompts, gpt3(prompts)
 
     perf_array = []
-    runs = 1
+    runs = 5
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        new_labels = ["Ans: " + label for label in labels]
+        # new_labels = ["Ans: " + label for label in labels]
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nPossible times:", "") for ex in x]
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
-
         positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
-        positive_rate = sum(positive_calls)/len(interpreter.execution_details)
-
+        positive_rate = sum(positive_calls)/(len(interpreter.execution_details)+1e-6)
         preds = [get_answer(x) for x in answers]
-        perf_array.append(substring_match(new_labels, preds))
+        perf_array.append(substring_match(labels, preds))
         print(perf_array)
     print("FS-CoT Performance:")
     print("Mean", np.mean(perf_array))
@@ -948,12 +1067,227 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     print("Rate of affordance call", positive_rate)
 
 
+few_shot_human_prompt = """Description: (Temporal sequences) Given the daily schedule of activities of a person and a final activity that they need to find time for, choose one of the four provided options when they could do the activity.
+Input: Today, Tiffany went to the swimming pool. Between what times could they have gone?
+We know that: 
+Tiffany woke up at 6am.
+Jessica saw Tiffany waiting at the airport from 6am to 10am.
+William saw Tiffany attending class at the school from 12pm to 5pm.
+David saw Tiffany walking towards the Statue of Liberty from 5pm to 6pm.
+James saw Tiffany reading at the library from 6pm to 8pm.
+The swimming pool was closed after 8pm.
+Between what times could Tiffany have gone to the swimming pool?
+  choice: 12pm to 5pm
+  choice: 6pm to 8pm
+  choice: 10am to 12pm
+  choice: 6am to 10am
+Q1: [subquestion] Is Tiffany free 12pm to 5pm?
+#1: No, she is attending classes at the school.
+Q2: [subquestion] Is Tiffany free 6pm to 8pm?
+#2: No, she is reading at the library.
+Q3: [subquestion] Is Tiffany free 10am to 12pm?
+#3: Yes, there is no other activity in her scehdule.
+Q4: [subquestion] Is Tiffany free 6am to 10am?
+#4: No, she is waiting at the airport.
+Q5: [subquestion] Is the swimming pool open from 10am to 12pm?
+#5: Yes, the swimming pool is open from 10am to 8pm.
+Q6: [get answer] In conclusion, when should she go to the swimming pool?
+#6: Tiffany should go to the swimming pool from 10am to 12pm.
+Q7: [EOQ]
+Ans: 10am to 12pm
+----
+Description: (Temporal sequences) Given the daily schedule of activities of a person and a final activity that they need to find time for, choose one of the four provided options when they could do the activity.
+Input: Today, David went to the art studio. Between what times could they have gone?
+We know that: 
+David woke up at 8am.
+Leslie saw David working at the office from 8am to 9am.
+David saw David fixing their computer at the electronic store from 9am to 10am.
+Thomas saw David buying clothes at the mall from 10am to 11am.
+Andrew saw David taking photos near the Leaning Tower of Pisa from 11am to 12pm.
+Jennifer saw David walking towards the Statue of Liberty from 4pm to 6pm.
+The art studio was closed after 6pm.
+Between what times could David have gone to the art studio?
+  choice: 12pm to 4pm
+  choice: 9am to 10am
+  choice: 11am to 12pm
+  choice: 8am to 9am
+Q1: [subquestion] Is David free 12pm to 4pm?
+#1: Yes, there is no other activity in his scehdule.
+Q2: [subquestion] Is David free 9am to 10am?
+#2: No, he is fixing their computer at the electronic store.
+Q3: [subquestion] Is David free 11am to 12pm?
+#3: No, he is taking photos near the Leaning Tower of Pisa.
+Q4: [subquestion] Is David free 8am to 9am?
+#4: No, he is working at the office.
+Q5: [subquestion] Is the art studio open from 12pm to 4pm?
+#5: Yes, the art studio is open from 10am to 6pm.
+Q6: [get answer] In conclusion, when should David go to the art studio?
+#6: David should go to the art studio from 12pm to 4pm.
+Q7: [EOQ]
+Ans: 12pm to 4pm
+----
+Description: (Temporal sequences) Given the daily schedule of activities of a person and a final activity that they need to find time for, choose one of the four provided options when they could do the activity.
+Input: Today, William went to the soccer field. Between what times could they have gone?
+We know that: 
+William woke up at 5am.
+Mark saw William walking towards the Statue of Liberty from 5am to 6am.
+Jason saw William working at the office from 6am to 9am.
+Andrew saw William playing tennis at the tennis court from 3pm to 5pm.
+The soccer field was closed after 5pm.
+Between what times could William have gone to the soccer field?
+  choice: 5am to 6am
+  choice: 9am to 3pm
+  choice: 3pm to 5pm
+  choice: 6am to 9am
+Q1: [subquestion] Is William free 5am to 6am?
+#1: No, he is walking towards the Statue of Liberty.
+Q2: [subquestion] Is William free 9am to 3pm?
+#2: Yes, there is no other activity in his scehdule.
+Q3: [subquestion] Is William free 3pm to 5pm?
+#3: No, he is playing tennis at the tennis court.
+Q4: [subquestion] Is William free 6am to 9am?
+#4: No, he is working at the office.
+Q5: [subquestion] Is the soccer field open from 9am to 3pm?
+#5: Yes, the soccer field is open from 9am to 5pm.
+Q6: [get answer] In conclusion, when should William go to the soccer field?
+#6: William should go to the soccer field from 9am to 3pm.
+Q7: [EOQ]
+Ans: 9am to 3pm
+----
+Description: (Temporal sequences) Given the daily schedule of activities of a person and a final activity that they need to find time for, choose one of the four provided options when they could do the activity.
+Input: Today, Linda went to the market. Between what times could they have gone?
+We know that: 
+Linda woke up at 5am.
+William saw Linda watching a movie at the theater from 5am to 7am.
+Richard saw Linda walking towards the Statue of Liberty from 7am to 8am.
+Sean saw Linda waiting at the train station from 8am to 9am.
+Leslie saw Linda getting a coffee at the cafe from 9am to 1pm.
+The market was closed after 4pm.
+Between what times could Linda have gone to the market?
+  choice: 5am to 7am
+  choice: 8am to 9am
+  choice: 1pm to 4pm
+  choice: 7am to 8am
+Q1: [subquestion] Is Linda free 5am to 7am?
+#1: No, she is watching a movie at the theater.
+Q2: [subquestion] Is Linda free 8am to 9am?
+#2: No, she is waiting at the train station.
+Q3: [subquestion] Is Linda free 1pm to 4pm?
+#3: Yes, there is no other activity in her scehdule.
+Q4: [subquestion] Is Linda free 7am to 8am?
+#4: No, she is walking towards the Statue of Liberty.
+Q5: [subquestion] Is the market open from 1pm to 4pm?
+#5: Yes, the market is open from 9am to 4pm.
+Q6: [get answer] In conclusion, when should Linda go to the market?
+#6: Linda should go to the market from 1pm to 4pm.
+Q7: [EOQ]
+Ans: 1pm to 4pm
+----
+Description: (Temporal sequences) Given the daily schedule of activities of a person and a final activity that they need to find time for, choose one of the four provided options when they could do the activity.
+Input: Today, Richard went to the physics classroom. Between what times could they have gone?
+We know that: 
+Richard woke up at 7am.
+David saw Richard reading at the library from 10am to 11am.
+Samantha saw Richard sitting on a rooftop from 11am to 2pm.
+Ashley saw Richard working at the office from 2pm to 4pm.
+Hannah saw Richard fixing their computer at the electronic store from 4pm to 8pm.
+The physics classroom was closed after 8pm.
+Between what times could Richard have gone to the physics classroom?
+  choice: 2pm to 4pm
+  choice: 7am to 10am
+  choice: 11am to 2pm
+  choice: 4pm to 8pm
+Q1: [subquestion] Is Richard free 2pm to 4pm?
+#1: No, he is working at the office.
+Q2: [subquestion] Is Richard free 7am to 10am?
+#2: Yes, there is no other activity in his scehdule.
+Q3: [subquestion] Is Richard free 11am to 2pm?
+#3: No, he is sitting on a rooftop.
+Q4: [subquestion] Is Richard free 4pm to 8pm?
+#4: No, he is fixing their computer at the electronic store.
+Q5: [subquestion] Is the physics classroom open from 7am to 10am?
+#5: Yes, the physics classroom is open from 8am to 8pm.
+Q6: [get answer] In conclusion, when should Richard go to the physics classroom?
+#6: Richard should go to the physics classroom from 7am to 10am.
+Q7: [EOQ]
+Ans: 7am to 10am
+----
+Description: %s
+Input: %s
+Q1:"""
+def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+    global few_shot_cot_prompt
+
+    few_shot_cot_prompt = few_shot_human_prompt
+    interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[generate python code]"])
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    def predict_self_consistency(description, chunk, n=9):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    if self_consistency:
+        perf_array = []
+        runs = 2
+        batch_size = 2
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = [] # List of counters
+            for x in tqdm(chunks(inputs, batch_size)):
+                x = [ex.replace("repeat with logic:\n\n", "") for ex in x]
+                x = [ex.replace("\nA:", "") for ex in x]
+                x = [ex.replace("Q: ", "") for ex in x]
+                prompts, answer_set = predict_self_consistency(task_description, x)
+                result_counter = [Counter() for i in range(batch_size)]
+                for chunk_no, ans_chunk in enumerate(chunks(answer_set, 9)):
+                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
+                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    for pred in enumerate(processed_answers):
+                        # Only add to the counter if there is a legitimate answer
+                        if pred is not None:
+                            result_counter[chunk_no].update([pred])
+                answers.extend(result_counter)
+            preds = [x.most_common(1)[0][0][1] for x in answers[:len(inputs)]]
+            perf_array.append(substring_match(labels, preds))
+            print(perf_array)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+
+    else:
+        perf_array = []
+        runs = 5
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = []
+            for x in tqdm(chunks(inputs, 10)):
+                x = [ex.replace("""\nPossible times:""", "") for ex in x]
+                prompts, answer = predict(task_description, x)
+                new_answer  = interpreter.batch_visit(prompts, answer)
+                answers.extend(new_answer)
+            preds = [get_answer(x) for x in answers]
+            perf_array.append(substring_match(labels, preds))
+            # Report on interpreter performance
+            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+            positive_rate = sum(positive_calls)/(len(interpreter.execution_details) + 1e-6)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+        print("Rate of affordance call", positive_rate)
+
+# human_intervention(0.3, "text-davinci-002")
+
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
+    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001", "davinci-codex-002-msft"], default="text-davinci-002")
     parser.add_argument("--temperature", type=float, default="0.3")
-    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "auto_cot_corrected", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
@@ -975,6 +1309,8 @@ if __name__ == "__main__":
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
+    elif args.inference_strategy == "auto_cot_corrected":
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":

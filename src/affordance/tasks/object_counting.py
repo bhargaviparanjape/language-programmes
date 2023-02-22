@@ -569,7 +569,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
 
 
 
-def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+def nl_program(temperature=0.3, model_name="davinci-codex-002-msft", strategy="fixed", self_consistency=False):
     
     global few_shot_cot_prompt
     task_name = "Object counting"

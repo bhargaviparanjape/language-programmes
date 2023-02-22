@@ -182,7 +182,7 @@ A: Let's think step-by-step.
 There are 27 eggs. We want to know how many hens this is equivalent to, given that each hen lays 9 eggs per day.
 27 eggs divided by 9 eggs per hen per day is 3 hen-days.
 
-The final answer is 3 hen-days.
+The best answer choice is 3 hen-days.
 ----
 Select the option that best replaces '()' in each text input given the chocies presented, by solving the arithmetic word problem in the text input. Solving the problem will require reasoning about units of measurement.
 Q: A newsstand sells 5 newspapers every 2 weeks. It will sell () newspapers in 60 weeks.
@@ -199,7 +199,7 @@ That means it sells 10 newspapers every 4 weeks, or 2.5 newspapers every week.
 If we multiply 2.5 by 60, we get 150. 
 Therefore, the newsstand will sell 150 newspapers in 60 weeks.
 
-The final answer is 150.
+The best answer choice is 150.
 ----
 Select the option that best replaces '()' in each text input given the chocies presented, by solving the arithmetic word problem in the text input. Solving the problem will require reasoning about units of measurement.
 Q: A bell rings one time every 5 hours. It will ring 20 times in () hours.
@@ -213,7 +213,7 @@ A: Let's think step-by-step.
 
 One bell rings every 5 hours. To ring 20 times, it will take 5 times 20 that is 100 hours.
 
-The final answer is 100.
+The best answer choice is 100.
 ----
 Select the option that best replaces '()' in each text input given the chocies presented, by solving the arithmetic word problem in the text input. Solving the problem will require reasoning about units of measurement.
 Q: It takes 2 sausages and 5 buns to make 40 hotdogs. It will take 10 sausages and () buns to make 200 hotdogs.
@@ -229,7 +229,7 @@ There are two sausages and five buns to make 40 hotdogs. In other words, we can 
 We can use this ratio to figure out how many sausages we need for 200 hotdogs, which is 5 times as many hotdogs.
 So, for 200 hot dogs, we need 5 times 5 i.e. 25 buns.
 
-The final answer is 25.
+The best answer choice is 25.
 ----
 Select the option that best replaces '()' in each text input given the chocies presented, by solving the arithmetic word problem in the text input. Solving the problem will require reasoning about units of measurement.
 Q: It takes 3 men and 3 hours to cut down 9 trees. It will take 2 men and 4 hours to cut down () trees.
@@ -245,7 +245,7 @@ A: Let's think step-by-step.
 That means 1 man and 1 hour can cut down 1 trees.
 2 men and 4 hours can cut down (8) trees.
 
-The final answer is 8.
+The best answer choice is 8.
 ----
 """
 
@@ -838,7 +838,7 @@ def affordance(temperature=0.3, model_name = "text-davinci-002"):
 
 
 
-def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+def nl_program(temperature=0.3, model_name="davinci-codex-002-msft", strategy="fixed", self_consistency=False):
     
     global few_shot_cot_prompt
     task_name = "Unit interpretation"
@@ -889,12 +889,180 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     print("Rate of affordance call", positive_rate)
 
 
+few_shot_human_prompt = """Description: Select the option that best replaces '()' in each text input given the chocies presented, by solving the arithmetic word problem in the text input. Solving the problem will require reasoning about units of measurement.
+Input: Please select the option that best replaces '()' in each text input given the chocies presented.
+
+Q: 45 pies per minute divided by 9 cookers is ().
+  choice: 405 pies
+  choice: 5 pies per minute
+  choice: 5 pies per cooker
+  choice: 405 cookers
+  choice: 5 pies per cooker per minute
+Q1: [generate python code] write down the arithmetic or algebra equations as python code, storing the answer as 'ans'
+#1:
+pies_per_minute = 45
+cookers = 9
+ans = pies_per_minute / cookers
+print(ans)
+Q2: [code execute] Execute the python code and get the value of "ans"
+#2: 5.0
+Q3: [add unit] Add the right unit to the answer
+#3: pies per minute / cooker is pies per cooker per minute. So its 5 pies per cooker per minute
+Q4: [compare] Which of the options is most similar to the answer? 
+#4: 5 pies per cooker per minute
+Q5: [EOQ]
+Ans: 5 pies per cooker per minute
+----
+Description: Select the option that best replaces '()' in each text input given the chocies presented, by solving the arithmetic word problem in the text input. Solving the problem will require reasoning about units of measurement.
+Input: Please select the option that best replaces '()' in each text input given the chocies presented.
+
+Q: 30 dollars per programmer per day times 3 programmers is ().
+  choice: 10 programmers
+  choice: 90 programmers per day
+  choice: 90 dollars
+  choice: 10 dollars per day
+  choice: 90 dollars per day
+A:
+Q1: [generate python code] write down the arithmetic or algebra equations as python code, storing the answer as 'ans'
+#1:
+dollars_per_programmer_per_day = 30
+num_programmers = 3
+ans = dollars_per_programmer_per_day * num_programmers
+print(ans)
+Q2: [code execute] Execute the python code in #1 and get the value of "ans"
+#2: 90
+Q3: [add unit] Add the right unit to the answer
+#3: dollars per programmer per day times programmer is dollars per day. So its 90 dollars per day
+Q4: [compare] Which of the options is most similar to the answer? 
+#4: 90 dollars per day
+Q5: [EOQ]
+Ans: 90 dollars per day
+----
+Description: Select the option that best replaces '()' in each text input given the chocies presented, by solving the arithmetic word problem in the text input. Solving the problem will require reasoning about units of measurement.
+Input: Please select the option that best replaces '()' in each text input given the chocies presented.
+
+Q: 2 programmers per day multiplied by 54 dollars per programmer is ().
+  choice: 108 dollars per programmer per day
+  choice: 27 dollars per programmer
+  choice: 108 programmers per dollar
+  choice: 108 dollars per day
+  choice: 27 dollars per day
+A:
+Q1: [generate python code] write down the arithmetic or algebra equations as python code, storing the answer as 'ans'
+#1:
+num_programmers = 2
+cost_per_programmer = 54
+cost_per_programmer_per_day = num_programmers * cost_per_programmer
+ans = cost_per_programmer_per_day
+print(ans)
+Q2: [code execute] Execute the python code and get the value of "ans"
+#2: 108
+Q3: [add unit] Add the right unit to the answer
+#3: programmers per day multiplied by dollars per programmer is dollars per day. So its 108 dollars per programmer per day
+Q4: [compare] Which of the options is most similar to the answer? 
+#4: 108 dollars per programmer per day
+Q5: [EOQ]
+Ans: dollars per programmer per day
+----
+Description: Select the option that best replaces '()' in each text input given the chocies presented, by solving the arithmetic word problem in the text input. Solving the problem will require reasoning about units of measurement.
+Input: Please select the option that best replaces '()' in each text input given the chocies presented.
+
+Q: A reporter speaks 6 words every 12 minutes. They will speak () words in 60 minutes.
+  choice: 120
+  choice: 5
+  choice: 30
+  choice: 10
+  choice: 360
+A:
+Q1: [generate python code] write down the arithmetic or algebra equations as python code, storing the answer as 'ans'
+#1:
+words_per_minute = 6 / 12
+words_in_60_minutes = words_per_minute * 60
+ans = words_in_60_minutes
+print(ans)
+Q2: [code execute] Execute the python code in #1 and get the value of "ans"
+#2: 30.0
+Q3: [add unit] Add the right unit to the answer
+#3: 30 words
+Q4: [compare] Which of the options is most similar to the answer? 
+#4: 30
+Q5: [EOQ]
+Ans: 30
+----
+Description: %s
+Input: %s
+Q1:"""
+def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+    global few_shot_cot_prompt
+
+    few_shot_cot_prompt = few_shot_human_prompt
+    interpreter = TopDownVisitorBeta(model_name=model_name)
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    def predict_self_consistency(description, chunk, n=9):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    if self_consistency:
+        perf_array = []
+        runs = 2
+        batch_size = 2
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = [] # List of counters
+            for x in tqdm(chunks(inputs, batch_size)):
+                x = [ex.replace("\nEdited:", "") for ex in x]
+                prompts, answer_set = predict_self_consistency(task_description, x)
+                result_counter = [Counter() for i in range(batch_size)]
+                for chunk_no, ans_chunk in enumerate(chunks(answer_set, 9)):
+                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
+                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    for pred in enumerate(processed_answers):
+                        # Only add to the counter if there is a legitimate answer
+                        if pred is not None:
+                            result_counter[chunk_no].update([pred])
+                answers.extend(result_counter)
+            preds = [x.most_common(1)[0][0][1] for x in answers[:len(inputs)]]
+            perf_array.append(substring_match(labels, preds))
+            print(perf_array)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+
+    else:
+        perf_array = []
+        runs = 5
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = []
+            for x in tqdm(chunks(inputs, 10)):
+                x = [ex.replace("\nA:", "") for ex in x]
+                prompts, answer = predict(task_description, x)
+                new_answer  = interpreter.batch_visit(prompts, answer)
+                answers.extend(new_answer)
+            preds = [get_answer(x) for x in answers]
+            perf_array.append(substring_match(labels, preds))
+            # Report on interpreter performance
+            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+            positive_rate = sum(positive_calls)/(len(interpreter.execution_details) + 1e-6)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+        print("Rate of affordance call", positive_rate)
+
+# human_intervention(0.3, "davinci-codex-002-msft")
+
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()
     parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
     parser.add_argument("--temperature", type=float, default="0.3")
-    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "auto_cot_corrected", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
@@ -916,6 +1084,8 @@ if __name__ == "__main__":
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
+    elif args.inference_strategy == "auto_cot_corrected":
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":

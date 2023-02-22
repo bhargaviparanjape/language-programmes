@@ -605,58 +605,191 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
 
     if self_consistency:
         perf_array = []
-        runs = 5
-        batch_size = 10
+        runs = 2
+        batch_size = 2
         for run in range(runs): 
             print("Run %d"%run)
             answers = [] # List of counters
             for x in tqdm(chunks(inputs, batch_size)):
-                # x = [ex.replace("Identify the physics formula that would be most useful for finding the answer to each of the following word problems.", "") for ex in x]
                 x = [ex.replace("\n\n\nQ: ", "") for ex in x]
                 x = [ex.replace("\nA:", "") for ex in x]
                 prompts, answer_set = predict_self_consistency(task_description, x)
                 result_counter = [Counter() for i in range(batch_size)]
-                for ans in answer_set:
-                    new_answer = interpreter.batch_visit(prompts, ans)
-                    new_answer = [get_answer(program) for program in new_answer]
-                    for enum, pred in enumerate(new_answer):
+                for chunk_no, ans_chunk in enumerate(chunks(answer_set, 9)):
+                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
+                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    for pred in processed_answers:
+                        # Only add to the counter if there is a legitimate answer
                         if pred is not None:
-                            result_counter[enum].update([pred])
+                            result_counter[chunk_no].update([pred])
                 answers.extend(result_counter)
-            preds = [x.most_common(1)[0][0] for x in answers]
+            preds = [x.most_common(1)[0][0] for x in answers[:len(inputs)]]
             perf_array.append(substring_match(labels, preds))
+            print(perf_array)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+    else:
+        perf_array = []
+        runs = 5
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = []
+            for x in tqdm(chunks(inputs, 10)):
+                # x = [ex.replace("Identify the physics formula that would be most useful for finding the answer to each of the following word problems.", "") for ex in x]
+                x = [ex.replace("\n\n\nQ: ", "") for ex in x]
+                x = [ex.replace("\nA:", "") for ex in x]
+                prompts, answer = predict(task_description, x) 
+                new_answer  = interpreter.batch_visit(prompts, answer)
+                answers.extend(new_answer)
+            preds = [get_answer(x.strip()) for x in answers]
+            perf_array.append(substring_match(labels, preds))
+            print(perf_array)
+            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+            positive_rate = sum(positive_calls)/len(interpreter.execution_details)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+        print("Rate of affordance call", positive_rate)
+
+
+
+few_shot_human_prompt = """Input: Identify the physics formula that would be most useful for finding the answer to each of the following word problems.A proton is located at A, 1.0 m from a fixed +2.2 *10^−6 C charge. If the proton started from rest at A, what would be its speed at B?
+  choice: U_E = k * q * q / r
+  choice: v = λ * f
+  choice: K = 1/2 * m * v ^ 2
+  choice: dv = a * dt
+Q1: [subquestion] What is the question asking for?
+#1: The question is asking for the speed of the proton at point B.
+Q2: [search] What is the equation for speed?
+#2: The equation for speed is v = d/t. The formula for Speed is given as [Speed = Distance ÷ Time]. To calculate the distance, the speed formula can be molded as [Distance = Speed × Time].
+Q3: [subquestion] What information is given in the question?
+#3: The information given in the question is the location of the proton, the charge, and that the proton started from rest.
+Q4: [subquestion] What formula would be most useful for finding the answer to the question?
+#4: The formula that would be most useful for finding the answer to the question is the speed formula, v = d/t.
+Q5: [EOQ]
+Ans: The answer is the speed formula, v = d/t. [U_E = k * q * q / r]
+----
+Input: Identify the physics formula that would be most useful for finding the answer to each of the following word problems.A particle of mass 6.8 * 10 ^ −5 g and charge 58 mC moves in a region of space where the electric field is uniform and is 7.2 N/C in the x direction and zero in the y and z direction. If the initial velocity of the particle is given by vy = 1.7 * 10 ^ 6 m/s, vx = vz = 0, what is the speed of the particle at 0.7 s?
+  choice: F = m * a
+  choice: v = dx / dt
+  choice: E = q / (ε * A * cos(θ))
+  choice: a = dv / dt
+Q1: [subquestion] Can this question be answered step-by-step?
+#1: Yes.
+Q2: [search] A particle of mass 6.8 * 10 ^ −5 g and charge 58 mC moves in a region of space where the electric field is uniform and is 7.2 N/C in the x direction and zero in the y and z direction. If the initial velocity of the particle is given by vy = 1.7 * 10 ^ 6 m/s, vx = vz = 0, what is the speed of the particle at 0.7 s?
+#2:
+The speed of the particle is given by the equation:
+v = sqrt(vx^2 + vy^2 + vz^2)
+#3: [compare] Which option is the answer in #2 most similar to?
+#3: v = dx / dt A particle of mass 6.6 × 10−5 g and charge 22 mC moves in a region of space where the electric field is uniform and is 5.6 N/C in the x direction and zero ...
+Q4: [EOQ]
+Ans: v = dx / dt F = m*a
+----
+Input: Identify the physics formula that would be most useful for finding the answer to each of the following word problems.An electron passing between parallel plates 0.025 m apart experiences an upward electrostatic force of 5.1*10^−16 N. What is the potential difference between the plates?
+  choice: E = q / (ε * A * cos(θ))
+  choice: v = λ * f
+  choice: E = q * σ / (2 * ε)
+  choice: V = k * q / r
+Q1: [subquestion] Can this question be answered step-by-step?
+#1: Yes.
+Q2: [search] An electron passing between parallel plates 0.025 m apart experiences an upward electrostatic force of 5.1*10^−16 N. What is the potential difference between the plates?
+#2: E = q * σ / (2 * ε) An electron passing between parallel plates 0. 025 m apart experiences an upward electrostatic force of 5.1 x10-16 N. electron.
+Q3: [compare] Which option is the answer in #3 most similar to?
+#3: E = q * σ / (2 * ε)
+Q4: [EOQ]
+Ans: E = q * σ / (2 * ε)
+----
+Input: Identify the physics formula that would be most useful for finding the answer to each of the following word problems.The 1205 kg physics dragster is traveling at 35 km/h east when it hits the gas and accelerates at 12.5 m/s^2 for 3.25 s. What is its change in momentum during this time?
+  choice: W = F * d
+  choice: v = λ * f
+  choice: U_E = k * q * q / r
+  choice: v = v_0 + a * t
+Q1: [subquestion] What is the question asking for?
+#1: The change in momentum during this time.
+Q2: [search] What is the formula for change in momentum?
+#2:
+The change in momentum of an object is equal to the net force applied to the object, multiplied by the time interval over which the force is applied.
+Δp = Fnet * Δt Δ p = F net Δ t . F net Δ t F net Δ t is known as impulse and this equation is known as the impulse-momentum theorem. From the equation, we see that the impulse equals the average net external force multiplied by the time this force acts. It is equal to the change in momentum.
+Q3: [compare] Which option is the answer in #2 most similar to?
+#3:
+Δp = Fnet * Δt
+Q4: [EOQ]
+Ans:
+Δp = Fnet * Δt
+----
+"""
+def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+    global few_shot_cot_prompt
+
+    few_shot_cot_prompt = few_shot_retrieval_prompt
+    interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[generate python code]"])
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    def predict_self_consistency(description, chunk, n=9):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    if self_consistency:
+        perf_array = []
+        runs = 2
+        batch_size = 2
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = [] # List of counters
+            for x in tqdm(chunks(inputs, batch_size)):
+                x = [ex.replace("\nEdited:", "") for ex in x]
+                prompts, answer_set = predict_self_consistency(task_description, x)
+                result_counter = [Counter() for i in range(batch_size)]
+                for chunk_no, ans_chunk in enumerate(chunks(answer_set, 9)):
+                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
+                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    for pred in enumerate(processed_answers):
+                        # Only add to the counter if there is a legitimate answer
+                        if pred is not None:
+                            result_counter[chunk_no].update([pred])
+                answers.extend(result_counter)
+            preds = [x.most_common(1)[0][0][1] for x in answers[:len(inputs)]]
+            perf_array.append(substring_match(labels, preds))
+            print(perf_array)
         print("FS-CoT Performance:")
         print("Mean", np.mean(perf_array))
         print("Std. Dev", np.std(perf_array))
 
-    perf_array = []
-    runs = 1
-    for run in range(runs): 
-        print("Run %d"%run)
-        answers = []
-        for x in tqdm(chunks(inputs, 10)):
-            # x = [ex.replace("Identify the physics formula that would be most useful for finding the answer to each of the following word problems.", "") for ex in x]
-            x = [ex.replace("\n\n\nQ: ", "") for ex in x]
-            x = [ex.replace("\nA:", "") for ex in x]
-            prompts, answer = predict(task_description, x) 
-            new_answer  = interpreter.batch_visit(prompts, answer)
-            answers.extend(new_answer)
-        preds = [get_answer(x.strip()) for x in answers]
-        perf_array.append(substring_match(labels, preds))
-        print(perf_array)
-        positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
-        positive_rate = sum(positive_calls)/len(interpreter.execution_details)
-    print("FS-CoT Performance:")
-    print("Mean", np.mean(perf_array))
-    print("Std. Dev", np.std(perf_array))
-    print("Rate of affordance call", positive_rate)
+    else:
+        perf_array = []
+        runs = 1
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = []
+            for x in tqdm(chunks(inputs, 10)):
+                x = [ex.replace("\n\n\nQ: ", "") for ex in x]
+                x = [ex.replace("\nA:", "") for ex in x]
+                prompts, answer = predict(task_description, x)
+                new_answer  = interpreter.batch_visit(prompts, answer)
+                answers.extend(new_answer)
+            preds = [get_answer(x) for x in answers]
+            perf_array.append(substring_match(labels, preds))
+            # Report on interpreter performance
+            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+            positive_rate = sum(positive_calls)/(len(interpreter.execution_details) + 1e-6)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+        print("Rate of affordance call", positive_rate)
 
+# human_intervention(0.3, "davinci-codex-002-msft")
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()
     parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
     parser.add_argument("--temperature", type=float, default="0.3")
-    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "auto_cot_corrected", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
@@ -678,6 +811,8 @@ if __name__ == "__main__":
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
+    elif args.inference_strategy == "auto_cot_corrected":
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":

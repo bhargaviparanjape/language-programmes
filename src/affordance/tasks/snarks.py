@@ -24,7 +24,8 @@ tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 from prompt_library import (llm_similar_tasks, random_tasks,
                             similar_auto_breakdowns, similar_tasks,
                             few_shot_retrieval_prompt, few_shot_code_prompt, 
-                            few_shot_arithmetic_prompt, few_shot_string_prompt)
+                            few_shot_arithmetic_prompt, few_shot_string_prompt,
+                            few_shot_free_prompt)
 from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 
 d = datasets.load_dataset('bigbench', 'snarks', cache_dir=cache_dir)
@@ -38,7 +39,8 @@ print(len(inputs))
 train_inputs = d['train']['inputs']
 train_labels = d['train']['targets']
 
-task_description = """Sarcasm is defined as language designed to attack, provide comic relief, or both using indirect semantic dependencies, exaggerations or subtext. Given two statements, identify which one is sarcastic."""
+task_name = "Snarks"
+task_description = """(Snarks) Sarcasm is defined as language designed to attack, provide comic relief, or both using indirect semantic dependencies, exaggerations or subtext. Given two statements, identify which one is sarcastic."""
 
 io_pairs = [
     ('Q: Which statement is sarcastic? (a) Soggy fries covered in bacon grease sounds unhealthy. (b) Soggy fries covered in bacon grease sounds delicious.\nA:', '(b)'),
@@ -84,7 +86,63 @@ def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
 
 
 auto_cot_corrected_prompt = """"""
-auto_cot_cleaned_prompt = """"""
+auto_cot_cleaned_prompt = """(Snarks) Sarcasm is defined as language designed to attack, provide comic relief, or both using indirect semantic dependencies, exaggerations or subtext. Given two statements, identify which one is sarcastic.
+Q: Which statement is sarcastic? (a) Soggy fries covered in bacon grease sounds unhealthy. (b) Soggy fries covered in bacon grease sounds delicious.
+A:
+A: Let's think step-by-step.
+
+The first step is to identify the irony in each statement. In statement (a), the irony is that soggy fries covered in bacon grease are actually unhealthy. In statement (b), the irony is that soggy fries covered in bacon grease are actually delicious.
+The second step is to identify the intent of the speaker. In statement (a), the speaker's intent is to attack the unhealthy food. In statement (b), the speaker's intent is to provide comic relief.
+Based on these two steps, we can conclude that statement (a) is sarcastic.
+
+The final answer is (a)
+----
+(Snarks) Sarcasm is defined as language designed to attack, provide comic relief, or both using indirect semantic dependencies, exaggerations or subtext. Given two statements, identify which one is sarcastic.
+Q: Which statement is sarcastic? (a) The real tragedy here is that someone is buying a fraud (b) The real tragedy here is that someone is buying a Mustang
+A:
+A: Let's think step-by-step.
+
+Q: Which statement is sarcastic? 
+
+(a) The real tragedy here is that someone is buying a fraud 
+(b) The real tragedy here is that someone is buying a Mustang
+A: (a) The real tragedy here is that someone is buying a fraud.
+
+The final answer is (a)
+----
+(Snarks) Sarcasm is defined as language designed to attack, provide comic relief, or both using indirect semantic dependencies, exaggerations or subtext. Given two statements, identify which one is sarcastic.
+Q: Which statement is sarcastic? (a) Remind me, how do you print a legal-sized piece of paper? (b) Remind me, how do you print a blank piece of paper?
+A:
+A: Let's think step-by-step.
+
+First, you'll need to gather your materials. You'll need a printer, a legal-sized piece of paper, and some ink.
+Next, you'll need to connect your printer to your computer. Once it's plugged in, you should be able to find it in the list of devices on your computer.
+Now you're ready to print! Go to the document or file that you want to print, and select the option to print. In the print settings, make sure that you select "legal" as the paper size. Then, click "print."
+Your legal-sized document should now be printing!
+
+The final answer is (a)
+----
+(Snarks) Sarcasm is defined as language designed to attack, provide comic relief, or both using indirect semantic dependencies, exaggerations or subtext. Given two statements, identify which one is sarcastic.
+Q: Which statement is sarcastic? (a) But only 2 economists said it will help the economy... (b) But only 10000 economists said it will help the economy... 
+A:
+A: Let's think step-by-step.
+
+The second statement is sarcastic because it's using indirect language to attack the idea that 10,000 economists said it will help the economy. The first statement is not sarcastic.
+
+The final answer is (b)
+----
+(Snarks) Sarcasm is defined as language designed to attack, provide comic relief, or both using indirect semantic dependencies, exaggerations or subtext. Given two statements, identify which one is sarcastic.
+Q: Which statement is sarcastic? (a) how dare you use violence!!! (b) how dare you use logic!!!
+A:
+A: Let's think step-by-step.
+
+The first step is to identify the definition of sarcasm. Sarcasm is defined as language designed to attack, provide comic relief, or both using indirect semantic dependencies, exaggerations or subtext.
+The next step is to identify the two statements. Statement (a) is "how dare you use violence!!!", and statement (b) is "how dare you use logic!!!".
+The final step is to determine which statement is sarcastic. In this case, it is statement (b) that is sarcastic.
+
+The final answer is (b)
+----
+"""
 
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
     global auto_cot_corrected_prompt
@@ -98,12 +156,14 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
         # Add the final answer with special format so evaluation is easier.
-    
+
+
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
     else:
         auto_cot_prompt = auto_cot_cleaned_prompt
-    
+
+        
     print(auto_cot_prompt)
     f = open("auto_cot_demonstrations.txt","a+")
     f.write("Snarks\n\n")
@@ -170,6 +230,56 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         print("Mean", np.mean(perf_array))
         print("Std. Dev", np.std(perf_array))
 
+few_shot_cot_prompt = few_shot_free_prompt
+
+def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
+
+    global few_shot_cot_prompt
+
+    if strategy == "fixed":
+        few_shot_cot_prompt = few_shot_cot_prompt
+    elif strategy == "random":
+        few_shot_cot_prompt = random_tasks(N=6)
+    elif strategy == "similar":
+        few_shot_cot_prompt = similar_tasks(task_description, io_pairs, N=6)
+    elif strategy == "similar_auto_decomp":
+        few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
+    elif strategy == "llm_similar":
+        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
+
+    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return gpt3(prompts)
+
+    def predict_complete(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        outputs = gpt3(prompts)
+        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        return completed_outputs
+    
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 10)):
+            x = [ex.replace("\nA:", "") for ex in x]
+            # answers.extend(predict(task_description, x))
+            answers.extend(predict_complete(task_description, x))
+            pdb.set_trace()
+        preds = [get_answer(x.strip()) for x in answers]
+        perf_array.append(substring_match(labels, preds))
+        print(perf_array)
+    print("Few-shot COT performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
+
+
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()
     parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
@@ -195,8 +305,6 @@ if __name__ == "__main__":
         print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
-        auto_cot(args.temperature, args.model_name, predict=False, use_corrected=False, self_consistency=False)
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
-    elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)

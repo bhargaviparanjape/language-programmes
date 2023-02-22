@@ -108,9 +108,9 @@ def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
 
 
 # Human Decomp 
-def anachronism():
+def anachronism(model_name):
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=200, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name, temperature=0.3,  max_length=200, quote='---', n=1)
         prompts = ['''Given a sentence and the time periods of each entity in it, tell me if it could have happened or not.
     Sentence: I wrote about shakespeare
     Entities and dates:
@@ -130,14 +130,15 @@ def anachronism():
         return gpt3(prompts)
 
     perf_array = []
-    runs = 2
+    runs = 5
+    new_labels = [int(x.endswith('Yes')) for x in labels]
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
         preds = np.array([int(x.endswith('No')) for x in answers])
-        perf_array.append((preds == labels).mean())
+        perf_array.append((preds == new_labels).mean())
     print("Human Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
@@ -507,6 +508,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     print("Std. Dev", np.std(perf_array))
     print("Rate of affordance call", positive_rate)
 
+anachronism("text-davinci-002")
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()

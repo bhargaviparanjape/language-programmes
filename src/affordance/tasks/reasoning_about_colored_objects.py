@@ -36,7 +36,7 @@ labels = [l[0] for l in labels]
 train_inputs = d['train']['inputs']
 train_labels = d['train']['targets']
 
-task_description = "Given a collection of colored objects in the text input, answer the question at the end of the input. THis question requires logical, spatial and arithmetic reasoning about colored objects."
+task_description = "Given a collection of colored objects in the text input, answer the question at the end of the input. This question requires logical, spatial and arithmetic reasoning about colored objects."
 
 io_pairs = [("""Q: On the desk, you see a bunch of things arranged in a row: a red textbook, a yellow pencil, a brown puzzle, a silver stress ball, a teal bracelet, and a pink booklet. What is the color of the thing directly to the right of the teal thing?""",
 "pink"),
@@ -318,129 +318,129 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
     print("Std. Dev", np.std(perf_array))
 
 
-# few_shot_cot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use arithmetic and algebra functions in one or more of your substeps.
-# Description: Solve the following arithmetic problems on ratios and fractions, , writing out intermediate arithmetic calculations as needed.
-# Input: Divide the number 49 into two parts, such that if the greater part is increased by 6 and the lesser part is decreased by 11, their ratio is 9 to 2. What is the greater number?
-#     choice: 29 
-#     choice: 30 
-#     choice: 31 
-#     choice: 32 
-#     choice: None
-# Q1: [algebra] Let the greater part be x. What is the lesser part?
-# #1: 49-x
-# Q2: [algebra] What is the greater part if increased by 6
-# #2: x+6
-# Q2: [algebra] What is the lesser part if decreased by 11
-# #2: 49-x-11
-# Q3: [algebra] What is the ratio of greater to lesser after the change?
-# #3: (x+6):(49-x-11)
-# Q4: [algebra] Write down the equation to solve for x
-# #4: (x+6):(49-x-11) = 9:2
-# Q5: [solve] Solve for x: (x+6):(49-x-11) = 9:2
-# #5: x = 30
-# Q6: [compare] Which option is closes to this answer?
-# #6: 30
-# Q7: [EOC]
-# 30
-# ----
-# Description: Find the date based on provided information.
-# Input: Today is the last day of the first quarter of 2008. What is the date one week from today in MM/DD/YYYY?
-# Q1: [search] What is the first quarter of a year?
-# #1: The traditional calendar quarters that make up the year are: Dates for Q1: January 1 – March 31. Dates for Q2: April 1 – June 3. Dates for Q3: July 1 – September 30. Dates for Q4: October 1 – December 31.
-# Q2: [arithmetic] What is the last day of the first quarter?
-# #2: March 31
-# Q3: [arithmetic] What day is today?  
-# #3: March 31, 2008
-# Q4: [string reformat] March 31, 2008
-# #4: 03/31/2008
-# Q5: [arithmetic] What is 1 week from today?
-# #5: 04/07/2008
-# Q6: [EOC]
-# 04/07/2008
-# ----
-# Description: Solve the following arithmetic word problems, writing out intermediate arithmetic calculations as needed.
-# Input: A toy manufacturer receives an order for 400 toys. 5 workers are available to work on the order. 2 of the workers produce 6 toys an hour, and another 2 workers produce 4 toys an hour. They all work on the order during their 10-hour shift, and by the end of their shift the manufacturer still needs another 20 toys to be able to ship the order. How many toys per hour does the fifth worker produce?
-# Q1: What is total number of toys that need to be made?
-# #1: 400
-# Q2: How many workers in total?
-# #2: 5
-# Q3: [arithmetic] How many toys do 2 of the workers produce?
-# #3: 2 workers working for 10 hours making 6 toys per hour produce 2*10*6 = 120 toys.
-# Q4: [arithmetic] How many toys do another 2 of workers produce?
-# #4: 2 workers working for 10 hours making 4 toys per hour produce 2*10*4 = 80 toys.
-# Q5: [arithmetic] How many toys did the last worker make?
-# #5: Out of 400 toys, 120+80=200 toys were made by the first 4 workers. The 5th worker didn't finish the job, since 20 toys were still remaining to be made. So they made 400-200-20=180 toys.
-# Q6: [arithmetic] How many toys per hour does the fifth worker produce if he worked for 10 hours?
-# #6: The 5th worker made 180/10 = 18 toys per hour.
-# Q7: [EOC]
-# 18
-# ----
-# Description: What is the result of the following arithmetic operations? Write out intermediate arithmetic calculations as needed.
-# Input: add 70 to 90, subtract 20 from result, subtract result from 200.
-#  choice:130
-#  choice:80
-#  choice:150
-#  choice:100
-#  choice:60
-# Q1: [arithmetic] add 70 to 90
-# #1: 70+90=160
-# Q2: [arithmetic] subtract 20 from 160
-# #2: 160-20=140
-# Q3: [arithmetic] subtract result 140 from 200
-# #3: 200-140=60
-# Q4: [compare] Which option does the final answer match?
-# #4: 60
-# Q5: [EOC]
-# 60
-# ----
-# Description: Solve the following arithmetic word problems, writing out intermediate arithmetic calculations as needed.
-# Input: Viola had 167 Bread. Nancy took 137 from him. Now How many Bread Viola have difference?
-# Q1: [arithmetic] How much bread does Viola have if he had 167 loafs before and Nancy too 137 of them?
-# #1: 167-137=30
-# Q2: [EOC]
-# 30
-# ----
-# Description: Determine if following the given navigation instructions, you return to the starting point. If yes, say "Yes", otherwise, say "No"
-# Input: Take 7 steps. Turn right. Take 8 steps. Turn around.
-# Q1: Does this question require vector arithmetic?
-# #1: Yes.
-# Q2: [subquestion] Which way are you facing when you start? If unknown, assume you face forward?
-# #2: Face forward
-# Q3: [subquestion] What is the distance moved forward?
-# #3: 7 steps
-# Q4: [subquestion] What is the distance moved right?
-# #4: 8 steps
-# Q5: [subquestion] What is the distance moved backward?
-# #5: 0 steps
-# Q6: [subquestion] What is the distance moved left?
-# #6: 0 steps
-# Q7: [arithmetic] What is total distance moved from starting point?
-# #7: 7 steps vertically, 8 steps horizontally 
-# Q8: [subquestion] Is the total distance moved, both vertically and horizontally, 0? 
-# #8: No
-# Q9: [EOC]
-# No
-# ----
-# Description: 
-# Input: If two trains depart from a station in opposite directions, and one train is traveling 60 miles an hour while the other is traveling half that distance per hour, how far apart are they from each other after 3 hours?
-# Q1: [arithmetic] What is the speed of the second train? 
-# #1: 60/2=30 miles an hour
-# Q2: [arithmetic] What is distance travelled by first train?
-# #2: 60*3=180 miles
-# Q3: [arithmetic] What is distance travelled by first train?
-# #3: 30*3=90 miles
-# Q4: [subquestion] Are the trains moving towards or away from each other?
-# #4: Away from each other.
-# Q5: [arithmetic] How far apart are the trains after 3 hours?
-# #5: 180+90=270 miles
-# Q6: [EOC]
-# 270 miles
-# ----
-# Desciption: %s
-# Input: %s
-# Q1: """
+few_shot_cot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use arithmetic and algebra functions in one or more of your substeps.
+Description: Solve the following arithmetic problems on ratios and fractions, , writing out intermediate arithmetic calculations as needed.
+Input: Divide the number 49 into two parts, such that if the greater part is increased by 6 and the lesser part is decreased by 11, their ratio is 9 to 2. What is the greater number?
+    choice: 29 
+    choice: 30 
+    choice: 31 
+    choice: 32 
+    choice: None
+Q1: [algebra] Let the greater part be x. What is the lesser part?
+#1: 49-x
+Q2: [algebra] What is the greater part if increased by 6
+#2: x+6
+Q2: [algebra] What is the lesser part if decreased by 11
+#2: 49-x-11
+Q3: [algebra] What is the ratio of greater to lesser after the change?
+#3: (x+6):(49-x-11)
+Q4: [algebra] Write down the equation to solve for x
+#4: (x+6):(49-x-11) = 9:2
+Q5: [solve] Solve for x: (x+6):(49-x-11) = 9:2
+#5: x = 30
+Q6: [compare] Which option is closes to this answer?
+#6: 30
+Q7: [EOC]
+30
+----
+Description: Find the date based on provided information.
+Input: Today is the last day of the first quarter of 2008. What is the date one week from today in MM/DD/YYYY?
+Q1: [search] What is the first quarter of a year?
+#1: The traditional calendar quarters that make up the year are: Dates for Q1: January 1 – March 31. Dates for Q2: April 1 – June 3. Dates for Q3: July 1 – September 30. Dates for Q4: October 1 – December 31.
+Q2: [arithmetic] What is the last day of the first quarter?
+#2: March 31
+Q3: [arithmetic] What day is today?  
+#3: March 31, 2008
+Q4: [string reformat] March 31, 2008
+#4: 03/31/2008
+Q5: [arithmetic] What is 1 week from today?
+#5: 04/07/2008
+Q6: [EOC]
+04/07/2008
+----
+Description: Solve the following arithmetic word problems, writing out intermediate arithmetic calculations as needed.
+Input: A toy manufacturer receives an order for 400 toys. 5 workers are available to work on the order. 2 of the workers produce 6 toys an hour, and another 2 workers produce 4 toys an hour. They all work on the order during their 10-hour shift, and by the end of their shift the manufacturer still needs another 20 toys to be able to ship the order. How many toys per hour does the fifth worker produce?
+Q1: What is total number of toys that need to be made?
+#1: 400
+Q2: How many workers in total?
+#2: 5
+Q3: [arithmetic] How many toys do 2 of the workers produce?
+#3: 2 workers working for 10 hours making 6 toys per hour produce 2*10*6 = 120 toys.
+Q4: [arithmetic] How many toys do another 2 of workers produce?
+#4: 2 workers working for 10 hours making 4 toys per hour produce 2*10*4 = 80 toys.
+Q5: [arithmetic] How many toys did the last worker make?
+#5: Out of 400 toys, 120+80=200 toys were made by the first 4 workers. The 5th worker didn't finish the job, since 20 toys were still remaining to be made. So they made 400-200-20=180 toys.
+Q6: [arithmetic] How many toys per hour does the fifth worker produce if he worked for 10 hours?
+#6: The 5th worker made 180/10 = 18 toys per hour.
+Q7: [EOC]
+18
+----
+Description: What is the result of the following arithmetic operations? Write out intermediate arithmetic calculations as needed.
+Input: add 70 to 90, subtract 20 from result, subtract result from 200.
+ choice:130
+ choice:80
+ choice:150
+ choice:100
+ choice:60
+Q1: [arithmetic] add 70 to 90
+#1: 70+90=160
+Q2: [arithmetic] subtract 20 from 160
+#2: 160-20=140
+Q3: [arithmetic] subtract result 140 from 200
+#3: 200-140=60
+Q4: [compare] Which option does the final answer match?
+#4: 60
+Q5: [EOC]
+60
+----
+Description: Solve the following arithmetic word problems, writing out intermediate arithmetic calculations as needed.
+Input: Viola had 167 Bread. Nancy took 137 from him. Now How many Bread Viola have difference?
+Q1: [arithmetic] How much bread does Viola have if he had 167 loafs before and Nancy too 137 of them?
+#1: 167-137=30
+Q2: [EOC]
+30
+----
+Description: Determine if following the given navigation instructions, you return to the starting point. If yes, say "Yes", otherwise, say "No"
+Input: Take 7 steps. Turn right. Take 8 steps. Turn around.
+Q1: Does this question require vector arithmetic?
+#1: Yes.
+Q2: [subquestion] Which way are you facing when you start? If unknown, assume you face forward?
+#2: Face forward
+Q3: [subquestion] What is the distance moved forward?
+#3: 7 steps
+Q4: [subquestion] What is the distance moved right?
+#4: 8 steps
+Q5: [subquestion] What is the distance moved backward?
+#5: 0 steps
+Q6: [subquestion] What is the distance moved left?
+#6: 0 steps
+Q7: [arithmetic] What is total distance moved from starting point?
+#7: 7 steps vertically, 8 steps horizontally 
+Q8: [subquestion] Is the total distance moved, both vertically and horizontally, 0? 
+#8: No
+Q9: [EOC]
+No
+----
+Description: 
+Input: If two trains depart from a station in opposite directions, and one train is traveling 60 miles an hour while the other is traveling half that distance per hour, how far apart are they from each other after 3 hours?
+Q1: [arithmetic] What is the speed of the second train? 
+#1: 60/2=30 miles an hour
+Q2: [arithmetic] What is distance travelled by first train?
+#2: 60*3=180 miles
+Q3: [arithmetic] What is distance travelled by first train?
+#3: 30*3=90 miles
+Q4: [subquestion] Are the trains moving towards or away from each other?
+#4: Away from each other.
+Q5: [arithmetic] How far apart are the trains after 3 hours?
+#5: 180+90=270 miles
+Q6: [EOC]
+270 miles
+----
+Desciption: %s
+Input: %s
+Q1: """
 
-few_shot_cot_prompt = few_shot_arithmetic_prompt
+# few_shot_cot_prompt = few_shot_arithmetic_prompt
 
 def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
     global few_shot_cot_prompt
@@ -665,8 +665,8 @@ def affordance(temperature=0.3, model_name = "text-davinci-002"):
 def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
     
     global few_shot_cot_prompt
-    task_name = "Anachronisms"
-    task_description = "(Anachronisms) An anachronism is a mistake in chronology, or a person, thing, or event that is out of its proper time. Figure out whether a sentence contains anachronisms or not, and answer 'yes' or 'no'."
+    task_name = "Reasoning about colored objects"
+    task_description = "(Reasoning about colored objects) Given a collection of colored objects in the text input, answer the question at the end of the input. THis question requires logical, spatial and arithmetic reasoning about colored objects."
 
     if strategy == "fixed":
         few_shot_cot_prompt = few_shot_cot_prompt
@@ -697,24 +697,197 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
-            time.sleep(10)
+            # time.sleep(10)
         preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
         positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
-        positive_rate = sum(positive_calls)/len(interpreter.execution_details)
+        positive_rate = sum(positive_calls)/(len(interpreter.execution_details)+1e-6)
     print("FS-CoT Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
     print("Rate of affordance call", positive_rate)
 
+few_shot_human_prompt = """Descripton: Given a collection of colored objects in the text input, answer the question at the end of the input. This question requires logical, spatial and arithmetic reasoning about colored objects. Write code, store the final result as a variable named 'ans' and print it.
+Input: On the floor, you see a teal pencil, a yellow textbook, a pink bracelet, a green necklace, a burgundy crayon, and a fuchsia scrunchiephone charger. Is the necklace black?
+Q1: [generate python code] Write python code to answer is the necklace black.
+#1:
+color_object = [("teal", "pencil"), ("yellow", "textbook"), ("pink", "bracelet"), ("green", "necklace"), ("burgundy", "crayon"), ("fuchsia", "scrunchiephone charger")]
+
+for color, object in color_object:
+    if object == "necklace":
+        if color == "black":
+            ans = "Yes"
+        else:
+            ans = "No"
+
+print(ans)
+Q2: [code execute] Execute the python snippet.
+color_object = [("teal", "pencil"), ("yellow", "textbook"), ("pink", "bracelet"), ("green", "necklace"), ("burgundy", "crayon"), ("fuchsia", "scrunchiephone charger")]
+
+for color, object in color_object:
+    if object == "necklace":
+        if color == "black":
+            ans = "Yes"
+        else:
+            ans = "No"
+
+print(ans)
+#2: Yes
+Q3: [EOQ]
+Ans: Yes
+----
+Descripton: Given a collection of colored objects in the text input, answer the question at the end of the input. This question requires logical, spatial and arithmetic reasoning about colored objects. Write code, store the final result as a variable named 'ans' and print it.
+Input: On the nightstand, there are two silver textbooks and three silver cat toys. If I remove all the cat toys from the nightstand, how many fuchsia things remain on it?
+Q1: [generate python code] Write python code to find if I remove all the cat toys from the nightstand, how many fuchsia things remain on it
+#1:
+color_object_count = [("silver", "textbooks", 2), ("silver", "cat toys", 3)]
+removed_objects = [("silver", "cat toys", 3)]
+
+def remove_objects(color_object_count, removed_objects):
+    color_object_count_updated = []
+    for color, object, count in color_object_count:
+        for color2, object2, count2 in removed_objects:
+            if color == color2 and object == object2:
+                count -= count2
+        color_object_count_updated.append([color, object, count])
+    return color_object_count_updated
+
+color_object_count = remove_objects(color_object_count, removed_objects)
+
+ans = 0
+for color, object, count in color_object_count:
+    if color == "fuchsia":
+        ans = count
+print(ans)
+Q2: [code execute] Execute the python snippet.
+color_object_count = [("silver", "textbooks", 2), ("silver", "cat toys", 3)]
+removed_objects = [("silver", "cat toys", 3)]
+
+def remove_objects(color_object_count, removed_objects):
+    color_object_count_updated = []
+    for color, object, count in color_object_count:
+        for color2, object2, count2 in removed_objects:
+            if color == color2 and object == object2:
+                count -= count2
+        color_object_count_updated.append([color, object, count])
+    return color_object_count_updated
+
+color_object_count = remove_objects(color_object_count, removed_objects)
+
+ans = 0
+for color, object, count in color_object_count:
+    if color == "fuchsia":
+        ans = count
+print(ans)
+#2: 0
+Q3: [EOQ]
+Ans: 0
+----
+Descripton: Given a collection of colored objects in the text input, answer the question at the end of the input. This question requires logical, spatial and arithmetic reasoning about colored objects. Write code, store the final result as a variable named 'ans' and print it.
+Input: On the floor, you see a black plate, a fuchsia pair of sunglasses, and a burgundy booklet. What color is the pair of sunglasses?
+Q1: [generate python code] Write python code to find color is the pair of sunglasses.
+#1:
+color_object = [("black", "plate") , ("fuchsia", "sunglasses"), ("burgundy", "booklet")]
+
+for color, object in color_object:
+    if object == "sunglasses":
+        ans = color
+print(ans)
+Q2: [code execute] Execute the python snippet.
+color_object = [("black", "plate") , ("fuchsia", "sunglasses"), ("burgundy", "booklet")]
+
+for color, object in color_object:
+    if object == "sunglasses":
+        ans = color
+print(ans)
+#2: fuchsia
+Q3: [EOQ]
+Ans: fuchsia
+----
+Descripton: %s
+Input: %s
+Q1:"""
+
+# ----
+# Descripton: Given a collection of colored objects in the text input, answer the question at the end of the input. This question requires logical, spatial and arithmetic reasoning about colored objects. Write code, store the final result as a variable named 'ans' and print it.
+# Input: On the table, you see a bunch of items arranged in a row: a teal necklace, a purple fidget spinner, and a silver mug. How many non-teal items do you see to the left of the fidget spinner?
+# Q1: [generate python code]
+# Q2: [code execute]
+# Q3: [EOQ]
+# Ans:
+def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+    global few_shot_cot_prompt
+
+    few_shot_cot_prompt = few_shot_human_prompt
+    interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[generate python code]"])
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    def predict_self_consistency(description, chunk, n=9):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    if self_consistency:
+        perf_array = []
+        runs = 2
+        batch_size = 2
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = [] # List of counters
+            for x in tqdm(chunks(inputs, batch_size)):
+                x = [ex.replace("\nEdited:", "") for ex in x]
+                prompts, answer_set = predict_self_consistency(task_description, x)
+                result_counter = [Counter() for i in range(batch_size)]
+                for chunk_no, ans_chunk in enumerate(chunks(answer_set, 9)):
+                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
+                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    for pred in enumerate(processed_answers):
+                        # Only add to the counter if there is a legitimate answer
+                        if pred is not None:
+                            result_counter[chunk_no].update([pred])
+                answers.extend(result_counter)
+            preds = [x.most_common(1)[0][0][1] for x in answers[:len(inputs)]]
+            perf_array.append(substring_match(labels, preds))
+            print(perf_array)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+
+    else:
+        perf_array = []
+        runs = 5
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = []
+            for x in tqdm(chunks(inputs, 10)):
+                x = [ex.replace("\nA:", "") for ex in x]
+                x = [ex.replace("Q: ", "") for ex in x]
+                prompts, answer = predict(task_description, x)
+                new_answer  = interpreter.batch_visit(prompts, answer)
+                answers.extend(new_answer)
+            preds = [x.strip() for x in answers]
+            perf_array.append(substring_match(labels, preds))
+            # Report on interpreter performance
+            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+            positive_rate = sum(positive_calls)/(len(interpreter.execution_details) + 1e-6)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+        print("Rate of affordance call", positive_rate)
+
+# human_intervention(0.3, "davinci-codex-002-msft")
 
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()
     parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001", "davinci-codex-002-msft"], default="text-davinci-002")
     parser.add_argument("--temperature", type=float, default="0.3")
-    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "auto_cot_corrected", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
@@ -736,6 +909,8 @@ if __name__ == "__main__":
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
+    elif args.inference_strategy == "auto_cot_corrected":
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
