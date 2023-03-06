@@ -247,51 +247,47 @@ Q: The word mnoeg is a scrambled version of the English word
 The final answer is the unscrambled English word.
 A: Let's think step-by-step.
 
-1. The word "mnoeg" is a scrambled version of the English word "menge."
-2. The word "menge" is a German word meaning "crowd" or "group."
-3. Therefore, the unscrambled English word is "crowd."
+1) The first letter is 'm', so the word might start with 'm'.
+2) The second letter is 'n', so the word might start with 'n'.
+3) The third letter is 'o', so the word might start with 'o' or have 'no','mo' in it. It could also have a 'nom'.
+4) The fourth letter is 'e', so the word might have 'me', 'ne', 'em', 'en' in it. It could also have 'ome' or 'one' in it.
+5) The last letter is 'g'. We could combine 'g' with 'nom' and 'ome' to give us 'gnome'.
 
-The final answer is 'crowd'
+The final answer is 'gnome'.
 ----
 Unscramble the given word into a word in English.
 Q: The word agknkbo is a scrambled version of the English word
 The final answer is the unscrambled English word.
 A: Let's think step-by-step.
 
-1. The word agknkbo is a scrambled version of the English word
-2. The final answer is the unscrambled English word.
-3. The word agknkbo is a scrambled version of the English word "book".
+1) The first letter is 'a', so the word might start with 'a'.
+2) The second letter is 'g', so the word might have 'ag' or 'ga' in it.
+3) The third letter is 'k', so the word might  have 'ak'. 'ka' in it.
+4) The fourth letter is 'n', so the word might be 'gan', 'nag' in it.
+5) The fifth letter is another 'k', maybe it has 'kang'.
+6) The sixth letter is 'b', so the word might have 'bang'.
+7) The seventh letter is 'o', so the word might contain 'ok' or 'kok'. 
+Combining 'bang' and 'kok' gives us 'bangkok'.
 
-The final answer is 'book'
+The final answer is 'bangkok'
 ----
 Unscramble the given word into a word in English.
 Q: The word mgiaein is a scrambled version of the English word
 The final answer is the unscrambled English word.
 A: Let's think step-by-step.
 
-1. The first letter is 'm'. This could be the beginning of the word 'magic' or 'magician'.
-2. The second letter is 'g'. This could be the beginning of the word 'game' or 'garden'.
-3. The third letter is 'i'. This could be the beginning of the word 'is' or 'in'.
-4. The fourth letter is 'a'. This could be the beginning of the word 'am' or 'are'.
-5. The fifth letter is 'e'. This could be the beginning of the word 'eat' or 'end'.
-6. The sixth letter is 'n'. This could be the beginning of the word 'now' or 'not'.
-7. The seventh letter is 'i'. This could be the beginning of the word 'it' or 'is'.
-The word is 'magician'.
+1. The first letter is 'm'. The word could start with 'm'.
+2. The second letter is 'g'. The word could being with 'g'.
+3. The third letter is 'i'. The word could be have a 'gi', 'mi', 'im' or 'ig'
+4. The fourth letter is 'a'. The word could have 'aim', 'gam' or 'ima' in it.
+5. The fifth letter is 'e'. The word could have 'game' or 'image' in it.
+6. The sixth letter is 'n'. The word could have 'imagen' in it.
+7. The seventh letter is 'i'. The word is definitely 'imagine'.
 
-The final answer is 'magician'
-----
-Unscramble the given word into a word in English.
-Q: The word eacperlfi is a scrambled version of the English word
-The final answer is the unscrambled English word.
-A: Let's think step-by-step.
-
-1. The word eacperlfi is a scrambled version of the English word
-2. The final answer is the unscrambled English word.
-3. Therefore, the word eacperlfi is a scrambled version of the English word "fireplace."
-
-The final answer is 'fireplace'
+The final answer is 'imagine'
 ----
 """
+
 auto_cot_cleaned_prompt = """Unscramble the given word into a word in English.
 Q: The word untamqu is a scrambled version of the English word
 The final answer is the unscrambled English word.
@@ -487,7 +483,7 @@ Q2: [string permutation] What are the possible permutations of the letters in #1
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-# affordance()
+affordance()
 # auto_cot()
 
 def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
@@ -835,7 +831,7 @@ if __name__ == "__main__":
     parser  = argparse.ArgumentParser()
     parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
     parser.add_argument("--temperature", type=float, default="0.3")
-    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "auto_cot_corrected", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
@@ -857,6 +853,8 @@ if __name__ == "__main__":
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
+    elif args.inference_strategy == "auto_cot_corrected":
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":

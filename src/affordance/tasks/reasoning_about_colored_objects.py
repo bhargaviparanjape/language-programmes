@@ -78,50 +78,13 @@ def token_match(labels, predictions):
     return (1.0*correct)/count
 
 def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
+    few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=N)
+    print(len(tokenizer(few_shot_prompt)['input_ids']))
+
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  temperature=temperature, max_length=200, quote='---', n=1)
-        prompts = ["""Q: On the desk, you see a bunch of things arranged in a row: a red textbook, a yellow pencil, a brown puzzle, a silver stress ball, a teal bracelet, and a pink booklet. What is the color of the thing directly to the right of the teal thing?
-A:
-pink
-----
-Q: On the floor, you see a pink jug, a magenta mug, and a teal scrunchiephone charger. Is the jug pink?
-A:
-yes
-----
-Q: On the table, you see the following items arranged in a row: a purple pair of sunglasses, a black teddy bear, an orange fidget spinner, a teal scrunchiephone charger, a mauve paperclip, and a fuchsia sheet of paper. What is the color of the right-most item?
-A:
-fuchsia
-----
-Q: On the desk, I see two brown mugs, one brown sheet of paper, one fuchsia sheet of paper, one brown pen, three grey mugs, one grey pen, two fuchsia paperclips, one fuchsia mug, and three grey sheets of paper. If I remove all the grey items from the desk, how many mugs remain on it?
-A:
-3
-----
-Q: On the table, there is a red dog leash, a brown teddy bear, a silver pencil, and a teal paperclip. What color is the paperclip?
-A:
-teal
-----
-Q: On the floor, you see a bunch of items arranged in a row: a teal keychain, a turquoise scrunchiephone charger, a blue bracelet, and a pink fidget spinner. What is the color of the item furthest from the bracelet?
-A:
-teal
-----
-Q: On the floor, there is one yellow textbook, one teal necklace, three yellow puzzles, three teal puzzles, two purple textbooks, two magenta pencils, one yellow pencil, two yellow necklaces, and one purple necklace. If I remove all the magenta things from the floor, how many puzzles remain on it?
-A:
-6
-----
-Q: On the desk, you see several things arranged in a row: a blue textbook, a red jug, a green mug, and a grey keychain. What is the color of the thing directly to the left of the grey thing?
-A:
-green
-----
-Q: On the nightstand, you see one gold plate, three orange puzzles, three turquoise pairs of sunglasses, three orange pairs of sunglasses, two gold pairs of sunglasses, two gold dog leashes, two orange dog leashes, one silver dog leash, one turquoise dog leash, one orange plate, and one turquoise plate. If I remove all the plates from the nightstand, how many gold objects remain on it?
-A:
-4
-----
-Q: On the floor, there are two silver dog leashes, two red dog leashes, one silver bracelet, one silver keychain, three pink dog leashes, three red bracelets, one red cat toy, and one red keychain. If I remove all the silver objects from the floor, how many cat toys remain on it?
-A:
-1
-----
-%s
-""" % x for x in chunk]
+        gpt3 = OpenAIModel(model=model_name,  max_length=200, temperature=temperature, quote='---', n=1)
+        prompts = ["""%s\
+%s""" % (few_shot_prompt, x) for x in chunk]
         return gpt3(prompts)
 
     perf_array = []
@@ -136,6 +99,44 @@ A:
         perf_array.append(exact_match(labels, preds))
         print(perf_array)
     print("No decomposition Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
+
+def human_decomp(temperature=0.3):
+    def predict(chunk):
+        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts = ["""Q: On the nightstand, there is a red pencil, a purple mug, a burgundy keychain, a fuchsia teddy bear, a black plate, and a blue stress ball. What color is the stress ball?
+A: Let's think step by step.
+According to this question, the color of the stress ball is blue. So the answer is blue.
+----
+Q: On the table, you see a bunch of objects arranged in a row: a purple paperclip, a pink stress ball, a brown keychain, a green scrunchiephone charger, a mauve fidget spinner, and a burgundy pen. What is the color of the object directly to the right of the stress ball?
+A: Let's think step by step.
+According to this question, the objects are arranged in a row, from left to right, as follows: (1) a purple paperclip, (2) a pink stress ball, (3) a brown keychain, (4) a green scrunchiephone charger, (5) a mauve fidget spinner, (6) a burgundy pen.
+The stress ball is the second object on the list, namely (2). The object that is to the right of the stress ball corresponds to (3), which is a brown keychain.
+The color of the keychain is brown. So the answer is brown.
+
+Q: On the nightstand, you see the following items arranged in a row: a teal plate, a burgundy keychain, a yellow scrunchiephone charger, an orange mug, a pink notebook, and a grey cup. How many non-orange items do you see to the left of the teal item?
+A: Let's think step by step.
+According to this question, the objects are arranged in a row, from left to right, as follows: (1) a teal plate, (2) a burgundy keychain, (3) a yellow scrunchiephone charger, (4) an orange mug, (5) a pink notebook, (6) a grey cup.
+The teal plate is the first item, namely (1). There is no item to the left of the teal item.
+The number of non-orange items to the left of the teal item is zero. So the answer is zero.
+----
+%s
+A: Let's think step by step.""" % x for x in chunk]
+        return gpt3(prompts)
+
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 10)):
+            x = [ex.replace("\nA:", "") for ex in x]
+            answers.extend(predict(x))
+        preds = [get_autocot_answer(x, answer_prompt="So the answer is ") for x in answers]
+        perf_array.append(substring_match(labels, preds))
+    print("Human decomposition Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
@@ -677,7 +678,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     elif strategy == "similar_auto_decomp":
         few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
     elif strategy == "llm_similar":
-        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
+        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=3)
 
     interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[generate python code]"])
 
@@ -686,27 +687,58 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
-    perf_array = []
-    runs = 1
-    for run in range(runs): 
-        print("Run %d"%run)
-        answers = []
-        new_labels = ["Ans: " + label for label in labels]
-        for x in tqdm(chunks(inputs, 10)):
-            x = [ex.replace("\nA:", "") for ex in x]
-            prompts, answer = predict(task_description, x)
-            new_answer  = interpreter.batch_visit(prompts, answer)
-            answers.extend(new_answer)
-            # time.sleep(10)
-        preds = [get_answer(x) for x in answers]
-        perf_array.append(substring_match(labels, preds))
-        print(perf_array)
-        positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
-        positive_rate = sum(positive_calls)/(len(interpreter.execution_details)+1e-6)
-    print("FS-CoT Performance:")
-    print("Mean", np.mean(perf_array))
-    print("Std. Dev", np.std(perf_array))
-    print("Rate of affordance call", positive_rate)
+    def predict_self_consistency(description, chunk, n=15):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    if self_consistency:
+        perf_array = []
+        runs = 2
+        batch_size = 2
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = [] # List of counters
+            for x in tqdm(chunks(inputs, batch_size)):
+                x = [ex.replace("\nA:", "") for ex in x]
+                prompts, answer_set = predict_self_consistency(task_description, x)
+                result_counter = [Counter() for i in range(batch_size)]
+                for chunk_no, ans_chunk in enumerate(chunks(answer_set, 15)):
+                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
+                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    for pred in processed_answers:
+                        # Only add to the counter if there is a legitimate answer
+                        if pred is not None:
+                            result_counter[chunk_no].update([pred])
+                answers.extend(result_counter)
+            preds = [x.most_common(1)[0][0] for x in answers[:len(inputs)]]
+            perf_array.append(substring_match(labels, preds))
+            print(perf_array)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+    else:
+        perf_array = []
+        runs = 1
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = []
+            new_labels = ["Ans: " + label for label in labels]
+            for x in tqdm(chunks(inputs, 10)):
+                x = [ex.replace("\nA:", "") for ex in x]
+                prompts, answer = predict(task_description, x)
+                new_answer  = interpreter.batch_visit(prompts, answer)
+                answers.extend(new_answer)
+                # time.sleep(10)
+            preds = [get_answer(x) for x in answers]
+            perf_array.append(substring_match(labels, preds))
+            print(perf_array)
+            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+            positive_rate = sum(positive_calls)/(len(interpreter.execution_details)+1e-6)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+        print("Rate of affordance call", positive_rate)
 
 few_shot_human_prompt = """Descripton: Given a collection of colored objects in the text input, answer the question at the end of the input. This question requires logical, spatial and arithmetic reasoning about colored objects. Write code, store the final result as a variable named 'ans' and print it.
 Input: On the floor, you see a teal pencil, a yellow textbook, a pink bracelet, a green necklace, a burgundy crayon, and a fuchsia scrunchiephone charger. Is the necklace black?
@@ -881,7 +913,7 @@ def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy=
         print("Rate of affordance call", positive_rate)
 
 # human_intervention(0.3, "davinci-codex-002-msft")
-
+# human_decomp()
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()

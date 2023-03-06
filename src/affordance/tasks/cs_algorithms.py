@@ -668,7 +668,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
 
 
 
-def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+def nl_program(temperature=0.3, model_name="davinci-codex-002-msft", strategy="fixed", self_consistency=False):
     global few_shot_cot_prompt
     task_name = "CS Algorithms"
     task_description = "(CS Algorithms) Solve the following simple programming tasks using Python, executing the code to get the final answer."
@@ -691,27 +691,58 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
-    perf_array = []
-    runs = 1
-    for run in range(runs): 
-        print("Run %d"%run)
-        answers = []
-        label_dict = {"Invalid": "False", "Valid":"True"}
-        new_labels = [label_dict.get(label, label) for label in labels]
-        combined_labels = [[label, new_label] for label, new_label in zip(labels, new_labels)]
-        for x in tqdm(chunks(inputs, 10)):
-            prompts, answer = predict(task_description, x)
-            new_answer  = interpreter.batch_visit(prompts, answer)
-            answers.extend(new_answer)
-        preds = [get_answer(x) for x in answers]
-        perf_array.append(substring_match_v2(combined_labels, preds))
-        print(perf_array)
-        positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
-        positive_rate = sum(positive_calls)/len(interpreter.execution_details)
-    print("FS-CoT Performance:")
-    print("Mean", np.mean(perf_array))
-    print("Std. Dev", np.std(perf_array))
-    print("Rate of affordance call", positive_rate)
+
+    def predict_self_consistency(description, chunk, n=15):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    if self_consistency:
+        perf_array = []
+        runs = 2
+        batch_size = 2
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = [] # List of counters
+            for x in tqdm(chunks(inputs, batch_size)):
+                prompts, answer_set = predict_self_consistency(task_description, x)
+                result_counter = [Counter() for i in range(batch_size)]
+                for chunk_no, ans_chunk in enumerate(chunks(answer_set, 15)):
+                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
+                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    for pred in processed_answers:
+                        # Only add to the counter if there is a legitimate answer
+                        if pred is not None:
+                            result_counter[chunk_no].update([pred])
+                answers.extend(result_counter)
+            preds = [x.most_common(1)[0][0] for x in answers[:len(inputs)]]
+            perf_array.append(substring_match(labels, preds))
+            print(perf_array)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+    else:
+        perf_array = []
+        runs = 1
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = []
+            label_dict = {"Invalid": "False", "Valid":"True"}
+            new_labels = [label_dict.get(label, label) for label in labels]
+            combined_labels = [[label, new_label] for label, new_label in zip(labels, new_labels)]
+            for x in tqdm(chunks(inputs, 10)):
+                prompts, answer = predict(task_description, x)
+                new_answer  = interpreter.batch_visit(prompts, answer)
+                answers.extend(new_answer)
+            preds = [get_answer(x) for x in answers]
+            perf_array.append(substring_match_v2(combined_labels, preds))
+            print(perf_array)
+            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+            positive_rate = sum(positive_calls)/len(interpreter.execution_details)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+        print("Rate of affordance call", positive_rate)
 
 
 few_shot_human_prompt = """Description: (CS Algorithms) Solve the following simple programming tasks using Python.

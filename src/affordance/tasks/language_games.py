@@ -677,7 +677,30 @@ Ans: red
 ----
 Description: (Language Games) Answer the following questions or translate the following sentences that may be in English, Pig Latin or Egg Language based on the instruction.
 Input: Respond in English to the following questions written in pig Latin:\n\nQ: epeatray afteryay emay: untakay intekay.
+Q1: [generate python code] Convert "epeatray afteryay emay: untakay intekay" to English
+#1:
+sentence = "epeatray afteryay emay: untakay intekay" 
+word_list = sentence.split()
 
+ans = []
+for word in word_list:
+    punc = ""
+    if word[-1] in "?!.:":
+        punc = word[-1]
+        word = word[:-1]
+    if word.endswith("yay"):
+        ans.append(word[:-3] + punc)
+    else:
+        word = word[:-2]
+        ans.append(word[-1] + word[:-1] + punc)
+ans = " ".join(ans)
+print(ans)
+Q2: [code execute] Execute the python code snippet
+#2: repeat after me: kunta kinte
+Q3: [subquestion] repeat after me: kunta kinte
+#3: kunta kinte
+Q4: [EOQ]
+Ans: kunta kinte
 ----
 Description: (Language Games) Answer the following questions or translate the following sentences that may be in English, Pig Latin or Egg Language based on the instruction.
 Input: Respond in "Egg language" to the following sentences written in "Egg language":\n\nQ: Heggow megganeggy eggelbeggows deggoes egga teggypeggiceggal peggerseggon heggave??

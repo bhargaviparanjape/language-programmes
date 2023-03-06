@@ -865,7 +865,7 @@ def notebook(temperature=0.3, model_name="text-davinci-002"):
 
 few_shot_human_prompt = """Description: (Simple text editing) Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is.
 Input: Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: add the word 'WORD' after every other word in the 1st sentence
-Q1: [code generate] Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: add the word 'WORD' after every other word in the 1st sentence
+Q1: [code generate] Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' : add the word 'WORD' after every other word in the 1st sentence
 #1:
 text = 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.'
 
@@ -898,7 +898,7 @@ Ans: Turing was WORD one of WORD the people WORD who worked WORD on the WORD fir
 ----
 Description: (Simple text editing) Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is.
 Input: Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: swap every first and last character of each word in the 1st sentence
-Q1: [code generate] Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: swap every first and last character of each word in the 1st sentence
+Q1: [code generate] Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' : swap every first and last character of each word in the 1st sentence
 #1:
 text = 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.'
 
@@ -945,7 +945,7 @@ Ans: gurinT saw eno fo eht eeoplp ohw dorkew no eht tirsf somputerc. He created 
 ----
 Description: (Simple text editing) Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is.
 Input: Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: remove all space characters in the 2nd sentence
-Q1: [code generate] Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: remove all space characters in the end sentence
+Q1: [code generate] Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' : remove all space characters in the end sentence
 #1:
 text = 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.'
 
@@ -982,7 +982,7 @@ Ans: Turing was one of the people who worked on the first computers. Hecreatedth
 ----
 Description: (Simple text editing) Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is.
 Input: Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: add the word 'WORD' after every other word in all the sentences (treat each sentence independently)
-Q1: [code generate] Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: add the word 'WORD' after every other word in all the sentences (treat each sentence independently)
+Q1: [code generate] Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' : add the word 'WORD' after every other word in all the sentences (treat each sentence independently)
 #1:
 text = 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.'
 
@@ -995,7 +995,6 @@ for i, sent in enumerate(pat.findall(text)):
          ans.append(word)
          if j %% 2:
              ans.append('WORD')
-    ans.append('\n')
 
 print(' '.join(ans))
 Q2: [execute] Execute the following python code snippet
@@ -1010,7 +1009,6 @@ for i, sent in enumerate(pat.findall(text)):
          ans.append(word)
          if j %% 2:
              ans.append('WORD')
-    ans.append('\n')
 
 print(' '.join(ans))
 #2: Turing was WORD one of WORD the people WORD who worked WORD on the WORD first computers WORD. He created WORD the theoretical WORD Turing machine WORD in 1936 WORD. The machine WORD was imaginary WORD, but it WORD included the WORD idea of WORD a computer WORD program.
@@ -1026,7 +1024,7 @@ def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy=
     task_description = "Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is."
 
     few_shot_cot_prompt = few_shot_human_prompt
-    interpreter = TopDownVisitorBeta(model_name=model_name)
+    interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[code generate]"])
 
     def predict(description, chunk):
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
@@ -1075,7 +1073,7 @@ def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy=
                 prompts, answer = predict(task_description, x)
                 new_answer  = interpreter.batch_visit(prompts, answer)
                 answers.extend(new_answer)
-            preds = [x.strip() for x in answers]
+            preds = [get_answer(x) for x in answers]
             perf_array.append(substring_match(labels, preds))
             # Report on interpreter performance
             positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
@@ -1085,7 +1083,7 @@ def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy=
         print("Std. Dev", np.std(perf_array))
         print("Rate of affordance call", positive_rate)
 
-# human_intervention(0.3, "davinci-codex-002-msft")
+human_intervention(0.3, "davinci-codex-002-msft")
 
 
 if __name__ == "__main__":

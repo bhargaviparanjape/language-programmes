@@ -37,7 +37,7 @@ labels = [l[0] for l in labels]
 train_inputs = d['train']['inputs']
 train_labels = d['train']['targets']
 
-task_description = """Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or if the question is implausible."""
+task_description = """(Strategy QA) Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or if the question is implausible."""
 
 io_pairs = [
 ("Q: Has Johns Hopkins University always treated subjects ethically?",
@@ -525,27 +525,198 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
-    perf_array = []
-    runs = 1
-    for run in range(runs): 
-        print("Run %d"%run)
-        answers = []
-        processed_labels = [label.split(".")[0] for label in labels]
-        for x in tqdm(chunks(inputs, 10)):
-            x = [ex.replace("\nA:", "") for ex in x]
-            prompts, answer = predict(task_description, x)
-            new_answer  = interpreter.batch_visit(prompts, answer)
-            answers.extend(new_answer)
-        preds = [get_answer(x) for x in answers]
-        perf_array.append(substring_match(processed_labels, preds))
-        print(perf_array)
-        positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
-        positive_rate = sum(positive_calls)/len(interpreter.execution_details)
-    print("FS-CoT Performance:")
-    print("Mean", np.mean(perf_array))
-    print("Std. Dev", np.std(perf_array))
-    print("Rate of affordance call", positive_rate)
+    def predict_self_consistency(description, chunk, n=15):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
 
+    if self_consistency:
+        perf_array = []
+        runs = 2
+        batch_size = 2
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = [] # List of counters
+            for x in tqdm(chunks(inputs, batch_size)):
+                x = [ex.replace("\nA:", "") for ex in x]
+                prompts, answer_set = predict_self_consistency(task_description, x)
+                result_counter = [Counter() for i in range(batch_size)]
+                for chunk_no, ans_chunk in enumerate(chunks(answer_set, 15)):
+                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
+                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    for pred in processed_answers:
+                        # Only add to the counter if there is a legitimate answer
+                        if pred is not None:
+                            result_counter[chunk_no].update([pred])
+                answers.extend(result_counter)
+            preds = [x.most_common(1)[0][0] for x in answers[:len(inputs)]]
+            perf_array.append(substring_match(labels, preds))
+            print(perf_array)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+    else:
+        perf_array = []
+        runs = 1
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = []
+            processed_labels = [label.split(".")[0] for label in labels]
+            for x in tqdm(chunks(inputs, 10)):
+                x = [ex.replace("\nA:", "") for ex in x]
+                prompts, answer = predict(task_description, x)
+                new_answer  = interpreter.batch_visit(prompts, answer)
+                answers.extend(new_answer)
+            preds = [get_answer(x) for x in answers]
+            perf_array.append(substring_match(processed_labels, preds))
+            print(perf_array)
+            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+            positive_rate = sum(positive_calls)/len(interpreter.execution_details)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+        print("Rate of affordance call", positive_rate)
+
+
+few_shot_human_prompt = """Description: (Strategy QA) Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or if the question is implausible.
+Input: Is a person with St. Vitus's Dance likely to win a ballet competition?
+Q1: [search] What is St. Vitus's Dance?
+#1: St. Vitus's Dance is a disorder characterized by jerking or twitching movements.
+Q2: [search] Can someone with jerky or twitching movements win a ballet competition?
+#2: No, someone with jerky or twitching movements would not be able to win a ballet competition. Ballet requires precise, graceful movements that are difficult to achieve with jerky or twitching movements.
+Smiling, shaking your limbs dynamically and looking upwards will help you do that. 2. Practice positive thinking. The quality of your self-talk ...
+Q3: [generate output] Answer the original question given the information about St. Vitus's Dance and ballet competitions.
+No. A person with St. Vitus's Dance is not likely to win a ballet competition.
+Q4: [EOQ]
+Ans: No
+----
+Description: (Strategy QA) Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or if the question is implausible.
+Input: Was Amy Winehouse a fan of Star Wars: Rogue One?
+Q1: [search] When did Amy Winehouse live?
+#1: Amy Winehouse lived from September 14, 1983 to July 23, 2011. Amy Jade Winehouse (14 September 1983 – 23 July 2011) was an English singer and songwriter. She was known for her deep, expressive contralto vocals and her ...
+Q2: [search] When did the movie Star Wars: Rogue One release?
+#2: Star Wars: Rogue One was released on December 16, 2016. December 16, 2016
+Q2: [generate output] Answer the original question given the information about Amy Winehouse and Star Wars: Rogue One 
+#2: No. Amy Winehouse was not a fan of Star Wars: Rogue One since the movie was released after her death. 
+Q3: [EOQ]
+Ans: No
+----
+Description: (Strategy QA) Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or if the question is implausible.
+Input: Would 1943-S penny be good for making silverware?
+Q1: [search] What is the composition of the 1943-S penny?
+#1: The 1943-S penny is special. The unique composition of the coin (low-grade steel coated with zinc, instead of the previously 95%%-copper-based bronze composition) has led to various nicknames, such as wartime cent, steel war penny, zinc cent and steelie.
+Q2: [search] Is steel a suitable material for making silverware?
+#2: No, steel is not a suitable material for making silverware as it is not malleable enough for the intricate details needed for silverware.
+Q3: [generate output] Answer the original question given the information about the 1943-S penny and silverware.
+No. The 1943-S penny is not suitable for making silverware due to its composition of low-grade steel coated with zinc.
+Q4: [EOQ]
+Ans: No
+----
+Description: (Strategy QA) Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or if the question is implausible.
+Input: Do workers at Nissan's headquarters eat with chopsticks?
+Q1: [search] Where is Nissan's headquarters located?
+#1: Nissan's headquarters is located in Yokohama, Japan. Yokohama, Kanagawa, Japan
+Q2: [search] Is chopsticks a common eating utensil in Japan?
+#2: Yes, chopsticks are a common eating utensil in Japan. If you're planning on visiting or working in Japan, you'll probably need to use chopsticks at some point. 
+Q3: [generate output] Answer the original question given the information about Nissan's headquarters and chopsticks.
+Yes. Workers at Nissan's headquarters in Yokohama, Japan likely eat with chopsticks.
+Q4: [EOQ]
+Ans: Yes
+----
+Description: (Strategy QA) Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or if the question is implausible.
+Input: Can French Defence initial move defend against four move checkmate?
+Q1: [search] What is French Defence?
+#1: The French Defence is a chess opening where White moves their pawn to e4 and black moves thiers to e6.  The French Defense chess opening is a semi-closed chess opening for Black which occurs after the moves 1.e4 e6 2.d4 d5.
+Q2: [search] Can the French Defence initial move defend against four move checkmate?
+#2: No, the French Defence initial move cannot defend against four move checkmate. Four move checkmates can only be prevented by a move other than the French Defence initial move. Ever wondered how to defend against the four move checkmate?
+Q3: [generate output] Answer the original question given the information about the French Defence and four move checkmate.
+No. The French Defence initial move cannot defend against four move checkmate.
+Q4: [EOQ]
+Ans: No
+----
+Description: (Strategy QA) Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or if the question is implausible.
+Input: Could Ryan Crouser throw a bengal fox with ease?
+Q1: [search] Who is Ryan Crouser?
+#1: Ryan Crouser is an American Olympic shot put and discus thrower. He is the current world record holder in the shot put and the Olympic champion in the event.
+Q2: [search] What is the largest weight lifted by Ryan Crouser?
+#2: Ryan Crouser holds the world record in the shot put with a throw of 22.72 m, which is equivalent to approximately 74.8 kg. In 2019, Wired broke down Crouser's skills, noting that at 6-foot-7, 315 lb, Crouser can bench press 225 lb 50 times, squat 700 lb, all while ...
+Q3: [search] How much does a Bengal fox weigh?
+#3: The average weight of a Bengal fox is between 3.5 and 6.8 kg. 5.2 lbs
+Q4: [generate output] Answer the original question given the information about Ryan Crouser and a Bengal fox.
+Yes. Ryan Crouser could easily throw a Bengal fox with ease since the fox weighs less than the weight of the shot put (approximately 74.8 kg) that Ryan Crouser is able to lift.
+Q5: [EOQ]
+Ans: Yes
+----
+Description: %s
+Input: %s
+Q1:"""
+def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+    global few_shot_cot_prompt
+
+    few_shot_cot_prompt = few_shot_human_prompt
+    interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[code generate]"])
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1500, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    def predict_self_consistency(description, chunk, n=15):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    if self_consistency:
+        perf_array = []
+        runs = 2
+        batch_size = 2
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = [] # List of counters
+            for x in tqdm(chunks(inputs, batch_size)):
+                x = [ex.replace("\nEdited:", "") for ex in x]
+                prompts, answer_set = predict_self_consistency(task_description, x)
+                result_counter = [Counter() for i in range(batch_size)]
+                for chunk_no, ans_chunk in enumerate(chunks(answer_set, 15)):
+                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
+                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    for pred in processed_answers:
+                        # Only add to the counter if there is a legitimate answer
+                        if pred is not None:
+                            result_counter[chunk_no].update([pred])
+                answers.extend(result_counter)
+            preds = [x.most_common(1)[0][0] for x in answers[:len(inputs)]]
+            perf_array.append(substring_match(labels, preds))
+            print(perf_array)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+
+    else:
+        perf_array = []
+        runs = 5
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = []
+            processed_labels = [label.split(".")[0] for label in labels]
+            for x in tqdm(chunks(inputs, 10)):
+                x = [ex.replace("Q: ", "") for ex in x]
+                x = [ex.replace("\nA:", "") for ex in x]
+                prompts, answer = predict("""Strategy QA: Answer these questions with a "Yes" or "No", depending on whether there is sufficient evidence to answer the question or if the question is implausible.""", x)
+                new_answer  = interpreter.batch_visit(prompts, answer)
+                answers.extend(new_answer)
+            preds = [get_answer(x) for x in answers]
+            perf_array.append(substring_match(processed_labels, preds))
+            # Report on interpreter performance
+            print(perf_array)
+            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+            positive_rate = sum(positive_calls)/(len(interpreter.execution_details) + 1e-6)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+        print("Rate of affordance call", positive_rate)
+
+human_intervention(0.3, "text-davinci-002")
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()

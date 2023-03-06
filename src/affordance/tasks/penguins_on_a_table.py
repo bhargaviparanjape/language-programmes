@@ -49,6 +49,52 @@ task_name = "Penguins in a table"
 task_description = """(Penguins in a table) Answer simple questions about the animals contained in a table, or multiple tables. Use information given both in the table(s) and natural language, selecting and extracting the relevant bits."""
 
 
+
+def human_decomp(temperature=0.3):
+    def predict(chunk):
+        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts = ["""Q: Here is a table where the first line is a header and each subsequent line is a penguin:  name, age, height (cm), weight (kg) Louis, 7, 50, 11 Bernard, 5, 80, 13 Vincent, 9, 60, 11 Gwen, 8, 70, 15  For example: the age of Louis is 7, the weight of Gwen is 15 kg, the height of Bernard is 80 cm.  We now add a penguin to the table:
+James, 12, 90, 12
+How many penguins are less than 8 years old?
+A: Let's think step by step.
+This question focuses on age. We know the following: Louis is 7 years old, Bernard is 5 years old, Vincent is 9 years old, and Gwen is 8 years old.
+Now, we add James to this table: James is 12 years old.
+The penguins that are less than 8 years old are Louis and Bernard.
+There are 2 penguins less than 8 years old. So the answer is 2.
+----
+Q: Here is a table where the first line is a header and each subsequent line is a penguin:  name, age, height (cm), weight (kg) Louis, 7, 50, 11 Bernard, 5, 80, 13 Vincent, 9, 60, 11 Gwen, 8, 70, 15  For example: the age of Louis is 7, the weight of Gwen is 15 kg, the height of Bernard is 80 cm.  Which is the youngest penguin?
+A: Let's think step by step.
+This question focuses on age. We know the following: Louis is 7 years old, Bernard is 5 years old, Vincent is 9 years old, and Gwen is 8 years old.
+According to the table, Bernard (5) is the youngest amongst them.
+The youngest penguin is Bernard. So the answer is Bernard.
+----
+Q: Here is a table where the first line is a header and each subsequent line is a penguin:  name, age, height (cm), weight (kg) Louis, 7, 50, 11 Bernard, 5, 80, 13 Vincent, 9, 60, 11 Gwen, 8, 70, 15  For example: the age of Louis is 7, the weight of Gwen is 15 kg, the height of Bernard is 80 cm.  What is the name of the second penguin sorted by alphabetic order?
+A: Let's think step by step.
+This question focuses on the name. We know the following: The names of the penguin in the table are Louis, Bernard, Vincent, and Gwen.
+When we sort their names alphabetically, we get Bernard, Gwen, Louis, Vincent.
+The name of the second penguin sorted by alphabetical order is Gwen.
+The name of the second penguin sorted by alphabetic order is Gwen. So the answer is Gwen.
+----
+Q: %s
+A: Let's think step by step.""" % x for x in chunk]
+        return gpt3(prompts)
+
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 10)):
+            x = [ex.replace("\nA:", "") for ex in x]
+            answers.extend(predict(x))
+        preds = [get_autocot_answer(x, answer_prompt="So the answer is ") for x in answers]
+        perf_array.append(substring_match(labels, preds))
+    print("Human decomposition Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
+
+
 def exact_match(labels, predictions):
     correct = 0
     count = 0
@@ -433,7 +479,7 @@ Input: %s
 Q1:"""
 
 
-def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+def nl_program(temperature=0.3, model_name="davinci-codex-002-msft", strategy="fixed", self_consistency=False):
     
     global few_shot_cot_prompt
 
@@ -448,7 +494,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     elif strategy == "llm_similar":
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
-    interpreter = TopDownVisitorBeta()
+    interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[generate python code]"])
 
     def predict(description, chunk):
         gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
@@ -478,7 +524,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     print("Std. Dev", np.std(perf_array))
     print("Rate of affordance call", positive_rate)
 
-
+human_decomp()
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()

@@ -63,7 +63,10 @@ def google_search(query, previous_input=None, top_k=1):
     }
 
     search = GoogleSearch(params)
-    res = search.get_dict()
+    try:
+        res = search.get_dict()
+    except:
+        res = {}
 
     if 'answer_box' in res.keys() and 'answer' in res['answer_box'].keys():
         toret = res['answer_box']['answer']

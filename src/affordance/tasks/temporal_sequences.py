@@ -119,152 +119,16 @@ def token_match(labels, predictions):
     return (1.0*correct)/count
 
 def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
+
+    few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=N)
+    print(len(tokenizer(few_shot_prompt)['input_ids']))
+
     def predict(chunk):
         gpt3 = OpenAIModel(model=model_name,  max_length=200, temperature=temperature, quote='---', n=1)
-        prompts = ["""Today, Elizabeth went to the construction site. Between what times could they have gone?
-We know that: 
-Elizabeth woke up at 5am.
-Lisa saw Elizabeth buying a phone at the electronics store from 5am to 10am.
-Mary saw Elizabeth waiting at the train station from 10am to 11am.
-Hannah saw Elizabeth waiting at the airport from 1pm to 3pm.
-William saw Elizabeth reading at the library from 3pm to 9pm.
-The construction site was closed after 9pm.
-Between what times could Elizabeth have gone to the construction site?
-  choice: 11am to 1pm
-  choice: 5am to 10am
-  choice: 10am to 11am
-  choice: 3pm to 9pm
-Possible times:
-11am to 1pm
-----
-Today, Andrew went to the art show. Between what times could they have gone?
-We know that: 
-Andrew woke up at 6am.
-Kimberly saw Andrew waiting at the airport from 10am to 12pm.
-Anthony saw Andrew attending class at the school from 12pm to 7pm.
-John saw Andrew working out at the gym from 7pm to 8pm.
-The art show was closed after 8pm.
-Between what times could Andrew have gone to the art show?
-  choice: 12pm to 7pm
-  choice: 7pm to 8pm
-  choice: 10am to 12pm
-  choice: 6am to 10am
-Possible times:
-6am to 10am
-----
-Today, Susan went to the orchestra hall. Between what times could they have gone?
-We know that: 
-Susan woke up at 5am.
-Thomas saw Susan buying cookies at a bakery from 5am to 9am.
-Ashley saw Susan buying a phone at the electronics store from 9am to 10am.
-Betty saw Susan driving to the water park from 10am to 12pm.
-Linda saw Susan watching a movie at the theater from 1pm to 3pm.
-Leslie saw Susan walking towards the Statue of Liberty from 3pm to 8pm.
-The orchestra hall was closed after 8pm.
-Between what times could Susan have gone to the orchestra hall?
-  choice: 12pm to 1pm
-  choice: 5am to 9am
-  choice: 10am to 12pm
-  choice: 3pm to 8pm
-Possible times:
-12pm to 1pm
-----
-Today, Jennifer went to the art show. Between what times could they have gone?
-We know that: 
-Jennifer woke up at 5am.
-Ashley saw Jennifer sitting on a rooftop from 7am to 3pm.
-David saw Jennifer buying a bike at the bike shop from 3pm to 5pm.
-Steven saw Jennifer playing tennis at the tennis court from 5pm to 6pm.
-Susan saw Jennifer waiting at the airport from 6pm to 8pm.
-Anthony saw Jennifer stretching at a yoga studio from 8pm to 10pm.
-The art show was closed after 10pm.
-Between what times could Jennifer have gone to the art show?
-  choice: 5am to 7am
-  choice: 6pm to 8pm
-  choice: 3pm to 5pm
-  choice: 5pm to 6pm
-Possible times:
-5am to 7am
-----
-Today, James went to the physics classroom. Between what times could they have gone?
-We know that: 
-James woke up at 8am.
-Richard saw James working out at the gym from 10am to 11am.
-Mark saw James sitting on a rooftop from 11am to 1pm.
-Lisa saw James fixing their computer at the electronic store from 1pm to 3pm.
-Mary saw James playing tennis at the tennis court from 3pm to 7pm.
-The physics classroom was closed after 7pm.
-Between what times could James have gone to the physics classroom?
-  choice: 11am to 1pm
-  choice: 8am to 10am
-  choice: 10am to 11am
-  choice: 3pm to 7pm
-Possible times:
-8am to 10am
-----
-Today, Leslie went to the movies. Between what times could they have gone?
-We know that: 
-Leslie woke up at 9am.
-Betty saw Leslie working out at the gym from 9am to 10am.
-Linda saw Leslie taking photos near the Leaning Tower of Pisa from 10am to 11am.
-William saw Leslie walking towards the Statue of Liberty from 11am to 12pm.
-The movies was closed after 9pm.
-Between what times could Leslie have gone to the movies?
-  choice: 11am to 12pm
-  choice: 9am to 10am
-  choice: 10am to 11am
-  choice: 12pm to 9pm
-Possible times:
-12pm to 9pm
-----
-Today, Kimberly went to the construction site. Between what times could they have gone?
-We know that: 
-Kimberly woke up at 8am.
-Richard saw Kimberly taking photos near the Eiffel Tower from 8am to 9am.
-Sarah saw Kimberly watching a movie at the theater from 9am to 12pm.
-Tiffany saw Kimberly reading at the library from 1pm to 5pm.
-The construction site was closed after 5pm.
-Between what times could Kimberly have gone to the construction site?
-  choice: 1pm to 5pm
-  choice: 9am to 12pm
-  choice: 12pm to 1pm
-  choice: 8am to 9am
-Possible times:
-12pm to 1pm
-----
-Today, Jennifer went to the park. Between what times could they have gone?
-We know that: 
-Jennifer woke up at 10am.
-Susan saw Jennifer walking in the garden from 10am to 5pm.
-Elizabeth saw Jennifer buying lunch at the deli from 5pm to 6pm.
-Sean saw Jennifer playing tennis at the tennis court from 7pm to 9pm.
-The park was closed after 9pm.
-Between what times could Jennifer have gone to the park?
-  choice: 5pm to 6pm
-  choice: 7pm to 9pm
-  choice: 10am to 5pm
-  choice: 6pm to 7pm
-Possible times:
-6pm to 7pm
-----
-Today, William went to the soccer field. Between what times could they have gone?
-We know that: 
-William woke up at 1pm.
-Tiffany saw William taking photos near the Leaning Tower of Pisa from 1pm to 2pm.
-David saw William waiting at the airport from 2pm to 6pm.
-Thomas saw William reading at the library from 6pm to 7pm.
-The soccer field was closed after 8pm.
-Between what times could William have gone to the soccer field?
-  choice: 2pm to 6pm
-  choice: 7pm to 8pm
-  choice: 1pm to 2pm
-  choice: 6pm to 7pm
-Possible times:
-7pm to 8pm
-----
-%s
-""" % x for x in chunk]
+        prompts = ["""%s\
+%s""" % (few_shot_prompt, x) for x in chunk]
         return gpt3(prompts)
+
 
     perf_array = []
     runs = 5
@@ -631,6 +495,103 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
     print("Auto-CoT Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
+
+
+
+def human_decomp(temperature=0.3):
+    def predict(chunk):
+        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts = ["""Q: Today, Emily went to the museum. Between what times could they have gone?
+We know that:
+Emily woke up at 1pm.
+Elizabeth saw Emily reading at the library from 2pm to 4pm.
+Jessica saw Emily watching a movie at the theater from 4pm to 5pm.
+Leslie saw Emily waiting at the airport from 5pm to 6pm.
+William saw Emily buying clothes at the mall from 6pm to 7pm.
+The museum was closed after 7pm.
+Between what times could Emily have gone to the museum?
+  choice: 1pm to 2pm
+  choice: 6pm to 7pm
+  choice: 5pm to 6pm
+  choice: 2pm to 4pm
+A: Let's think step by step.
+Wake-up time: 1pm.
+1pm-2pm: free.
+2pm-4pm: reading at the library.
+4pm-5pm: watching a movie at the theater.
+5pm-6pm: waiting at the airport.
+6pm-7pm: buying clothes at the mall.
+The museum closure time: 7pm.
+The only time when Emily could have gone to the museum was 1pm to 2pm. So the answer is 1pm to 2pm.
+----
+Q: Today, Elizabeth went to the amusement park. Between what times could they have gone?
+We know that:
+Elizabeth woke up at 7am.
+David saw Elizabeth fixing their computer at the electronic store from 1pm to 2pm.
+Sarah saw Elizabeth playing tennis at the tennis court from 2pm to 3pm.
+Susan saw Elizabeth walking towards the Statue of Liberty from 3pm to 6pm.
+Andrew saw Elizabeth taking photos near the Eiffel Tower from 6pm to 9pm.
+Emily saw Elizabeth getting a coffee at the cafe from 9pm to 10pm.
+The amusement park was closed after 10pm.
+Between what times could Elizabeth have gone to the amusement park?
+  choice: 7am to 1pm
+  choice: 9pm to 10pm
+  choice: 1pm to 2pm
+  choice: 3pm to 6pm
+A: Let's think step by step.
+Wake-up time: 7am.
+7am-1pm: free.
+1pm-2pm: fixing their computer at the electronic store.
+2pm-3pm: playing tennis at the tennis court.
+3pm-6pm: walking towards the Statue of Liberty.
+6pm-9pm: taking photos near the Eiffel Tower.
+9pm-10pm: getting a coffee at the cafe.
+The amusement park closure time: 10pm.
+The only time when Elizabeth could have gone to the amusement park was 7am to 1pm. So the answer is 7am to 1pm.
+----
+Q: Today, Tiffany went to the beach. Between what times could they have gone?
+We know that:
+Tiffany woke up at 5am.
+Betty saw Tiffany getting a coffee at the cafe from 5am to 6am.
+Jessica saw Tiffany working at the office from 6am to 9am.
+John saw Tiffany stretching at a yoga studio from 9am to 12pm.
+Sean saw Tiffany sitting on a rooftop from 12pm to 2pm.
+Sarah saw Tiffany playing tennis at the tennis court from 2pm to 3pm.
+The beach was closed after 4pm.
+Between what times could Tiffany have gone to the beach?
+  choice: 9am to 12pm
+  choice: 12pm to 2pm
+  choice: 5am to 6am
+  choice: 3pm to 4pm
+A: Let's think step by step.
+Wake-up time: 5am.
+5am-6am: getting a coffee at the cafe.
+6am-9am: working at the office.
+9am-12pm: stretching at a yoga studio.
+12pm-2pm: sitting on a rooftop.
+2pm-3pm: playing tennis at the tennis court.
+3pm-4pm: free.
+The beach closure time: 4pm.
+The only time when Tiffany could have gone to the beach was 3pm to 4pm. So the answer is 3pm to 4pm.
+----
+%s
+A: Let's think step by step.""" % x for x in chunk]
+        return gpt3(prompts)
+
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 10)):
+            x = [ex.replace("\nPossible times:", "") for ex in x]
+            answers.extend(predict(x))
+        preds = [get_autocot_answer(x, answer_prompt="So the answer is ") for x in answers]
+        perf_array.append(substring_match(labels, preds))
+    print("Human decomposition Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
 
 
 def affordance():
@@ -1281,7 +1242,7 @@ def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy=
         print("Rate of affordance call", positive_rate)
 
 # human_intervention(0.3, "text-davinci-002")
-
+# human_decomp()
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()

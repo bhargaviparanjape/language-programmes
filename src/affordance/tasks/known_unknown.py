@@ -771,6 +771,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
         answers = []
         new_labels = ["Ans: " + label for label in labels]
         for x in tqdm(chunks(inputs, 10)):
+            x = [ex.replace("\nA:", "") for ex in x]
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)

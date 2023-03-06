@@ -654,75 +654,85 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
 
 
 
-few_shot_human_prompt = """Input: Identify the physics formula that would be most useful for finding the answer to each of the following word problems.A proton is located at A, 1.0 m from a fixed +2.2 *10^−6 C charge. If the proton started from rest at A, what would be its speed at B?
+few_shot_human_prompt = """Input: Identify the physics formula that would be most useful for finding the answer to each of the following word problems. A proton is located at A, 1.0 m from a fixed +2.2 *10^−6 C charge. If the proton started from rest at A, what would be its speed at B?
   choice: U_E = k * q * q / r
   choice: v = λ * f
   choice: K = 1/2 * m * v ^ 2
   choice: dv = a * dt
-Q1: [subquestion] What is the question asking for?
-#1: The question is asking for the speed of the proton at point B.
-Q2: [search] What is the equation for speed?
-#2: The equation for speed is v = d/t. The formula for Speed is given as [Speed = Distance ÷ Time]. To calculate the distance, the speed formula can be molded as [Distance = Speed × Time].
-Q3: [subquestion] What information is given in the question?
-#3: The information given in the question is the location of the proton, the charge, and that the proton started from rest.
-Q4: [subquestion] What formula would be most useful for finding the answer to the question?
-#4: The formula that would be most useful for finding the answer to the question is the speed formula, v = d/t.
+Q1: [subquestion] What quantity is being asked for in "A proton is located at A, 1.0 m from a fixed +2.2 *10^−6 C charge. If the proton started from rest at A, what would be its speed at B?"
+#1: The speed of the proton.
+Q2: [subquestion] What other information is given in "A proton is located at A, 1.0 m from a fixed +2.2 *10^−6 C charge. If the proton started from rest at A, what would be its speed at B?"
+#2: Distance (1.0m), charge(+2.2 *10^−6 C), initial speed (0)
+Q3: [subquestion] Given Distance, charge and initial speed, what can we compute for proton? Give the physics formula.
+#3: Given the distance, charge, and initial speed of a proton, you can compute the total energy of the proton. From Eq. 2.3, the magnitude of the E field due to a point charge q at a distance r is given by. E = k|q| r2. Here we are given E and r, so we can solve for ...
+Q4: [compare] What is the physics formula in the choices that is closest to E = k|q| r2.
+#4: U_E = k * q * q / r
 Q5: [EOQ]
-Ans: The answer is the speed formula, v = d/t. [U_E = k * q * q / r]
+Ans: U_E = k * q * q / r
 ----
 Input: Identify the physics formula that would be most useful for finding the answer to each of the following word problems.A particle of mass 6.8 * 10 ^ −5 g and charge 58 mC moves in a region of space where the electric field is uniform and is 7.2 N/C in the x direction and zero in the y and z direction. If the initial velocity of the particle is given by vy = 1.7 * 10 ^ 6 m/s, vx = vz = 0, what is the speed of the particle at 0.7 s?
   choice: F = m * a
   choice: v = dx / dt
   choice: E = q / (ε * A * cos(θ))
   choice: a = dv / dt
-Q1: [subquestion] Can this question be answered step-by-step?
-#1: Yes.
-Q2: [search] A particle of mass 6.8 * 10 ^ −5 g and charge 58 mC moves in a region of space where the electric field is uniform and is 7.2 N/C in the x direction and zero in the y and z direction. If the initial velocity of the particle is given by vy = 1.7 * 10 ^ 6 m/s, vx = vz = 0, what is the speed of the particle at 0.7 s?
-#2:
-The speed of the particle is given by the equation:
-v = sqrt(vx^2 + vy^2 + vz^2)
-#3: [compare] Which option is the answer in #2 most similar to?
-#3: v = dx / dt A particle of mass 6.6 × 10−5 g and charge 22 mC moves in a region of space where the electric field is uniform and is 5.6 N/C in the x direction and zero ...
-Q4: [EOQ]
-Ans: v = dx / dt F = m*a
+Q1: [subquestion] What quantity is being asked for in "A particle of mass 6.8 * 10 ^ −5 g and charge 58 mC moves in a region of space where the electric field is uniform and is 7.2 N/C in the x direction and zero in the y and z direction. If the initial velocity of the particle is given by vy = 1.7 * 10 ^ 6 m/s, vx = vz = 0, what is the speed of the particle at 0.7 s"
+#1: speed of the particle
+Q2: [subquestion] What other information is given in "A particle of mass 6.8 * 10 ^ −5 g and charge 58 mC moves in a region of space where the electric field is uniform and is 7.2 N/C in the x direction and zero in the y and z direction. If the initial velocity of the particle is given by vy = 1.7 * 10 ^ 6 m/s, vx = vz = 0, what is the speed of the particle at 0.7 s"
+#2: mass of particle (6.8 * 10 ^ −5 g), charge(58 mC), electric field (7.2 N/C), initial velocity (vy = 1.7 * 10 ^ 6 m/s, vx = vz = 0)
+Q3: [subquestion] Given mass of the particle, charge and initial velocity of particle, and electric field, what can we compute for the particle? Give the physics formula.
+#3: 
+We can compute acceleration of the particle, as follows:
+a = (q/m) * E
+This formula is derived from the Lorentz force law, which states that the force (F) on a particle of charge q in an electric field E is given by the equation:
+F = ma = qE
+Q4: [subquestion] What is the physics formula in the choices that is closest to F = ma = qE, a = (q/m) * E
+#4: F = m * a
+Q5: [EOQ]
+Ans: F = m * a
 ----
 Input: Identify the physics formula that would be most useful for finding the answer to each of the following word problems.An electron passing between parallel plates 0.025 m apart experiences an upward electrostatic force of 5.1*10^−16 N. What is the potential difference between the plates?
   choice: E = q / (ε * A * cos(θ))
   choice: v = λ * f
   choice: E = q * σ / (2 * ε)
   choice: V = k * q / r
-Q1: [subquestion] Can this question be answered step-by-step?
-#1: Yes.
-Q2: [search] An electron passing between parallel plates 0.025 m apart experiences an upward electrostatic force of 5.1*10^−16 N. What is the potential difference between the plates?
-#2: E = q * σ / (2 * ε) An electron passing between parallel plates 0. 025 m apart experiences an upward electrostatic force of 5.1 x10-16 N. electron.
-Q3: [compare] Which option is the answer in #3 most similar to?
-#3: E = q * σ / (2 * ε)
-Q4: [EOQ]
-Ans: E = q * σ / (2 * ε)
+Q1: [subquestion] What quantity is being asked for in "An electron passing between parallel plates 0.025 m apart experiences an upward electrostatic force of 5.1*10^−16 N. What is the potential difference between the plates?"
+#1: potential difference between the plates
+Q2: [subquestion] What other information is given in "An electron passing between parallel plates 0.025 m apart experiences an upward electrostatic force of 5.1*10^−16 N. What is the potential difference between the plates?"
+#2: distance between parallel plates(0.025 m), upward electrostatic force (5.1*10^−16 N)
+Q3: [subquestion] Given distance between plates and upward electrostatic force, what can we compute for the electron? Give the physics formula.
+#3:
+The electrostatic force can be computed using Coulomb's Law, which states that the force between two charges is equal to the product of the magnitude of the charges divided by the square of the distance between them, multiplied by a constant, k:
+F = k * (q1 * q2) / r2
+Q4: [subquestion] What is the physics formula in the choices that is closest to F = k * (q1 * q2) / r2
+#4: V = k * q / r
+Q5: [EOQ]
+Ans: V = k * q / r
 ----
 Input: Identify the physics formula that would be most useful for finding the answer to each of the following word problems.The 1205 kg physics dragster is traveling at 35 km/h east when it hits the gas and accelerates at 12.5 m/s^2 for 3.25 s. What is its change in momentum during this time?
   choice: W = F * d
   choice: v = λ * f
   choice: U_E = k * q * q / r
   choice: v = v_0 + a * t
-Q1: [subquestion] What is the question asking for?
-#1: The change in momentum during this time.
-Q2: [search] What is the formula for change in momentum?
-#2:
-The change in momentum of an object is equal to the net force applied to the object, multiplied by the time interval over which the force is applied.
-Δp = Fnet * Δt Δ p = F net Δ t . F net Δ t F net Δ t is known as impulse and this equation is known as the impulse-momentum theorem. From the equation, we see that the impulse equals the average net external force multiplied by the time this force acts. It is equal to the change in momentum.
-Q3: [compare] Which option is the answer in #2 most similar to?
+Q1: [subquestion] What quantity is being asked for in "The 1205 kg physics dragster is traveling at 35 km/h east when it hits the gas and accelerates at 12.5 m/s^2 for 3.25 s. What is its change in momentum during this time?"
+#1: change in momentum
+Q2: [subquestion] What other information is given in "The 1205 kg physics dragster is traveling at 35 km/h east when it hits the gas and accelerates at 12.5 m/s^2 for 3.25 s. What is its change in momentum during this time?"
+#2: mass (1205 kg), velocity (35 km/h east), acceleration (12.5 m/s^2), time (3.25s)
+Q3: [subquestion] Given mass, velocity, acceleration, time, what can we compute for the dragster? Give the physics formula.
 #3:
-Δp = Fnet * Δt
-Q4: [EOQ]
-Ans:
-Δp = Fnet * Δt
+With these values, we can compute the dragster's momentum using the formula: momentum = mass * velocity + (acceleration * time^2)/2 Solving for Final Velocity from Distance and Acceleration
+A fourth useful equation can be obtained from another algebraic manipulation of previous equations. If we solve v = v0 + at  for t, we get ...
+Q4: [subquestion] What is the physics formula in the choices that is closest to v = v0 + at 
+#4: v = v_0 + a * t
+Q5: [EOQ]
+Ans: v = v_0 + a * t
 ----
-"""
+Description: %s
+Input: %s
+Q1: """
 def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
     global few_shot_cot_prompt
 
-    few_shot_cot_prompt = few_shot_retrieval_prompt
+    few_shot_cot_prompt = few_shot_human_prompt
     interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[generate python code]"])
 
     def predict(description, chunk):
@@ -783,7 +793,7 @@ def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy=
         print("Std. Dev", np.std(perf_array))
         print("Rate of affordance call", positive_rate)
 
-# human_intervention(0.3, "davinci-codex-002-msft")
+human_intervention(0.3, "text-davinci-002")
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()

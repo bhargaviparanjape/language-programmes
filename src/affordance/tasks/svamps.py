@@ -38,9 +38,23 @@ from prompt_library import (llm_similar_tasks, random_tasks,
                             few_shot_free_prompt)
 from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 
-task_name = "mawps"
-task_description = "(Mathematics) Solve the following arithmetic reasoning problems."
 
+task_name = "SVAMP"
+task_description = "(SVAMP) Answer the following arithmetic reasoning problems. The final answer is an integer."
+
+data_files = {"validation":os.path.join(cache_dir, 'svamp', 'SVAMP.json')}
+d = datasets.load_dataset('json', data_files=data_files)
+# dev_inputs = [ex['question'] for ex in d['validation']][:500]
+# dev_labels = [ex['answer'] for ex in d['validation']][:500]
+
+inputs = ["%s %s"%(b,q) for b,q in zip(d["validation"]["Body"], d["validation"]["Question"])]
+labels = [str(int(l)) for l in d["validation"]["Answer"]]
+
+train_inputs = ["%s %s"%(b,q) for b,q in zip(d["validation"]["Body"], d["validation"]["Question"])]
+train_labels = [[str(int(l))] for l in d["validation"]["Answer"]]
+
+
+io_pairs = [(inp, lab) for inp, lab in zip(train_inputs[:5], train_labels[:5])]
 
 def exact_match(labels, predictions):
     correct = 0
@@ -51,105 +65,31 @@ def exact_match(labels, predictions):
         count += 1
     return (1.0*correct)/count
 
-def token_match(labels, predictions):
-    correct = 0
-    count = 0
-    for label, predict in zip(labels, predictions):
-        if label.lower() in [p.lower() for p in predict]:
-            correct += 1
-        count += 1
-    return (1.0*correct)/count
 
+def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
 
-def process_data(data, split):
-    labels = []
-    ans_list = []
-    for d in data[split]:
-        try:
-            ans = eval(list(d.values())[1].split("=")[-1].strip())
-            labels.append(list(d.values())[1].split("=")[-1].strip())
-            if isinstance(ans, int):
-                ans_list.append(ans)
-            elif (ans).is_integer():
-                ans_list.append(int(ans))
-            else:
-                ans_list.append(float("%.2f" % ans))
-            
-        except:
-            ans = eval(list(d.values())[1].split("=")[0].strip())
-            labels.append(list(d.values())[1].split("=")[-1].strip())
-            if isinstance(ans, int):
-                ans_list.append(ans)
-            elif (ans).is_integer():
-                ans_list.append(int(ans))
-            else:
-                ans_list.append(float("%.2f" % ans))
-    return labels, ans_list
+    few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=N)
+    print(len(tokenizer(few_shot_prompt)['input_ids']))
 
-data = datasets.load_dataset('omarxadel/MaWPS-ar', 'train', cache_dir=cache_dir)
-inputs = [list(d.values())[0] for d in data['validation']]
-labels, ans_list = process_data(data, 'validation')
-
-
-train_inputs = [list(d.values())[0] for d in data['train']]
-train_labels, train_ans_list = process_data(data, 'train')
-
-io_pairs = [(inp, lab) for inp, lab in zip(train_inputs[:5], train_labels[:5])]
-
-    
-def mawps(model_name="text-davinci-002", temperature=0.3):
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name, temperature=temperature,  max_length=200, quote='---', n=1)
-        prompts = ["""Amanda wants to diverge 608 Books among 28 friends. How many would each friend acquire?
-608 / 28
-----
-Connie had 141 plum. Carrie took 139 from him. Now How many plum Connie have left?
-141 - 139
-----
-Michael had 280 watermelon. Jasmine gripped some watermelon. Now Michael has 3  watermelon. How many did Jasmine grippeds?
-280 - 3
-----
-Katherine acquire 9 bags of nectarine . how many nectarine in each bag? If total 89 nectarine Katherine  acquire.
-89 / 9
-----
- A company invited 24 people to a luncheon, but 10 of them didn't show up. If the tables they had held 7 people each, how many tables do they need? 
-((24.0-10.0)/7.0)
-----
-%s
-"""% x for x in chunk]
+        gpt3 = OpenAIModel(model=model_name,  max_length=200, temperature=temperature, quote='---', n=1)
+        prompts = ["""%s\
+%s""" % (few_shot_prompt, x) for x in chunk]
         return gpt3(prompts)
-
+    
     perf_array = []
     runs = 5
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        for x in tqdm(chunks(inputs, 20)):
+        for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
         preds = [x.strip() for x in answers]
-        evaluated_predictions = []
-        pred_expressions = []
-        for p in preds:
-            try:
-                evaluated_predictions.append(eval(p))
-            except:
-                pred_expressions.append(p)
-                # evaluated_predictions.append(eval(re.search("[0-9,.]+", p).group(0).replace(",", "")))
-                evaluated_predictions.append(p)
-        evaluated_labels = [] #[eval(l) for l in labels]
-        for l in labels:
-            try:
-                evaluated_labels.append(eval(l))
-            except:
-                # evaluated_labels.append(eval(re.search("[0-9,.]+", l).group(0).replace(",", "")))
-                evaluated_labels.append(p)
-        # sometimes the model actually predicts the final answer
-        perf_array.append(np.mean([1 if p==l else 0 for p,l in zip(evaluated_predictions, evaluated_labels)]))
+        perf_array.append(exact_match(labels, preds))
     print("No decomposition Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-# mawps("code-davinci-002")
 few_shot_cot_prompt = few_shot_arithmetic_prompt
 def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
     global few_shot_cot_prompt
@@ -187,8 +127,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
         preds = [get_answer(x.strip()) for x in answers]
-        new_labels = [str(s) for s in ans_list]
-        perf_array.append(exact_match(new_labels, preds))
+        perf_array.append(exact_match(labels, preds))
         print(perf_array)
         positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
         positive_rate = sum(positive_calls)/len(interpreter.execution_details)

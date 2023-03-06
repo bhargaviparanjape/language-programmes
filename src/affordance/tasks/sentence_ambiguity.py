@@ -694,7 +694,7 @@ def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy=
     interpreter = TopDownVisitorBeta(model_name=model_name)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=1500, temperature=temperature, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
@@ -741,9 +741,10 @@ def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy=
                 prompts, answer = predict(task_description, x)
                 new_answer  = interpreter.batch_visit(prompts, answer)
                 answers.extend(new_answer)
-            preds = [x.strip() for x in answers]
+            preds = [get_answer(x) for x in answers]
             perf_array.append(substring_match(labels, preds))
             # Report on interpreter performance
+            print(perf_array)
             positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
             positive_rate = sum(positive_calls)/(len(interpreter.execution_details) + 1e-6)
         print("FS-CoT Performance:")
@@ -751,7 +752,7 @@ def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy=
         print("Std. Dev", np.std(perf_array))
         print("Rate of affordance call", positive_rate)
 
-# human_intervention(0.3, "text-davinci-002")
+human_intervention(0.3, "text-davinci-002")
 
 
 

@@ -23,7 +23,8 @@ tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 from prompt_library import (llm_similar_tasks, random_tasks,
                             similar_auto_breakdowns, similar_tasks,
                             few_shot_retrieval_prompt, few_shot_code_prompt, 
-                            few_shot_arithmetic_prompt, few_shot_string_prompt)
+                            few_shot_arithmetic_prompt, few_shot_string_prompt,
+                            few_shot_free_prompt)
 from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 
 # international_phonetic_alphabet_transliterate too 
@@ -100,60 +101,20 @@ def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
 def human_decomp(temperature=0.3):
     def predict(chunk):
         gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts = ["""Q: Yesterday was April 30, 2021. What is the date today in MM/DD/YYYY?
-Q1: Yesterday was April 30, 2021. Reformat this into MM/DD/YYYY.
-#1: 04/30/2021
-Q2: How can you find today's day?
-#2: Today is one day after yesterday.
-Q2: What day is today in MM/DD/YYYY?
-#2: 05/30/2021
-Q3: [EOQ]
-05/01/2021
+        prompts = ["""Q: Today is Christmas Eve of 1937. What is the date 10 days ago in MM/DD/YYYY?
+A: Let's think step by step.
+If today is Christmas Eve of 1937, then today's date is December 24, 1937. 10 days before today is December 14, 1937, that is 12/14/1937. So the answer is 12/14/1937.
 ----
-Q: Today's meeting is rescheduled to 11 am tomorrow, 10/16/1924. What is the date today in MM/DD/YYYY?
-Q1: What day is tomorrow?
-#1: 10/16/1924
-Q2: How can you find today's day?
-#2: Today is one day before tomorrow.
-Q2: What day is today in MM/DD/YYYY?
-#2: 10/15/1924
-Q3: [EOQ]
-10/15/1924
+Q: Tomorrow is 11/12/2019. What is the date one year ago from today in MM/DD/YYYY?
+A: Let's think step by step.
+If tomorrow is 11/12/2019, then today is 11/11/2019. The date one year ago from today is 11/11/2018. So the answer is 11/11/2018.
 ----
-Q: Jane visits the bookstore on the 16th of each month starting from the October of 2009. It is her 5th visit to the bookstore today. What is the date today in MM/DD/YYYY?
-Q1: What was the date of Jane's first visit to the bookstore?
-#1: 16th October of 2009.
-Q2: Reformat this into MM/DD/YYYY.
-#2: 10/16/2009
-Q3: Which month will be Jane's 5th visit? 
-#3: Jane's 5th visit will be 4 months from the first visit.
-Q4: Jane's 5th visit in MM/DD/YYYY?
-#4: 02/16/2010
-Q5: [EOQ]
-02/16/2010
+Q: Jane and John married on Jan 2, 1958. It is their 5-year anniversary today. What is the date tomorrow in MM/DD/YYYY?
+A: Let's think step by step.
+If Jane and John married on Jan 2, 1958, then and if it is their 5-year anniversary today, then today's date is Jan 2, 1963. The date tomorrow is Jan 3, 1963, that is 01/03/1963. So the answer is 01/03/1963.
 ----
-Q: May 6, 1992 is like yesterday to Jane, but that is actually ten years ago. What is the date a month ago in MM/DD/YYYY?
-Q1: What is the date 10 years ago in MM/DD/YYYY?
-#1: 05/06/1992
-Q2: What is the date today in MM/DD/YYYY?
-#2: 05/06/2002
-Q3: What day is the date a month ago in MM/DD/YYYY?
-#3: 04/06/2002
-Q4: [EOQ]
-04/06/2002
-----
-Q: The first day of 2019 is a Tuesday, and today is the first Monday of 2019. What is the date a month ago in MM/DD/YYYY?
-Q1: What is the first day of 2009 in MM/DD/YYYY?
-#1: 01/01/2019
-Q2: What date will the first Monday of 2019 fall on if 01/01/2009 is a Tuesday.
-#2: 01/07/2019
-Q3: What date is one month before today (06/01/2009)?
-#3: 12/07/2018
-Q4: [EOQ]
-12/07/2018
-----
-%s
-Q1:""" % x for x in chunk]
+Q: %s
+A: Let's think step by step.""" % x for x in chunk]
         return gpt3(prompts)
 
     perf_array = []
@@ -164,9 +125,8 @@ Q1:""" % x for x in chunk]
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
-            time.sleep(10)
         preds = [x.strip() for x in answers]
-        perf_array.append(token_match(labels, preds))
+        perf_array.append(substring_match(labels, preds))
     print("Human decomposition Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
@@ -481,7 +441,6 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
 # Q1:"""
 
 few_shot_cot_prompt = few_shot_string_prompt
-
 def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
 
     global few_shot_cot_prompt
@@ -530,7 +489,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     print("Std. Dev", np.std(perf_array))
 
 
-
+# few_shot_cot_prompt = few_shot_free_prompt
 def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
     global few_shot_cot_prompt
     task_name = "Date Understanding"
@@ -604,6 +563,73 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     print("Std. Dev", np.std(perf_array))
     print("Rate of affordance call", positive_rate)
 
+
+few_shot_human_prompt = """"""
+def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+    global few_shot_cot_prompt
+
+    few_shot_cot_prompt = few_shot_string_prompt
+    interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[generate python code]"])
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    def predict_self_consistency(description, chunk, n=9):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    if self_consistency:
+        perf_array = []
+        runs = 2
+        batch_size = 2
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = [] # List of counters
+            for x in tqdm(chunks(inputs, batch_size)):
+                x = [ex.replace("\nEdited:", "") for ex in x]
+                prompts, answer_set = predict_self_consistency(task_description, x)
+                result_counter = [Counter() for i in range(batch_size)]
+                for chunk_no, ans_chunk in enumerate(chunks(answer_set, 9)):
+                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
+                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    for pred in enumerate(processed_answers):
+                        # Only add to the counter if there is a legitimate answer
+                        if pred is not None:
+                            result_counter[chunk_no].update([pred])
+                answers.extend(result_counter)
+            preds = [x.most_common(1)[0][0][1] for x in answers[:len(inputs)]]
+            perf_array.append(substring_match(labels, preds))
+            print(perf_array)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+
+    else:
+        perf_array = []
+        runs = 1
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = []
+            for x in tqdm(chunks(inputs, 10)):
+                x = [ex.replace("\nA:", "") for ex in x]
+                prompts, answer = predict("Find the required date in MM/DD/YYYY using information about related events and dates in the input. Clue: First find what day is today.", x)
+                new_answer  = interpreter.batch_visit(prompts, answer)
+                answers.extend(new_answer)
+            preds = [get_answer(x) for x in answers]
+            perf_array.append(substring_match(labels, preds))
+            # Report on interpreter performance
+            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+            positive_rate = sum(positive_calls)/(len(interpreter.execution_details) + 1e-6)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+        print("Rate of affordance call", positive_rate)
+
+human_intervention(0.3, "text-davinci-002")
+# human_decomp()
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()

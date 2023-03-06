@@ -490,6 +490,45 @@ Q2: [code execute] Execute the python code and get the value of "ans"
 Q3: [EOQ]
 Ans: 6"""]
 },
+"navigation":{
+    "name": "Navigation",
+    "description": """Description: Determine if following the given navigation instructions, you return to the starting point. If yes, say "Yes", otherwise, say "No".""",
+    "instances": ["""Input: Take 7 steps. Turn right. Take 8 steps. Turn around. Do you return to the starting point? Answer "Yes" or "No"
+Q1: [subquestion] Does this question require vector arithmetic?
+#1: Yes.
+Q2: [subquestion] Which way are you facing when you start? If unknown, assume you face forward?
+#2: Face forward
+Q3: [vector arithmetic] What is the distance moved forward?
+#3: 7 steps
+Q4: [vector arithmetic] What is the distance moved right?
+#4: 8 steps
+Q5: [vector arithmetic] What is the distance moved backward?
+#5: 0 steps
+Q6: [vector arithmetic] What is the distance moved left?
+#6: 0 steps
+Q7: [vector arithmetic] What is total distance moved from starting point?
+#7: 7 steps vertically, 8 steps horizontally 
+Q8: [subquestion] Is the total distance moved, both vertically and horizontally, 0? 
+#8: No
+Q9: [EOQ]
+Ans: No""",
+"""Input: Always face forward. Take 6 steps right. Take 10 steps left. Take 3 steps left. Take 1 step forward. Take 4 steps left. Take 10 steps left.
+Q1: [generate python code] write down the arithmetic or algebra equations as python code, storing the answer as 'ans'
+#1:
+steps_forward = 1
+steps_backward = 0
+steps_right = 6
+steps_left = 10 + 3 + 4 + 10
+vertical = steps_forward - steps_backward
+horizontal = steps_right - steps_left
+print((vertical,horizontal))
+Q2: [code execute] Execute the python code snippet.
+#2: (1,-23)
+Q3: [get answer] The final displacement is (0,0). True or False?
+#3: False
+Q4: [EOQ]
+Ans: False"""]
+}
 # "musique":{
 #     "name" : "Multi-step question answering",
 #     "description": "Answer complex questions that require decompositions into sub-questions and composing intermediate answers.",
@@ -1328,7 +1367,6 @@ def similar_tasks(task_description, io_pairs, N=5):
     model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
     texts_to_compare = []
     for key, task in TASKS.items():
-        print(key)
         doc = "\n".join(task["instances"][0].split("\n")[:2]) + "\n" + task["instances"][1].split("\n")[1]
         texts_to_compare.append(doc)
     doc_embeddings = model.encode(texts_to_compare) # (13, 384)
@@ -1340,7 +1378,8 @@ def similar_tasks(task_description, io_pairs, N=5):
     selected_tasks = [list(TASKS.keys())[t] for t in top_tasks]
     prompt = """In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use affordances like string operations, search engines, arithmetic functions, or code generation. Be sure to use "[]" to specify affordances in subtasks.\n----\n"""
     for task in selected_tasks:
-        prompt += TASKS[task]["instances"][0] + "\n----\n"
+        print(TASKS[task]["name"])
+        prompt += TASKS[task]["description"] + "\n" + TASKS[task]["instances"][0] + "\n----\n"
     prompt += "Description: %s\nInput: %s\nQ1:"
     return prompt
 
@@ -1450,13 +1489,14 @@ def llm_similar_tasks(task_name, task_description, io_pairs, N=5):
     # if len(selected_tasks) >= N:
     #     random_tasks = np.random.choice(len(selected_tasks), N, replace=False)
     #     selected_tasks = [selected_tasks[t] for t in random_tasks]
-    
     prompt = """In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use affordances like string operations, search engines, arithmetic functions, or code generation. Be sure to use "[]" to specify affordances in subtasks.\n----\n"""
     for task in selected_tasks[:N]:
         print(task[0], task[-1])
-        prompt += TASKS[task[0]]["instances"][0] + "\n----\n"
+        prompt += "Description: (" + TASKS[task[0]]["name"] + ") " + TASKS[task[0]]["description"] + "\n"
+        prompt += TASKS[task[0]]["instances"][0] + "\n----\n" + TASKS[task[0]]["instances"][1] + "\n----\n"
     
     prompt += "Description: %s\nInput: %s\nQ1:"
+
     return prompt
 
 

@@ -29,7 +29,7 @@ from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 d = datasets.load_dataset('bigbench', 'code_line_description', cache_dir=cache_dir)
 inputs =  d['validation']['inputs'] + d['train']['inputs']
 # inputs = [x.split('\n')[0] for x in inputs]
-labels =  d['validation']['targets'] + d['train']['inputs']
+labels =  d['validation']['targets'] + d['train']['targets']
 labels = [l[0] for l in labels]
 
 train_inputs = d['train']['inputs']

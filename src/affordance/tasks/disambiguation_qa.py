@@ -84,6 +84,66 @@ def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     print("Std. Dev", np.std(perf_array))
 
 
+
+def human_decomp(temperature=0.3):
+    def predict(chunk):
+        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts = ["""Q: In the following sentences, explain the antecedent of the pronoun (which thing the pronoun refers to), or state that it is ambiguous.
+Sentence: The chief told the counselor that they took the day off.
+  choice: The chief took the day off
+  choice: The counselor took the day off
+  choice: Ambiguous
+A: Let's think step by step.
+Here we need to determine who the pronoun "they" might be referring to. There are two possible referents for "they", namely the chief and the counselor. The verb "told" might be able to help us determine which one is more likely (if either). Let X be the chief and Y the counselor. The sentence is then of the form "X told Y that (X or Y) did something."
+Let's consider Y first: "X told Y that Y did something." This case does not make much sense, as Y would already have the information that Y did something, because it is information about themself.
+Now, consider X: "X told Y that X did something." This makes sense, because X would be sharing some information about themself that Y might not have known before.
+Because in this context, X is the chief and Y is the counselor, the answer should be the chief. So the answer is The chief took the day off.
+----
+Q: In the following sentences, explain the antecedent of the pronoun (which thing the pronoun refers to), or state that it is ambiguous.
+Sentence: The manager sent a message to the secretary, but he didn't reply yet.
+  choice: The secretary didn't reply yet
+  choice: The manager didn't reply yet
+  choice: Ambiguous
+A: Let's think step by step.
+Here we need to determine who the pronoun "he" might be referring to. There are two possible referents for "he", namely the manager and the secretary. The verbs "sent" and "reply" might be able to help us determine which one is more likely (if either). Let X be the manager and Y the secretary. The sentence is then of the form "X sent a message to Y, but (X or Y) didn't reply yet."
+Let's consider Y first: "X sent a message to Y, but Y didn't reply yet." This case makes sense, because of the implicit causality of the sentence. Y was the receiver of the message, but Y didn't get back to X yet.
+Now, consider X: "X sent a message to Y, but X didn't reply yet." This case doesn't make sense, because X was the initial sender of the message, so it is now Y's turn to write back to X.
+Because in this context, X is the manager and Y is the secretary, the answer should be the secretary. So the answer is The secretary didn't reply yet.
+----
+Q: In the following sentences, explain the antecedent of the pronoun (which thing the pronoun refers to), or state that it is ambiguous.
+Sentence: Bailey will plan to meet the director at his office
+  choice: It will be Bailey's office
+  choice: It will be the director's office
+  choice: Ambiguous
+A: Let's think step by step.
+Here we need to determine who the pronoun "his" might be referring to. There are two possible referents for "his", namely Bailey's and the director's. The verb phrase "plan to meet" might be able to help us determine which one is more likely (if either). Let X be Bailey and Y the director. The sentence is then of the form "X will plan to meet Y at (X or Y)'s office."
+Let's consider Y first: "X will plan to meet Y at Y's office." This case makes sense, because X might want to meet up with Y at Y's office.
+Now, consider X: "X will plan to meet Y at X's office." This case also makes sense, because X might want to meet up with Y at X's own office.
+Because both X and Y are possible at the same time, we conclude that the antecedent of the pronoun is ambiguous. So the answer is Ambiguous.
+----
+%s
+A: Let's think step by step.""" % x for x in chunk]
+        return gpt3(prompts)
+
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 10)):
+            x = [ex.replace("\nA:", "") for ex in x]
+            answers.extend(predict(x))
+        preds = [get_autocot_answer(x, answer_prompt="So the answer is ") for x in answers]
+        perf_array.append(substring_match(labels, preds))
+    print("Human decomposition Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
+
+
+
+
+
 auto_cot_corrected_prompt = """"""
 
 auto_cot_cleaned_prompt = """(Disambiguation QA) Given a sentence with an ambiguous pronoun, choose the person to whom the pronoun refers. When the meaning of the sentence is ambiguous, return the answer "ambiguous".
@@ -317,6 +377,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     print("Std. Dev", np.std(perf_array))
 
 
+# human_decomp()
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()

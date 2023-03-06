@@ -36,7 +36,7 @@ labels = [l[0] for l in labels]
 train_inputs = d['train']['inputs']
 train_labels = d['train']['targets']
 
-task_description = """Determine whether an artificially constructed sentence relating to sports is plausible or implausible. The final answer should be "plausible" or "implausible"."""
+task_description = """(Sports Understanding) Determine whether an artificially constructed sentence relating to sports is plausible or implausible. The final answer should be "plausible" or "implausible"."""
 
 io_pairs = [("""Determine whether the following statement or statements are plausible or implausible:
 Statement: James Harden shot a free throw
@@ -137,6 +137,40 @@ plausible
     print("No decomposition Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
+
+
+
+def human_decomp(model_name ="text-davinci-002", temperature=0.3):
+    def predict(chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts = ["""Q: Is the following sentence plausible? "Bam Adebayo scored a reverse layup in the Western Conference Finals."
+A: Let's think step by step. Bam Adebayo is an American basketball player. Scoring a reverse layup in the Western Conference Finals is part of the NBA Finals. So the answer is plausible.
+----
+Q: Is the following sentence plausible? "Santi Cazorla scored a touchdown."
+A: Let's think step by step. Santi Cazorla is a soccer player. Touchdown is part of American football and rugby. So the answer is implausible.
+----
+Q: Is the following sentence plausible? "DeMar DeRozan was called for the goal tend."
+A: Let's think step by step. DeMar DeRozan is an American basketball player. Goal tending is part of basketball. So the answer is plausible.
+----
+%s
+A: Let's think step by step.""" % x for x in chunk]
+        return gpt3(prompts)
+
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 2)):
+            x = [ex.replace("\nA:", "") for ex in x]
+            answers.extend(predict(x))
+            time.sleep(10)
+        preds = [get_autocot_answer(x, answer_prompt="So the answer is ") for x in answers]
+        perf_array.append(substring_match(labels, preds))
+    print("Human decomposition Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
 
 
 # few_shot_cot_prompt = """In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use search functions like Google search in one or more of your substeps, if there in insufficient information. Other functions like arithmetic and logical operations can also be used.  
@@ -596,81 +630,73 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-few_shot_human_prompt = """Input: Determine whether the following statement or statements are plausible or implausible:
+few_shot_human_prompt = """Description: (Sports Understanding) Determine whether an artificially constructed sentence relating to sports is plausible or implausible. The final answer should be "plausible" or "implausible".
+Input: Determine whether the following statement or statements are plausible or implausible:
 Statement: Joao Moutinho caught the screen pass in the NFC championship
 Plausible/implausible?
 Q1: [search] What is a screen pass?
-#1: A screen pass is a play in gridiron football consisting of a short pass to a receiver who is behind the line of scrimmage.
+#1: A screen pass is a play in gridiron football consisting of a short pass to a receiver who is behind the line of scrimmage. A screen pass is a play where the quarterback fakes a handoff or long pass but instead throws a short pass to a receiver who has positioned ...
 Q2: [search] What is the NFC championship?
 #2: The National Football Conference (NFC) Championship Game is one of the two semi-final playoff games of the National Football League (NFL), the largest professional American football league in the United States. The game is played on the penultimate Sunday in January by the two remaining playoff ... The NFC Championship Game is the annual championship game of the National Football Conference (NFC) and one of the two semifinal playoff games of the ...
-Q3: [subquestion] Could these events co-exist?
-Yes.
-Q4: [generate output]
-Plausible
-Q5: [EOQ]
-Ans: Plausible
+Q3: [search] What sport does Joao Moutinho play and in what position?
+#3: Joao Moutinho is a professional soccer player who plays as a midfielder for the French Ligue 1 club Olympique de Marseille.
+Q3: [generate output] Could Joao Moutinho have caught the screen pass in the NFC championship?
+#3: No, Joao Moutinho could not have caught the screen pass in the NFC championship, as he is a professional soccer player and not a gridiron football player.
+Q4: [EOQ]
+Ans: Implausible
 ----
+Description: (Sports Understanding) Determine whether an artificially constructed sentence relating to sports is plausible or implausible. The final answer should be "plausible" or "implausible".
 Input: Determine whether the following statement or statements are plausible or implausible:
 Statement: Mathieu Valbuena scored a windmill dunk in the Western Conference Finals
 Plausible/implausible?
 Q1: [search] What is a windmill dunk?
-#1: A windmill dunk is a type of slam dunk in which the dunker swings his arm around in a windmill motion before slamming the ball through the basket.
+#1: What Is The Definition Of A Windmill Dunk In Basketball? 1. This is a type of dunk where the player brings the ball up to their waste, then moves their arm straight back and up in a circular motion until they dunk the ball over their head.
 Q2: [search] What is the Western Conference Finals?
-#2: The Western Conference Finals is the conference championship series of the National Basketball Association's (NBA) Western Conference, which determines the league's champion for the NBA Finals. The National Basketball Association Conference Finals are the Eastern and Western championship series of the National Basketball Association (NBA), ...
-Q3: [subquestion] Could these entities have co-existed?
-#3: Yes.
-Q4: [generate output] Is this plausible?
-#4: Yes
-Q5: [EOQ]
-Ans: Yes
+#2: The Western Conference Finals is the third round of the National Basketball Association (NBA) playoffs. It is a best-of-seven series between the two teams from the Western Conference that win their respective divisions during the regular season.
+Q3: [search] What sport does Mathieu Valbuena play and in what position?
+#3: Mathieu Valbuena is a professional soccer player who plays as an attacking midfielder for the French Ligue 1 club Olympique de Marseille.
+Q3: [generate output] Could Mathieu Valbuena have scored a windmill dunk in the Western Conference Finals?
+#3: No, Mathieu Valbuena could not have scored a windmill dunk in the Western Conference Finals, as he is a professional soccer player and not a basketball player.
+Q4: [EOQ]
+Ans: Implausible
 ----
+Description: (Sports Understanding) Determine whether an artificially constructed sentence relating to sports is plausible or implausible. The final answer should be "plausible" or "implausible".
 Input: Determine whether the following statement or statements are plausible or implausible:
-Statement: Robert Covington was called for icing
+Statement: Igor Shesterkin was called for icing
 Plausible/implausible?
-Q1: [search] What is icing in basketball?
-#1: Icing is a strategy used in basketball to prevent the opposing team from shooting a three-point field goal.
-Q2: [search] Who is Robert Covington?
-#2: Robert Allen Covington Jr. (born December 14, 1991) is an American professional basketball player for the Houston Rockets of the National Basketball Association (NBA). Robert Covington (born December 14, 1990) is an American professional basketball player for the Los Angeles Clippers of the National Basketball Association ...
-Q3: [subquestion] Could the statement be true?
-#3: Yes.
-Q5: [EOQ]
+Q1: [search] What is icing? 
+#1: Icing is a rule in some forms of ice hockey that prohibits a team from shooting the puck across the centre line and into the offensive zone of the other team. When the team does this, the referee blows the whistle and the opposing team is allowed a faceoff in that zone.
+Q2: [search] What sport does Robert Covington play and in what position?
+#2: Igor Shesterkin is a professional ice hockey goaltender who plays for the New York Rangers of the National Hockey League (NHL).
+Q3: [generate output] Could Igor Shesterkin have been called for icing?
+#3: Yes, Igor Shesterkin could have been called for icing, as he is a professional ice hockey goaltender.
+Q4: [EOQ]
 Ans: Plausible
 ----
-Input: Determine whether the following statement or statements are plausible or implausible:
-Statement: Igor Shesterkin launched a hail mary
-Plausible/implausible?
-Q1: [search] What is a hail mary?
-#1: In American football, a hail mary pass (also known as a bomb, prayer, or miracle pass)[1][2][3] is a very long forward pass usually made in a desperate situation with only a small chance of success.
-Q2: [search] What is Igor Shesterkin?
-#2: Igor Vladimirovich Shesterkin (Russian: Игорь Владимирович Шестеркин, IPA: [ˈiɡər ʂɨsˈtʲerkʲɪn]; born 23 April 1995) is a Russian professional ice hockey goaltender for the New York Rangers of the National Hockey League (NHL). Igor Shesterkin; Born: December 30, 1995; Birthplace: Moscow, RUS; Catches: Left; Draft: 2014 NYR, 4th rd, 28th pk (118th overall); View Player Bio + ...
-Q3: [subquestion] Could these entities have co-existed based on this information?
-#3: Yes.
-Q4: [generate output] Is this statement plausible?
-#4: Plausible
-Q5: [EOQ]
-Ans: Plausible
-----
+Description: (Sports Understanding) Determine whether an artificially constructed sentence relating to sports is plausible or implausible. The final answer should be "plausible" or "implausible".
 Input: Determine whether the following statement or statements are plausible or implausible:
 Statement: Matt Ryan scored a penalty kick
 Plausible/implausible?
-Q1: [search] What is a penalty kick?
-#1: A penalty kick is a method of restarting play in association football, in which a player is allowed to take a single shot on the goal while it is defended only by the opposing team's goalkeeper.
-Q2: [search] What is Matt Ryan's occupation?
-#2: Matt Ryan is an American football quarterback for the Atlanta Falcons of the National Football League (NFL). American football player
-Q3: [subquestion] Could Matt Ryan score a penalty kick?
-#3: Yes.
-Q5: [EOQ]
-Ans: Yes
+Q1: [search] What is a penalty kick? 
+#1: A penalty kick is a type of free kick in association football, taken from twelve yards (approximately eleven metres) out from goal and with only the goalkeeper of the defending team between the penalty taker and the goal.
+Q2: [search] What sport does Matt Ryan play and in what position?
+#2: Matt Ryan is a professional American football quarterback for the Atlanta Falcons of the National Football League (NFL).
+Q3: [generate output] Could Matt Ryan have scored a penalty kick?
+#3: No, Matt Ryan could not have scored a penalty kick, as he is a professional American football quarterback and not a soccer player. 
+Q4: [EOQ]
+Ans: Implausible
 ----
-"""
+Description: %s
+Input: %s
+Q1:"""
 def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
     global few_shot_cot_prompt
 
-    few_shot_cot_prompt = few_shot_retrieval_prompt
+    few_shot_cot_prompt = few_shot_human_prompt
     interpreter = TopDownVisitorBeta(model_name=model_name)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        gpt3 = OpenAIModel(model=model_name,  max_length=1500, temperature=temperature, quote='---', n=1)
         prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
@@ -715,10 +741,10 @@ def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy=
                 prompts, answer = predict(task_description, x)
                 new_answer  = interpreter.batch_visit(prompts, answer)
                 answers.extend(new_answer)
-                pdb.set_trace()
-            preds = [x.strip() for x in answers]
+            preds = [get_answer(x) for x in answers]
             perf_array.append(substring_match(labels, preds))
             # Report on interpreter performance
+            print(perf_array)
             positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
             positive_rate = sum(positive_calls)/(len(interpreter.execution_details) + 1e-6)
         print("FS-CoT Performance:")
@@ -726,9 +752,8 @@ def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy=
         print("Std. Dev", np.std(perf_array))
         print("Rate of affordance call", positive_rate)
 
-# human_intervention(0.3, "text-davinci-002")
-
-
+# human_decomp("text-davinci-002", 0.3)
+human_intervention(0.3, "text-davinci-002")
 
 
 if __name__ == "__main__":

@@ -35,7 +35,6 @@ labels = d['validation']['targets']
 labels = [l[0] for l in labels]
 # print(len(inputs))
 
-
 train_inputs = d['train']['inputs']
 train_labels = d['train']['targets']
 
@@ -132,6 +131,67 @@ six
     print("No decomposition Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
+
+
+def human_decomp(model_name ="text-davinci-002", temperature=0.3):
+    def predict(chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts = ["""Q: I have a blackberry, a clarinet, a nectarine, a plum, a strawberry, a banana, a flute, an orange, and a violin. How many fruits do I have?
+A: Let's think step by step.
+We first identify the fruits on the list and include their quantity in parentheses:
+- blackberry (1)
+- nectarine (1)
+- plum (1)
+- strawberry (1)
+- banana (1)
+- orange (1)
+Now, let's add the numbers in parentheses: 1 + 1 + 1 + 1 + 1 + 1 = 6. So the answer is 6.
+----
+Q: I have an orange, a raspberry, two peaches, a blackberry, an apple, a grape, a nectarine, and three plums. How many fruits do I have?
+A: Let's think step by step.
+We first identify the fruits on the list and include their quantity in parentheses:
+- orange (1)
+- raspberry (1)
+- peaches (2)
+- blackberry (1)
+- apple (1)
+- grape (1)
+- nectarine (1)
+- plums (3)
+Now, let's add the numbers in parentheses: 1 + 1 + 2 + 1 + 1 + 1 + 1 + 3 = 11. So the answer is 11.
+----
+Q: I have a lettuce head, a head of broccoli, an onion, a stalk of celery, two carrots, a garlic, and a yam. How many vegetables do I have?
+A: Let's think step by step.
+We first identify the vegetables on the list and include their quantity in parentheses:
+- lettuce (1)
+- broccoli (1)
+- onion (1)
+- celery (1)
+- carrots (2)
+- garlic (1)
+- yam (1)
+Now, let's add the numbers in parentheses: 1 + 1 + 1 + 1 + 2 + 1 + 1 = 8. So the answer is 8.
+----
+%s
+A: Let's think step by step.""" % x for x in chunk]
+        return gpt3(prompts)
+
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        numeric_labels = [str(w2n.word_to_num(l)) for l in labels]
+        for x in tqdm(chunks(inputs, 10)):
+            x = [ex.replace("\nA:", "") for ex in x]
+            answers.extend(predict(x))
+        preds = [get_autocot_answer(x, answer_prompt="So the answer is ") for x in answers]
+        perf_array.append(substring_match(numeric_labels, preds))
+    print("Human decomposition Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
+
 
 
 auto_cot_corrected_prompt = """Object counting: You are given a bunch of items and asked to count a specific kind of item.
@@ -594,7 +654,7 @@ def nl_program(temperature=0.3, model_name="davinci-codex-002-msft", strategy="f
         return prompts, gpt3(prompts)
 
     perf_array = []
-    runs = 1
+    runs = 5
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
@@ -615,7 +675,7 @@ def nl_program(temperature=0.3, model_name="davinci-codex-002-msft", strategy="f
     print("Std. Dev", np.std(perf_array))
     print("Rate of affordance call", positive_rate)
 
-
+human_decomp()
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()
