@@ -152,7 +152,29 @@ Frankenstein.
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
+def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
 
+    few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=N)
+    print(len(tokenizer(few_shot_prompt)['input_ids']))
+
+    def predict(chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=200, temperature=temperature, quote='---', n=1)
+        prompts = ["""%s\
+%s""" % (few_shot_prompt, x) for x in chunk]
+        return gpt3(prompts)
+    
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 10)):
+            answers.extend(predict(x))
+        preds = [x.strip() for x in answers]
+        perf_array.append(exact_match(labels, preds))
+    print("No decomposition Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
 
 def human_decomp(temperature=0.3):
     def predict(chunk):
@@ -703,6 +725,7 @@ def nl_program(temperature=0.3, model_name="davinci-codex-002-msft", strategy="f
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
+            pdb.set_trace()
         preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(processed_labels, preds))
         print(perf_array)
@@ -873,7 +896,7 @@ def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy=
         print("Rate of affordance call", positive_rate)
 
 # human_intervention(0.3, "davinci-codex-002-msft")
-human_decomp()
+# human_decomp()
 
 
 if __name__ == "__main__":

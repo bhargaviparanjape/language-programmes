@@ -628,7 +628,7 @@ def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy=
         print("Std. Dev", np.std(perf_array))
         print("Rate of affordance call", positive_rate)
 
-human_intervention(0.3, "text-davinci-002")
+# human_intervention(0.3, "text-davinci-002")
 # human_decomp()
 
 if __name__ == "__main__":

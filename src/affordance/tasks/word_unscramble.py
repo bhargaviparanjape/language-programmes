@@ -109,6 +109,29 @@ fireplace
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
+def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
+
+    few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=N)
+    print(len(tokenizer(few_shot_prompt)['input_ids']))
+
+    def predict(chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=200, temperature=temperature, quote='---', n=1)
+        prompts = ["""%s\
+%s""" % (few_shot_prompt, x) for x in chunk]
+        return gpt3(prompts)
+    
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 10)):
+            answers.extend(predict(x))
+        preds = [x.strip() for x in answers]
+        perf_array.append(exact_match(labels, preds))
+    print("No decomposition Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
 
 few_shot_cot_prompt = """In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use string operations like splitting, reformatting, editing or merging. You can also use other operations like arithmetic and logic.
 Description: Find the required date in MM/DD/YYYY using information about related events and dates in the input. Clue: First find what day is today.
@@ -474,8 +497,8 @@ Q2: [string permutation] What are the possible permutations of the letters in #1
             # affordance_inputs = [json.loads(a.strip().split("\n")[1].replace("#1: ", "")) for a in answers]
             affordance_outputs = [string_permutation(json.loads(l)) for l in letters]
             x = [ex + json.dumps(o) + "\nQ3:" for ex, o in zip(x, affordance_outputs)]
-            new_answers.extend(predict_with_affordance("Unscramble the given word into a word in English.", x))
             pdb.set_trace()
+            new_answers.extend(predict_with_affordance("Unscramble the given word into a word in English.", x))
         preds = [[y.strip() for y in x.split("\n")] for x in new_answers]
         perf_array.append(token_match(labels, preds))
         print(perf_array)
@@ -483,7 +506,7 @@ Q2: [string permutation] What are the possible permutations of the letters in #1
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-affordance()
+# affordance()
 # auto_cot()
 
 def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
@@ -814,7 +837,8 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
                 prompts, answer = predict(task_description, x)
                 new_answer  = interpreter.batch_visit(prompts, answer)
                 answers.extend(new_answer)
-                time.sleep(10)
+                # time.sleep(10)
+                pdb.set_trace()
             preds = [x.strip() for x in answers]
             perf_array.append(substring_match(labels, preds))
 

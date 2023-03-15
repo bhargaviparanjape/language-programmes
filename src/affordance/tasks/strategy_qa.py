@@ -114,6 +114,31 @@ No. Alice's Adventures in Wonderland was published in 1865. Macbeth was first pe
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
+def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
+
+    few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=N)
+    print(len(tokenizer(few_shot_prompt)['input_ids']))
+
+    def predict(chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=200, temperature=temperature, quote='---', n=1)
+        prompts = ["""%s\
+%s""" % (few_shot_prompt, x) for x in chunk]
+        return gpt3(prompts)
+    
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 10)):
+            answers.extend(predict(x))
+        preds = [x.strip() for x in answers]
+        processed_labels = [l.split()[0] for l in labels]
+        processed_preds = [p.split()[0] for p in preds]
+        perf_array.append(exact_match(processed_labels, processed_preds))
+    print("No decomposition Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
 
 def strategyqa(N=10, temperature=0.3, model_name="text-davinci-002"):
 
@@ -716,7 +741,7 @@ def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy=
         print("Std. Dev", np.std(perf_array))
         print("Rate of affordance call", positive_rate)
 
-human_intervention(0.3, "text-davinci-002")
+# human_intervention(0.3, "text-davinci-002")
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()

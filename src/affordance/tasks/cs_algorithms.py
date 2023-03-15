@@ -192,6 +192,32 @@ Valid
     print("Std. Dev", np.std(perf_array))
 
 
+def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
+
+    few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=N)
+    print(len(tokenizer(few_shot_prompt)['input_ids']))
+
+    def predict(chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=200, temperature=temperature, quote='---', n=1)
+        prompts = ["""%s\
+%s""" % (few_shot_prompt, x) for x in chunk]
+        return gpt3(prompts)
+    
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 10)):
+            answers.extend(predict(x))
+            time.sleep(5)
+        preds = [x.strip() for x in answers]
+        perf_array.append(exact_match(labels, preds))
+    print("No decomposition Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
+
 
 # few_shot_cot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use a python code generation and execution function in one or more of your substeps, if required. Other functions like arithmetic and logical operations can also be used. 
 # Description: (Auto Debugging) Debug the following code snippets by finding the answer or the error message.

@@ -441,7 +441,7 @@ Desciption: %s
 Input: %s
 Q1: """
 
-# few_shot_cot_prompt = few_shot_arithmetic_prompt
+few_shot_cot_prompt = few_shot_arithmetic_prompt
 
 def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
     global few_shot_cot_prompt
@@ -730,6 +730,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
                 new_answer  = interpreter.batch_visit(prompts, answer)
                 answers.extend(new_answer)
                 # time.sleep(10)
+                pdb.set_trace()
             preds = [get_answer(x) for x in answers]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)

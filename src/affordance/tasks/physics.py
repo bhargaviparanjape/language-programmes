@@ -24,7 +24,8 @@ tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 from prompt_library import (llm_similar_tasks, random_tasks,
                             similar_auto_breakdowns, similar_tasks,
                             few_shot_retrieval_prompt, few_shot_code_prompt, 
-                            few_shot_arithmetic_prompt, few_shot_string_prompt)
+                            few_shot_arithmetic_prompt, few_shot_string_prompt,
+                            few_shot_free_prompt)
 from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 
 
@@ -297,7 +298,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-auto_cot_corrected_prompt = """Physics: Identify the physics formula that would be most useful for finding the answer to each of the following word problems.
+auto_cot_cleaned_prompt = """Physics: Identify the physics formula that would be most useful for finding the answer to each of the following word problems.
 Q: In an experiment, a positively charged oil droplet weighing 6.5 * 10 ^ -15 N is held stationary by a vertical electric field. If the electric field strength is 5.3 * 10 ^ 3 N/C, what is the charge on the oil droplet?
   choice: dt = dx / v
   choice: v = λ * f
@@ -375,7 +376,7 @@ The best answer choice is U = m * g * h
 ----
 """
 
-auto_cot_cleaned_prompt = """Physics: Identify the physics formula that would be most useful for finding the answer to each of the following word problems.
+auto_cot_corrected_prompt = """Physics: Identify the physics formula that would be most useful for finding the answer to each of the following word problems.
 Q: In an experiment, a positively charged oil droplet weighing 6.5 * 10 ^ -15 N is held stationary by a vertical electric field. If the electric field strength is 5.3 * 10 ^ 3 N/C, what is the charge on the oil droplet?
   choice: dt = dx / v
   choice: v = λ * f
@@ -459,6 +460,7 @@ Now we just need to plug in the given values and solve for efficiency.
 The best answer choice is U = m * g * h.
 ----
 """
+
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
     global auto_cot_corrected_prompt
     auto_cot_prompt = ""
@@ -642,6 +644,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
                 prompts, answer = predict(task_description, x) 
                 new_answer  = interpreter.batch_visit(prompts, answer)
                 answers.extend(new_answer)
+                pdb.set_trace()
             preds = [get_answer(x.strip()) for x in answers]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)
@@ -653,7 +656,6 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
         print("Rate of affordance call", positive_rate)
 
 
-
 few_shot_human_prompt = """Input: Identify the physics formula that would be most useful for finding the answer to each of the following word problems. A proton is located at A, 1.0 m from a fixed +2.2 *10^−6 C charge. If the proton started from rest at A, what would be its speed at B?
   choice: U_E = k * q * q / r
   choice: v = λ * f
@@ -663,7 +665,7 @@ Q1: [subquestion] What quantity is being asked for in "A proton is located at A,
 #1: The speed of the proton.
 Q2: [subquestion] What other information is given in "A proton is located at A, 1.0 m from a fixed +2.2 *10^−6 C charge. If the proton started from rest at A, what would be its speed at B?"
 #2: Distance (1.0m), charge(+2.2 *10^−6 C), initial speed (0)
-Q3: [subquestion] Given Distance, charge and initial speed, what can we compute for proton? Give the physics formula.
+Q3: [search] Given Distance, charge and initial speed, what can we compute for proton? Give the physics formula.
 #3: Given the distance, charge, and initial speed of a proton, you can compute the total energy of the proton. From Eq. 2.3, the magnitude of the E field due to a point charge q at a distance r is given by. E = k|q| r2. Here we are given E and r, so we can solve for ...
 Q4: [compare] What is the physics formula in the choices that is closest to E = k|q| r2.
 #4: U_E = k * q * q / r
@@ -679,7 +681,7 @@ Q1: [subquestion] What quantity is being asked for in "A particle of mass 6.8 * 
 #1: speed of the particle
 Q2: [subquestion] What other information is given in "A particle of mass 6.8 * 10 ^ −5 g and charge 58 mC moves in a region of space where the electric field is uniform and is 7.2 N/C in the x direction and zero in the y and z direction. If the initial velocity of the particle is given by vy = 1.7 * 10 ^ 6 m/s, vx = vz = 0, what is the speed of the particle at 0.7 s"
 #2: mass of particle (6.8 * 10 ^ −5 g), charge(58 mC), electric field (7.2 N/C), initial velocity (vy = 1.7 * 10 ^ 6 m/s, vx = vz = 0)
-Q3: [subquestion] Given mass of the particle, charge and initial velocity of particle, and electric field, what can we compute for the particle? Give the physics formula.
+Q3: [search] Given mass of the particle, charge and initial velocity of particle, and electric field, what can we compute for the particle? Give the physics formula.
 #3: 
 We can compute acceleration of the particle, as follows:
 a = (q/m) * E
@@ -699,7 +701,7 @@ Q1: [subquestion] What quantity is being asked for in "An electron passing betwe
 #1: potential difference between the plates
 Q2: [subquestion] What other information is given in "An electron passing between parallel plates 0.025 m apart experiences an upward electrostatic force of 5.1*10^−16 N. What is the potential difference between the plates?"
 #2: distance between parallel plates(0.025 m), upward electrostatic force (5.1*10^−16 N)
-Q3: [subquestion] Given distance between plates and upward electrostatic force, what can we compute for the electron? Give the physics formula.
+Q3: [search] Given distance between plates and upward electrostatic force, what can we compute for the electron? Give the physics formula.
 #3:
 The electrostatic force can be computed using Coulomb's Law, which states that the force between two charges is equal to the product of the magnitude of the charges divided by the square of the distance between them, multiplied by a constant, k:
 F = k * (q1 * q2) / r2
@@ -717,7 +719,7 @@ Q1: [subquestion] What quantity is being asked for in "The 1205 kg physics drags
 #1: change in momentum
 Q2: [subquestion] What other information is given in "The 1205 kg physics dragster is traveling at 35 km/h east when it hits the gas and accelerates at 12.5 m/s^2 for 3.25 s. What is its change in momentum during this time?"
 #2: mass (1205 kg), velocity (35 km/h east), acceleration (12.5 m/s^2), time (3.25s)
-Q3: [subquestion] Given mass, velocity, acceleration, time, what can we compute for the dragster? Give the physics formula.
+Q3: [search] Given mass, velocity, acceleration, time, what can we compute for the dragster? Give the physics formula.
 #3:
 With these values, we can compute the dragster's momentum using the formula: momentum = mass * velocity + (acceleration * time^2)/2 Solving for Final Velocity from Distance and Acceleration
 A fourth useful equation can be obtained from another algebraic manipulation of previous equations. If we solve v = v0 + at  for t, we get ...
@@ -793,7 +795,7 @@ def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy=
         print("Std. Dev", np.std(perf_array))
         print("Rate of affordance call", positive_rate)
 
-human_intervention(0.3, "text-davinci-002")
+# human_intervention(0.3, "text-davinci-002")
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()

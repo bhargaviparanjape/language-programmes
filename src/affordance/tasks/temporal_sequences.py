@@ -13,7 +13,8 @@ from tqdm import tqdm
 from transformers import GPT2Tokenizer
 from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
                    get_few_shot_prompt, get_subset, gpt3,
-                   propose_decomposition, propose_instruction, substring_match)
+                   propose_decomposition, propose_instruction, substring_match,
+                   substring_match_v2)
 
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 import urllib.request
@@ -23,7 +24,8 @@ tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 from prompt_library import (llm_similar_tasks, random_tasks,
                             similar_auto_breakdowns, similar_tasks,
                             few_shot_retrieval_prompt, few_shot_code_prompt, 
-                            few_shot_arithmetic_prompt, few_shot_string_prompt)
+                            few_shot_arithmetic_prompt, few_shot_string_prompt,
+                            few_shot_free_prompt)
 from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 
 d = datasets.load_dataset('bigbench', 'temporal_sequences', cache_dir=cache_dir)
@@ -774,7 +776,7 @@ Input: %s
 Q1:"""
 
 few_shot_cot_prompt = few_shot_arithmetic_prompt
-
+# few_shot_cot_prompt = few_shot_free_prompt
 def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
     global few_shot_cot_prompt
     global few_shot_pot_prompt
@@ -812,13 +814,17 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
+        label_dict = {0:"(A)", 1:"(B)", 2:"(C)", 3:"(D)"}
+        choices = [[ans.strip() for ans in inp.replace("\nPossible times:", "").split("choice: ")][1:] for inp in inputs]
+        new_labels = [label_dict[choice.index(label)] for label, choice in zip(labels, choices)]
+        joint_labels = [[label, new_label] for label, new_label in zip(labels, new_labels)]
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("""\nPossible times:""", "") for ex in x]
             answers.extend(predict_complete(task_description, x))
             # time.sleep(10)
         # preds = [[y.strip() for y in x.split("\n")] for x in answers]
         preds = [get_answer(x) for x in answers]
-        perf_array.append(substring_match(labels, preds))
+        perf_array.append(substring_match_v2(joint_labels, preds))
         print(perf_array)
     print("FS-CoT performance:")
     print("Mean", np.mean(perf_array))
@@ -982,6 +988,7 @@ Desciption: %s
 Input: %s
 Q1: """
 
+few_shot_cot_prompt = few_shot_free_prompt
 def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
     global few_shot_pot_prompt
     global few_shot_cot_prompt
@@ -1017,6 +1024,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
             prompts, answer = predict(task_description, x)
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
+            pdb.set_trace()
         positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
         positive_rate = sum(positive_calls)/(len(interpreter.execution_details)+1e-6)
         preds = [get_answer(x) for x in answers]

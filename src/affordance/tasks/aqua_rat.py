@@ -88,9 +88,6 @@ B
 A box contains nine bulbs out of which 4 are defective. If four bulbs are chosen at random, find the probability that atleast one bulb is good? A)125/128 B)125/120 C)125/126 D)125/125 E)125/121
 C
 ----
-Four of the five parts numbered (a), (b), (c), (d) and (e) are exactly equal. Which of the parts is not equal to the other four? The number of that part is the answer. A)16.80 × 4.50 + 4.4 B)1600 ÷ 40 + 16 × 2.5 C)5.5 × 8.4 + 34.6 D)1620 ÷ 20 – 1 E)1856.95 – 1680.65 – 96.3
-C
-----
 An investment of $3000 was made in a certain account and earned interest that was compounded annually. The annual interest rate was fixed for the duration of the investment, and after 12 years the $3000 increased to $12000 by earning interest. In how many years after the initial investment was made the $3000 have increased to $24000 by earning interest at that rate? A)16 B)22 C)20 D)18 E)30
 D
 ----
@@ -129,6 +126,33 @@ E
     print("No decomposition Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
+
+
+def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
+
+    few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=N)
+    print(len(tokenizer(few_shot_prompt)['input_ids']))
+
+    def predict(chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=200, temperature=temperature, quote='---', n=1)
+        prompts = ["""%s\
+%s""" % (few_shot_prompt, x) for x in chunk]
+        return gpt3(prompts)
+    
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 10)):
+            answers.extend(predict(x))
+        preds = [x.strip() for x in answers]
+        perf_array.append(exact_match(labels, preds))
+    print("No decomposition Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
+
 
 auto_cot_corrected_prompt = """Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer.
 Ramu bought an old car for Rs. 42000. He spent Rs. 13000 on repairs and sold it for Rs. 64900. What is his profit percent? A)16%% B)88%% C)18%% D)14%% E)28%%
@@ -915,7 +939,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
+    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001", 'davinci-codex-002-msft'], default="text-davinci-002")
     parser.add_argument("--temperature", type=float, default="0.3")
     parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
     parser.add_argument("--num_train_examples", type=int, default=10)

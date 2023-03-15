@@ -240,6 +240,14 @@ def code_generate_then_lookup(instruction, code_input):
     except: 
         return None, execute_snippet
 
+def lookup(word_list):
+    import enchant
+    d = enchant.Dict("en_US")
+    valid_list = []
+    for word in word_list:
+        if d.check(word):
+            valid_list.append(word)
+    return valid_list
 
 def arithmetic(equations, previous_input):
     # collect all outputs of arithmetic and run python to execute them

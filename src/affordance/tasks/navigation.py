@@ -23,7 +23,8 @@ tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 from prompt_library import (llm_similar_tasks, random_tasks,
                             similar_auto_breakdowns, similar_tasks,
                             few_shot_retrieval_prompt, few_shot_code_prompt, 
-                            few_shot_arithmetic_prompt, few_shot_string_prompt)
+                            few_shot_arithmetic_prompt, few_shot_string_prompt,
+                            few_shot_free_prompt)
 from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 
 d = datasets.load_dataset('bigbench', 'navigate', cache_dir=cache_dir)
@@ -207,6 +208,29 @@ False
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
+def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
+
+    few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=N)
+    print(len(tokenizer(few_shot_prompt)['input_ids']))
+
+    def predict(chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=200, temperature=temperature, quote='---', n=1)
+        prompts = ["""%s\
+%s""" % (few_shot_prompt, x) for x in chunk]
+        return gpt3(prompts)
+    
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 10)):
+            answers.extend(predict(x))
+        preds = [x.strip() for x in answers]
+        perf_array.append(exact_match(labels, preds))
+    print("No decomposition Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
 
 auto_cot_corrected_prompt = """If you follow these instructions, do you return to the starting point?
 Q: Turn left. Take 4 steps. Turn around. Take 4 steps.
@@ -529,20 +553,24 @@ Q2: [code execute] Execute the python code in #1 and get the value of "ans"
 Q3: [EOQ]
 Ans: 22
 ----
-Description: Solve the following problems on financial data in the form of text and tables, writing out intermediate calculations as python code. Store your result as a variable named 'ans'.
-Input: american tower corporation and subsidiaries notes to consolidated financial statements ( 3 ) consists of customer-related intangibles of approximately $75.0 million and network location intangibles of approximately $72.7 million. the customer-related intangibles and network location intangibles are being amortized on a straight-line basis over periods of up to 20 years. For acquired customer-related and network location intangibles, what is the expected annual amortization expenses, in millions?
+Description: (Navigation) If you follow these instructions, do you return to the starting point? Answer True or False.
+Input: If you follow these instructions, do you return to the starting point?
+Always face forward. Take 2 steps left. Take 4 steps backward. Take 7 steps left. Take 8 steps right. Take 5 steps forward. Take 1 step left.
 Q1: [generate python code] write down the arithmetic or algebra equations as python code, storing the answer as 'ans'
 #1:
-customer_related_intangibles = 75
-network_location_intangibles = 72.7
-straight_line_basis = 20
-amortization_expenses = ( customer_related_intangibles + network_location_intangibles ) / straight_line_basis
-ans = amortization_expenses
-print(ans)
+steps_forward = 5
+steps_backward = 4
+steps_right = 8
+steps_left = 2 + 7 + 1
+vertical = steps_forward - steps_backward
+horizontal = steps_right - steps_left
+print((vertical,horizontal))
 Q2: [code execute] Execute the python code and get the value of "ans"
-#2: 7.385
-Q3: [EOQ]
-Ans: 7.385
+#2: (1,-2)
+Q3: [get answer] The final displacement is (0,0). True or False?
+#3: False
+Q4: [EOQ]
+Ans: False
 ----
 Description: (Navigation) If you follow these instructions, do you return to the starting point? Answer True or False.
 Input: If you follow these instructions, do you return to the starting point?
@@ -567,9 +595,6 @@ Descripton: %s
 Input: %s
 Q1:"""
 
-
-
-few_shot_cot_prompt = few_shot_arithmetic_prompt
 
 few_shot_pot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can generate python code to solve arithmetic and algebra equations in using functions from sympy.
 from sympy import Symbol
@@ -679,7 +704,7 @@ Descripton: %s
 Input: %s
 Q1:"""
 
-
+few_shot_cot_prompt = few_shot_arithmetic_prompt
 
 def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
     global few_shot_cot_prompt
@@ -944,7 +969,7 @@ def human_intervention(temperature=0.3, model_name="davinci-codex-002-msft", str
         print("Rate of affordance call", positive_rate)
 
 # human_intervention(0.3, "code-davinci-002")
-# human_decomp()
+human_decomp()
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()

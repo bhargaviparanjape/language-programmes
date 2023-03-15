@@ -23,14 +23,15 @@ tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 from prompt_library import (llm_similar_tasks, random_tasks,
                             similar_auto_breakdowns, similar_tasks,
                             few_shot_retrieval_prompt, few_shot_code_prompt, 
-                            few_shot_arithmetic_prompt, few_shot_string_prompt)
+                            few_shot_arithmetic_prompt, few_shot_string_prompt,
+                            few_shot_free_prompt)
 from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 
 # international_phonetic_alphabet_transliterate too 
 d = datasets.load_dataset('bigbench', 'sports_understanding', cache_dir=cache_dir)
-inputs = d['validation']['inputs']
+inputs = d['validation']['inputs'][:500]
 # inputs = [x.split('\n')[0] for x in inputs]
-labels =  d['validation']['targets']
+labels =  d['validation']['targets'][:500]
 labels = [l[0] for l in labels]
 
 train_inputs = d['train']['inputs']
@@ -161,10 +162,9 @@ A: Let's think step by step.""" % x for x in chunk]
     for run in range(runs): 
         print("Run %d"%run)
         answers = []
-        for x in tqdm(chunks(inputs, 2)):
+        for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
-            time.sleep(10)
         preds = [get_autocot_answer(x, answer_prompt="So the answer is ") for x in answers]
         perf_array.append(substring_match(labels, preds))
     print("Human decomposition Performance:")
@@ -254,7 +254,7 @@ A: Let's think step by step.""" % x for x in chunk]
 # Input: %s
 # Q1:"""
 
-few_shot_cot_prompt = few_shot_retrieval_prompt
+few_shot_cot_prompt = few_shot_free_prompt
 
 auto_cot_corrected_prompt = """Sports Understanding: Determine whether an artificially constructed sentence relating to sports is plausible or implausible. The final answer should be 'plausible' or 'implausible'
 Determine whether the following statement or statements are plausible or implausible:
@@ -480,6 +480,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
             # x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict_complete(task_description, x))
             # time.sleep(10)
+            pdb.set_trace()
         preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
@@ -623,6 +624,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
             old_answers.extend(answer)
             new_answer  = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
+        pdb.set_trace()
         preds = [get_answer(x.strip()) for x in answers]
         old_preds = [get_answer(x.strip()) for x in old_answers]
         perf_array.append(substring_match(labels, preds))
@@ -753,7 +755,7 @@ def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy=
         print("Rate of affordance call", positive_rate)
 
 # human_decomp("text-davinci-002", 0.3)
-human_intervention(0.3, "text-davinci-002")
+# human_intervention(0.3, "text-davinci-002")
 
 
 if __name__ == "__main__":

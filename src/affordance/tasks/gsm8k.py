@@ -107,6 +107,33 @@ Grant scored 10 points higher on his math test than John.  John received twice a
     print("Std. Dev", np.std(perf_array))
 
 
+def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
+
+    few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=N)
+    print(len(tokenizer(few_shot_prompt)['input_ids']))
+
+    def predict(chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=200, temperature=temperature, quote='---', n=1)
+        prompts = ["""%s\
+%s""" % (few_shot_prompt, x) for x in chunk]
+        return gpt3(prompts)
+    
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 10)):
+            answers.extend(predict(x))
+        preds = [x.strip() for x in answers]
+        perf_array.append(exact_match(labels, preds))
+    print("No decomposition Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
+
+
+
+
 auto_cot_corrected_prompt = """Answer the following middle school math word problems, which require multi-step arithmetic reasoning.
 Mason is cleaning out all the junk in his attic. 20%% of the items are useful, 10%% are valuable heirlooms, and 70%% are junk. If Marcus's attic has 8 useful items in it, how many junk items does it have?
 A: Let's think step-by-step.

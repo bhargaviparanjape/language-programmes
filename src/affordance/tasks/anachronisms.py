@@ -508,7 +508,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     print("Std. Dev", np.std(perf_array))
     print("Rate of affordance call", positive_rate)
 
-anachronism("text-davinci-002")
+# anachronism("text-davinci-002")
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()

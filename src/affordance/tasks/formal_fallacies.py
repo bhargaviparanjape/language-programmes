@@ -288,6 +288,35 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     print("Std. Dev", np.std(perf_array))
 
 
+# Q:"Here comes a perfectly valid argument: First of all, whatever is not both an ingredient of Eye brow pencil and an ingredient of Minnie shampoo is an ingredient of All Good Things 12g or an ingredient of Restore.next, every ingredient of All Good Things 12g is not an ingredient of Eye brow pencil or not an ingredient of Minnie shampoo. From this follows: Whatever is an ingredient of Eye brow pencil and an ingredient of Minnie shampoo is also an ingredient of Restore."\n Is the argument, given the explicitly stated premises, deductively valid or invalid?""", 'invalid'),
+# ("""Q:"Here comes a perfectly valid argument: First of all, being a granddaughter of Connie is necessary for being a niece of Marisa. Next, some granddaughter of Connie is not a close friend of Erika. All this entails that some close friend of Erika is not a niece of Marisa."\n Is the argument, given the explicitly stated premises, deductively valid or invalid?""", 'invalid'),
+# ("""Q:"Some football fans admire various clubs, others love only a single team. But who is a fan of whom precisely? The following argument pertains to this question: First of all, every opponent to FC Admira Wacker Mödling is a backer of Rosenborg BK and an admirer of HNK Rijeka. Next, Elias is not a backer of Rosenborg BK or not an admirer of HNK Rijeka. We may conclude: Elias is not an opponent to FC Admira Wacker Mödling."\n Is the argument, given the explicitly stated premises, deductively valid or invalid?""", 'valid'),
+# ("""Q:"Is Siri a stepsister of Mary? Is Susan related to Kate? In large families, it is sometimes difficult to keep track of all one\'s relatives. The following argument seeks to clarify some such relations: To begin with, Bonnie is a schoolmate of Miranda. Moreover, whoever is a workmate of Aubrey is not a schoolmate of Miranda. All this entails that Bonnie is not a workmate of Aubrey."\n Is the argument, given the explicitly stated premises, deductively valid or invalid?\n""", 'valid'),
+# ("""Q:"Here comes a perfectly valid argument: First premise: Being a rare consumer of Tom\'s of Maine soap is sufficient for being a regular user of Dermasil soap. Second premise: Whoever is regular consumer of Crafted soap is at least one of these: an owner of a TIGI shampoo, a rare consumer of Tom\'s of Maine soap or a regular user of Redken shampoo. Third premise: Whoever is an owner of a TIGI shampoo is not a regular user of Dermasil soap. Hence, whoever is a regular consumer of Crafted soap is not a regular user of Dermasil soap or a regular user of Redken shampoo."\n Is the argument, given the explicitly stated premises, deductively valid or invalid?""", 'invalid'),
+# ("""Q:"Is Titanium oxide an ingredient of my washing power? Which chemicals does my perfume contain? It is really difficult to keep track of all chemicals one is regularly exposed to. The following argument seeks to clarify some such relations: First, everything that is an ingredient of Jest-er Kidding is an ingredient of Pink Nail Paint, too. Second, there is no ingredient of Jest-er Kidding who is an ingredient of Pink Nail Paint yet not an ingredient of MATT LIP GLOSS. Therefore, being an ingredient of MATT LIP GLOSS is necessary for being an ingredient of Jest-er Kidding."\n Is the argument, given the explicitly stated premises, deductively valid or invalid?
+def human_decomp(model_name ="text-davinci-002", temperature=0.3):
+    def predict(chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
+        prompts = ["""Q:"Here comes a perfectly valid argument: First of all, whatever is not both an ingredient of Eye brow pencil and an ingredient of Minnie shampoo is an ingredient of All Good Things 12g or an ingredient of Restore. Next, every ingredient of All Good Things 12g is not an ingredient of Eye brow pencil or not an ingredient of Minnie shampoo. From this follows: Whatever is an ingredient of Eye brow pencil and an ingredient of Minnie shampoo is also an ingredient of Restore."\n Is the argument, given the explicitly stated premises, deductively valid or invalid?
+
+%s
+A: Let's think step by step.""" % x for x in chunk]
+        return gpt3(prompts)
+
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 10)):
+            x = [ex.replace("Q:", "") for ex in x]
+            x = [ex.replace("\nA:", "") for ex in x]
+            answers.extend(predict(x))
+        preds = [get_autocot_answer(x, answer_prompt="So the answer is ") for x in answers]
+        perf_array.append(substring_match(labels, preds))
+    print("Human decomposition Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()

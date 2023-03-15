@@ -6,6 +6,7 @@ import re
 import time
 import csv
 from re import L
+import sys
 from turtle import pd
 
 import argparse
@@ -40,100 +41,102 @@ from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 
 few_shot_cot_prompt = few_shot_retrieval_prompt
 
-auto_cot_cleaned_prompt = """Answer the following multiple-choice questions about college-level Computer Science, which tests for specialized knowledge and concepts like Algorithms, systems, graphs, recursion, etc.
-Which of the following regular expressions is equivalent to (describes the same set of strings as) (a* + b)*(c + d)?
-A) a*(c + d)+ b(c + d)
-B) a*(c + d)* + b(c + d)*
-C) a*(c + d)+ b*(c + d)
-D) (a + b)*c +(a + b)*d
-A: Let's think step-by-step.
+# task_description = "MMLU dataset"
 
-The first part of the expression, (a* + b)*, describes any string that is a combination of zero or more a's, followed by zero or more b's.
-The second part of the expression, (c + d), describes any string that is either c or d.
-Putting these together, the entire expression describes any string that is a combination of zero or more a's, followed by zero or more b's, followed by either c or d.
-This is exactly the same set of strings as described by (a* + b)*(c + d). Therefore, the answer is C.
+# auto_cot_cleaned_prompt = """Answer the following multiple-choice questions about college-level Computer Science, which tests for specialized knowledge and concepts like Algorithms, systems, graphs, recursion, etc.
+# Which of the following regular expressions is equivalent to (describes the same set of strings as) (a* + b)*(c + d)?
+# A) a*(c + d)+ b(c + d)
+# B) a*(c + d)* + b(c + d)*
+# C) a*(c + d)+ b*(c + d)
+# D) (a + b)*c +(a + b)*d
+# A: Let's think step-by-step.
 
-The final answer is C
-----
-Answer the following multiple-choice questions about college-level Computer Science, which tests for specialized knowledge and concepts like Algorithms, systems, graphs, recursion, etc.
-A certain pipelined RISC machine has 8 general-purpose registers R0, R1, . . . , R7 and supports the following operations.
-ADD Rs1, Rs2, Rd Add Rs1 to Rs2 and put the sum in Rd
-MUL Rs1, Rs2, Rd Multiply Rs1 by Rs2 and put the product in Rd
-An operation normally takes one cycle; however, an operation takes two cycles if it produces a result required by the immediately following operation in an operation sequence. Consider the expression AB + ABC + BC, where variables A, B, C are located in registers R0, R1, R2. If the contents of these three registers must not be modified, what is the minimum number of clock cycles required for an operation sequence that computes the value of AB + ABC + BC?
-A) 5
-B) 6
-C) 7
-D) 8
-A: Let's think step-by-step.
+# The first part of the expression, (a* + b)*, describes any string that is a combination of zero or more a's, followed by zero or more b's.
+# The second part of the expression, (c + d), describes any string that is either c or d.
+# Putting these together, the entire expression describes any string that is a combination of zero or more a's, followed by zero or more b's, followed by either c or d.
+# This is exactly the same set of strings as described by (a* + b)*(c + d). Therefore, the answer is C.
 
-The first operation is AB. This will take 1 cycle.
-The second operation is ABC. This will take 2 cycles because the result of AB is required for this operation.
-The third operation is BC. This will take 1 cycle.
-So in total, it will take 5 cycles.
+# The final answer is C
+# ----
+# Answer the following multiple-choice questions about college-level Computer Science, which tests for specialized knowledge and concepts like Algorithms, systems, graphs, recursion, etc.
+# A certain pipelined RISC machine has 8 general-purpose registers R0, R1, . . . , R7 and supports the following operations.
+# ADD Rs1, Rs2, Rd Add Rs1 to Rs2 and put the sum in Rd
+# MUL Rs1, Rs2, Rd Multiply Rs1 by Rs2 and put the product in Rd
+# An operation normally takes one cycle; however, an operation takes two cycles if it produces a result required by the immediately following operation in an operation sequence. Consider the expression AB + ABC + BC, where variables A, B, C are located in registers R0, R1, R2. If the contents of these three registers must not be modified, what is the minimum number of clock cycles required for an operation sequence that computes the value of AB + ABC + BC?
+# A) 5
+# B) 6
+# C) 7
+# D) 8
+# A: Let's think step-by-step.
 
-The final answer is A
-----
-Answer the following multiple-choice questions about college-level Computer Science, which tests for specialized knowledge and concepts like Algorithms, systems, graphs, recursion, etc.
-The Singleton design pattern is used to guarantee that only a single instance of a class may be instantiated. Which of the following is (are) true of this design pattern?
-I. The Singleton class has a static factory method to provide its instance.
-II. The Singleton class can be a subclass of another class.
-III. The Singleton class has a private constructor.
-A) I only
-B) II only
-C) III only
-D) I, II, and III
-A: Let's think step-by-step.
+# The first operation is AB. This will take 1 cycle.
+# The second operation is ABC. This will take 2 cycles because the result of AB is required for this operation.
+# The third operation is BC. This will take 1 cycle.
+# So in total, it will take 5 cycles.
 
-The Singleton design pattern is used to guarantee that only a single instance of a class may be instantiated.
-This means that we need to have some way of ensuring that only one instance of the class can be created. One way to do this is to have a static factory method that provides the instance. Another way to do this is to have a private constructor so that no other class can instantiate the Singleton class.
-So, the answer is D) I, II, and III.
+# The final answer is A
+# ----
+# Answer the following multiple-choice questions about college-level Computer Science, which tests for specialized knowledge and concepts like Algorithms, systems, graphs, recursion, etc.
+# The Singleton design pattern is used to guarantee that only a single instance of a class may be instantiated. Which of the following is (are) true of this design pattern?
+# I. The Singleton class has a static factory method to provide its instance.
+# II. The Singleton class can be a subclass of another class.
+# III. The Singleton class has a private constructor.
+# A) I only
+# B) II only
+# C) III only
+# D) I, II, and III
+# A: Let's think step-by-step.
 
-The final answer is D
-----
-Answer the following multiple-choice questions about college-level Computer Science, which tests for specialized knowledge and concepts like Algorithms, systems, graphs, recursion, etc.
-A compiler generates code for the following assignment statement.
-G := (A + B) * C - (D + E) * F
-The target machine has a single accumulator and a single-address instruction set consisting of instructions load, store, add, subtract, and multiply. For the arithmetic operations, the left operand is taken from the accumulator and the result appears in the accumulator. The smallest possible number of instructions in the resulting code is
-A) 5
-B) 6
-C) 7
-D) 9
-A: Let's think step-by-step.
+# The Singleton design pattern is used to guarantee that only a single instance of a class may be instantiated.
+# This means that we need to have some way of ensuring that only one instance of the class can be created. One way to do this is to have a static factory method that provides the instance. Another way to do this is to have a private constructor so that no other class can instantiate the Singleton class.
+# So, the answer is D) I, II, and III.
 
-The first thing we need to do is compute (A + B). We can do this in two steps: first, we load A into the accumulator, then we add B to it.
-Next, we need to compute C * (A + B). We can do this in two steps as well: first, we load C into the accumulator, then we multiply it by (A + B).
-Now we need to compute (D + E). We can do this in two steps: first, we load D into the accumulator, then we add E to it.
-Finally, we need to compute F * (D + E). We can do this in two steps: first, we load F into the accumulator, then we multiply it by (D + E).
-The overall result is that we need 7 instructions to compute the expression G := (A + B) * C - (D + E) * F.
+# The final answer is D
+# ----
+# Answer the following multiple-choice questions about college-level Computer Science, which tests for specialized knowledge and concepts like Algorithms, systems, graphs, recursion, etc.
+# A compiler generates code for the following assignment statement.
+# G := (A + B) * C - (D + E) * F
+# The target machine has a single accumulator and a single-address instruction set consisting of instructions load, store, add, subtract, and multiply. For the arithmetic operations, the left operand is taken from the accumulator and the result appears in the accumulator. The smallest possible number of instructions in the resulting code is
+# A) 5
+# B) 6
+# C) 7
+# D) 9
+# A: Let's think step-by-step.
 
-The final answer is C
-----
-Answer the following multiple-choice questions about college-level Computer Science, which tests for specialized knowledge and concepts like Algorithms, systems, graphs, recursion, etc.
-Consider a computer design in which multiple processors, each with a private cache memory, share global memory using a single bus. This bus is the critical system resource. Each processor can execute one instruction every 500 nanoseconds as long as memory references are satisfied by its local cache. When a cache miss occurs, the processor is delayed for an additional 2,000 nanoseconds. During half of this additional delay, the bus is dedicated to serving the cache miss. During the other half, the processor cannot continue, but the bus is free to service requests from other processors. On average, each instruction requires 2 memory references. On average, cache misses occur on 1 percent of references. What proportion of the capacity of the bus would a single processor consume, ignoring delays due to competition from other processors?
-A) 1/50
-B) 1/27
-C) 1/25
-D) 2/27
-A: Let's think step-by-step.
+# The first thing we need to do is compute (A + B). We can do this in two steps: first, we load A into the accumulator, then we add B to it.
+# Next, we need to compute C * (A + B). We can do this in two steps as well: first, we load C into the accumulator, then we multiply it by (A + B).
+# Now we need to compute (D + E). We can do this in two steps: first, we load D into the accumulator, then we add E to it.
+# Finally, we need to compute F * (D + E). We can do this in two steps: first, we load F into the accumulator, then we multiply it by (D + E).
+# The overall result is that we need 7 instructions to compute the expression G := (A + B) * C - (D + E) * F.
 
-We're given that each instruction requires 2 memory references, on average. We're also given that cache misses occur on 1% of references, on average.
-This means that, on average, each instruction will result in 1 cache miss.
-We're told that when a cache miss occurs, the processor is delayed for an additional 2,000 nanoseconds. During half of this additional delay, the bus is dedicated to serving the cache miss.
-This means that, on average, each cache miss will result in the processor being delayed for an additional 1,000 nanoseconds.
-We're told that each processor can execute one instruction every 500 nanoseconds as long as memory references are satisfied by its local cache.
-This means that, on average, each processor can execute 2 instructions per second.
-We're asked to find the proportion of the capacity of the bus that a single processor would consume.
-This means we need to find the average number of instructions that a single processor can execute per second, taking into account the delays due to cache misses.
-We can do this by multiplying the average number of instructions that a single processor can execute per second (2) by the average number of cache misses per instruction (1%).
-This gives us an average of 0.02 instructions per second that a single processor can execute, taking into account the delays due to cache misses.
-This means that a single processor would consume 1/50 of the capacity of the bus.
+# The final answer is C
+# ----
+# Answer the following multiple-choice questions about college-level Computer Science, which tests for specialized knowledge and concepts like Algorithms, systems, graphs, recursion, etc.
+# Consider a computer design in which multiple processors, each with a private cache memory, share global memory using a single bus. This bus is the critical system resource. Each processor can execute one instruction every 500 nanoseconds as long as memory references are satisfied by its local cache. When a cache miss occurs, the processor is delayed for an additional 2,000 nanoseconds. During half of this additional delay, the bus is dedicated to serving the cache miss. During the other half, the processor cannot continue, but the bus is free to service requests from other processors. On average, each instruction requires 2 memory references. On average, cache misses occur on 1 percent of references. What proportion of the capacity of the bus would a single processor consume, ignoring delays due to competition from other processors?
+# A) 1/50
+# B) 1/27
+# C) 1/25
+# D) 2/27
+# A: Let's think step-by-step.
 
-The final answer is A
-----
-"""
-dataset_name = "college_computer_science"
-task_name = "College computer science"
-task_description = "Answer the following multiple-choice questions about college-level Computer Science, which tests for specialized knowledge and concepts like Algorithms, systems, graphs, recursion, etc."
+# We're given that each instruction requires 2 memory references, on average. We're also given that cache misses occur on 1% of references, on average.
+# This means that, on average, each instruction will result in 1 cache miss.
+# We're told that when a cache miss occurs, the processor is delayed for an additional 2,000 nanoseconds. During half of this additional delay, the bus is dedicated to serving the cache miss.
+# This means that, on average, each cache miss will result in the processor being delayed for an additional 1,000 nanoseconds.
+# We're told that each processor can execute one instruction every 500 nanoseconds as long as memory references are satisfied by its local cache.
+# This means that, on average, each processor can execute 2 instructions per second.
+# We're asked to find the proportion of the capacity of the bus that a single processor would consume.
+# This means we need to find the average number of instructions that a single processor can execute per second, taking into account the delays due to cache misses.
+# We can do this by multiplying the average number of instructions that a single processor can execute per second (2) by the average number of cache misses per instruction (1%).
+# This gives us an average of 0.02 instructions per second that a single processor can execute, taking into account the delays due to cache misses.
+# This means that a single processor would consume 1/50 of the capacity of the bus.
+
+# The final answer is A
+# ----
+# """
+# dataset_name = "college_computer_science"
+# task_name = "College computer science"
+# task_description = "Answer the following multiple-choice questions about college-level Computer Science, which tests for specialized knowledge and concepts like Algorithms, systems, graphs, recursion, etc."
 
 # auto_cot_cleaned_prompt = """Answer the following multiple-choice questions about college-level Astronomy, which tests for specialized knowledge and concepts like ASolar system, galaxies, asteroids, etc.
 # You are pushing a truck along a road. Would it be easier to accelerate this truck on Mars? Why? (Assume there is no friction)
@@ -319,196 +322,196 @@ task_description = "Answer the following multiple-choice questions about college
 # task_name = "Business Ethics"
 # task_description = "Answer the following multiple-choice questions about college-level Business Ethics, which tests for specialized knowledge and concepts like Corporate responsibility, stakeholders, regulation, etc."
 
-# auto_cot_cleaned_prompt = """Answer the following multiple-choice questions about college-level Virology, which tests for specialized knowledge and concepts like Epidemiology, coronaviruses, retroviruses, herpesviruses, etc.
-# Why are parvoviruses a highly impactful parasite?
-# A) Because they have no nucleic acid
-# B) They require a helper virus
-# C) Only replicate in dividing cells
-# D) Can integrate into host chromosomes
-# A: Let's think step-by-step.
+auto_cot_cleaned_prompt = """Answer the following multiple-choice questions about college-level Virology, which tests for specialized knowledge and concepts like Epidemiology, coronaviruses, retroviruses, herpesviruses, etc.
+Why are parvoviruses a highly impactful parasite?
+A) Because they have no nucleic acid
+B) They require a helper virus
+C) Only replicate in dividing cells
+D) Can integrate into host chromosomes
+A: Let's think step-by-step.
 
-# First, what are viruses? They are tiny infectious particles that can replicate only inside the living cells of an organism.
+First, what are viruses? They are tiny infectious particles that can replicate only inside the living cells of an organism.
 
-# Second, what are the three main types of viruses?
-# -Bacteria-infecting viruses (bacteriophages)
-# -Plant-infecting viruses
-# -Animal-infecting viruses
+Second, what are the three main types of viruses?
+-Bacteria-infecting viruses (bacteriophages)
+-Plant-infecting viruses
+-Animal-infecting viruses
 
-# Third, what are the four main types of animal-infecting viruses?
-# -Retroviruses
-# -Herpesviruses
-# -Coronaviruses
-# -Parvoviruses
+Third, what are the four main types of animal-infecting viruses?
+-Retroviruses
+-Herpesviruses
+-Coronaviruses
+-Parvoviruses
 
-# Fourth, what is the difference between a retrovirus and a parvovirus?
-# -Retroviruses are RNA viruses that use reverse transcriptase to convert their RNA into DNA. This DNA then integrates into the host cell's genome.
-# -Parvoviruses are DNA viruses that only replicate in dividing cells. They do not integrate into the host cell's genome.
+Fourth, what is the difference between a retrovirus and a parvovirus?
+-Retroviruses are RNA viruses that use reverse transcriptase to convert their RNA into DNA. This DNA then integrates into the host cell's genome.
+-Parvoviruses are DNA viruses that only replicate in dividing cells. They do not integrate into the host cell's genome.
 
-# So, why are parvoviruses a highly impactful parasite?
-# The answer is C: They only replicate in dividing cells.
-# Since parvoviruses only replicate in dividing cells, they can easily infect and kill cells that are rapidly dividing, such as cancer cells. This makes them a highly impactful parasite.
+So, why are parvoviruses a highly impactful parasite?
+The answer is C: They only replicate in dividing cells.
+Since parvoviruses only replicate in dividing cells, they can easily infect and kill cells that are rapidly dividing, such as cancer cells. This makes them a highly impactful parasite.
 
-# The final answer is C
-# ----
-# Answer the following multiple-choice questions about college-level Virology, which tests for specialized knowledge and concepts like Epidemiology, coronaviruses, retroviruses, herpesviruses, etc.
-# Which of the following is a morphological characteristic of the paramyxoviruses.
-# A) Fragile viruses often visualised with RNA spewing from the inside
-# B) Elongate viruses
-# C) Icosahedral viruses with envelope
-# D) Very large viruses
-# A: Let's think step-by-step.
+The final answer is C
+----
+Answer the following multiple-choice questions about college-level Virology, which tests for specialized knowledge and concepts like Epidemiology, coronaviruses, retroviruses, herpesviruses, etc.
+Which of the following is a morphological characteristic of the paramyxoviruses.
+A) Fragile viruses often visualised with RNA spewing from the inside
+B) Elongate viruses
+C) Icosahedral viruses with envelope
+D) Very large viruses
+A: Let's think step-by-step.
 
-# First, what are the morphological characteristics of paramyxoviruses?
+First, what are the morphological characteristics of paramyxoviruses?
 
-# According to the Centers for Disease Control and Prevention (CDC), paramyxoviruses are "spherical or pleomorphic (abnormally shaped) viruses with a diameter of approximately 150 nanometers (nm)".
-# Next, let's look at each of the answer choices and see if they match the description of paramyxoviruses.
+According to the Centers for Disease Control and Prevention (CDC), paramyxoviruses are "spherical or pleomorphic (abnormally shaped) viruses with a diameter of approximately 150 nanometers (nm)".
+Next, let's look at each of the answer choices and see if they match the description of paramyxoviruses.
 
-# A) Fragile viruses often visualised with RNA spewing from the inside
-# This answer choice does not match the description of paramyxoviruses. Paramyxoviruses are not fragile, and they do not spew RNA from the inside.
+A) Fragile viruses often visualised with RNA spewing from the inside
+This answer choice does not match the description of paramyxoviruses. Paramyxoviruses are not fragile, and they do not spew RNA from the inside.
 
-# B) Elongate viruses
-# This answer choice does not match the description of paramyxoviruses. Paramyxoviruses are not elongate.
+B) Elongate viruses
+This answer choice does not match the description of paramyxoviruses. Paramyxoviruses are not elongate.
 
-# C) Icosahedral viruses with envelope
-# This answer choice matches the description of paramyxoviruses. Paramyxoviruses are icosahedral, meaning they have 20 sides, and they have an envelope.
+C) Icosahedral viruses with envelope
+This answer choice matches the description of paramyxoviruses. Paramyxoviruses are icosahedral, meaning they have 20 sides, and they have an envelope.
 
-# D) Very large viruses
-# This answer choice does not match the description of paramyxoviruses. Paramyxoviruses are not very large.
+D) Very large viruses
+This answer choice does not match the description of paramyxoviruses. Paramyxoviruses are not very large.
 
-# The final answer is C
-# ----
-# Answer the following multiple-choice questions about college-level Virology, which tests for specialized knowledge and concepts like Epidemiology, coronaviruses, retroviruses, herpesviruses, etc.
-# A key factor facilitating the application of nested case-control studies from the MACS was:
-# A) Data collection
-# B) Establishment of a repository of biologic specimens
-# C) Participant interest
-# D) Administration of the questionnaire by staff
-# A: Let's think step-by-step.
+The final answer is C
+----
+Answer the following multiple-choice questions about college-level Virology, which tests for specialized knowledge and concepts like Epidemiology, coronaviruses, retroviruses, herpesviruses, etc.
+A key factor facilitating the application of nested case-control studies from the MACS was:
+A) Data collection
+B) Establishment of a repository of biologic specimens
+C) Participant interest
+D) Administration of the questionnaire by staff
+A: Let's think step-by-step.
 
-# First, you need a population from which you can draw your cases and controls. This is usually done by establishing a repository of biologic specimens. Then, you need to collect data on each individual in the population, including information on their exposures and outcomes. Finally, you need to administer the questionnaire to the participants.
-# So the answer is B) Establishment of a repository of biologic specimens.
+First, you need a population from which you can draw your cases and controls. This is usually done by establishing a repository of biologic specimens. Then, you need to collect data on each individual in the population, including information on their exposures and outcomes. Finally, you need to administer the questionnaire to the participants.
+So the answer is B) Establishment of a repository of biologic specimens.
 
-# The final answer is B
-# ----
-# Answer the following multiple-choice questions about college-level Virology, which tests for specialized knowledge and concepts like Epidemiology, coronaviruses, retroviruses, herpesviruses, etc.
-# The most important goal of a behavioral intervention is:
-# A) Change in behavior
-# B) Comprehensive coverage
-# C) Effective use of behavioral theory
-# D) Sustained behavior change
-# A: Let's think step-by-step.
+The final answer is B
+----
+Answer the following multiple-choice questions about college-level Virology, which tests for specialized knowledge and concepts like Epidemiology, coronaviruses, retroviruses, herpesviruses, etc.
+The most important goal of a behavioral intervention is:
+A) Change in behavior
+B) Comprehensive coverage
+C) Effective use of behavioral theory
+D) Sustained behavior change
+A: Let's think step-by-step.
 
-# The most important goal of a behavioral intervention is to change behavior. This is the ultimate goal, and everything else is secondary. That being said, comprehensive coverage (of the population), effective use of behavioral theory, and sustained behavior change are all important factors in achieving the ultimate goal.
+The most important goal of a behavioral intervention is to change behavior. This is the ultimate goal, and everything else is secondary. That being said, comprehensive coverage (of the population), effective use of behavioral theory, and sustained behavior change are all important factors in achieving the ultimate goal.
 
-# The final answer is A
-# ----
-# Answer the following multiple-choice questions about college-level Virology, which tests for specialized knowledge and concepts like Epidemiology, coronaviruses, retroviruses, herpesviruses, etc.
-# The median survival time to AIDS and death was established by following:
-# A) Seroprevalent HIV-infected individuals
-# B) Seroconverters
-# C) Seronegatives
-# D) High-risk seronegatives
-# A: Let's think step-by-step.
+The final answer is A
+----
+Answer the following multiple-choice questions about college-level Virology, which tests for specialized knowledge and concepts like Epidemiology, coronaviruses, retroviruses, herpesviruses, etc.
+The median survival time to AIDS and death was established by following:
+A) Seroprevalent HIV-infected individuals
+B) Seroconverters
+C) Seronegatives
+D) High-risk seronegatives
+A: Let's think step-by-step.
 
-# The median survival time to AIDS and death was established by following:
+The median survival time to AIDS and death was established by following:
 
-# A) Seroprevalent HIV-infected individuals
-# This means that the researchers looked at a group of people who were already infected with HIV and tracked how long they lived. The median is the middle value, so this would give them an idea of how long, on average, people with HIV live.
+A) Seroprevalent HIV-infected individuals
+This means that the researchers looked at a group of people who were already infected with HIV and tracked how long they lived. The median is the middle value, so this would give them an idea of how long, on average, people with HIV live.
 
-# B) Seroconverters
-# This means that the researchers looked at a group of people who became infected with HIV and tracked how long they lived. This would give them an idea of how long, on average, people live after becoming infected with HIV.
+B) Seroconverters
+This means that the researchers looked at a group of people who became infected with HIV and tracked how long they lived. This would give them an idea of how long, on average, people live after becoming infected with HIV.
 
-# C) Seronegatives
-# This means that the researchers looked at a group of people who did not have HIV and tracked how long they lived. This would give them an idea of how long, on average, people without HIV live.
+C) Seronegatives
+This means that the researchers looked at a group of people who did not have HIV and tracked how long they lived. This would give them an idea of how long, on average, people without HIV live.
 
-# D) High-risk seronegatives
-# This means that the researchers looked at a group of people who did not have HIV but were at high risk for becoming infected (for example, they may have been exposed to the virus or have a weakened immune system). This would give them an idea of how long, on average, people without HIV live when they are at high risk for infection.
+D) High-risk seronegatives
+This means that the researchers looked at a group of people who did not have HIV but were at high risk for becoming infected (for example, they may have been exposed to the virus or have a weakened immune system). This would give them an idea of how long, on average, people without HIV live when they are at high risk for infection.
 
-# The final answer is B
-# ----
-# """
-# dataset_name = "virology"
-# task_name = "Virology"
-# task_description = "Answer the following multiple-choice questions about college-level Virology, which tests for specialized knowledge and concepts like Epidemiology, coronaviruses, retroviruses, herpesviruses, etc."
+The final answer is B
+----
+"""
+dataset_name = "virology"
+task_name = "Virology"
+task_description = "Answer the following multiple-choice questions about college-level Virology, which tests for specialized knowledge and concepts like Epidemiology, coronaviruses, retroviruses, herpesviruses, etc."
 
 # auto_cot_cleaned_prompt = """Answer the following multiple-choice questions about college-level High School Geography, which tests for specialized knowledge and concepts like Population migration, rural land-use, urban processes, etc.
-# The rate of natural increase of a population is found by subtracting the
-# A) crude death rate from the crude birth date.
-# B) crude birth rate from the crude death rate.
-# C) doubling time from the crude birth rate.
-# D) fertility rate from the crude death rate.
-# A: Let's think step-by-step.
+# # The rate of natural increase of a population is found by subtracting the
+# # A) crude death rate from the crude birth date.
+# # B) crude birth rate from the crude death rate.
+# # C) doubling time from the crude birth rate.
+# # D) fertility rate from the crude death rate.
+# # A: Let's think step-by-step.
 
-# The rate of natural increase of a population is found by subtracting the crude death rate from the crude birth rate.
+# # The rate of natural increase of a population is found by subtracting the crude death rate from the crude birth rate.
 
-# The final answer is A
-# ----
-# Answer the following multiple-choice questions about college-level High School Geography, which tests for specialized knowledge and concepts like Population migration, rural land-use, urban processes, etc.
-# During the third stage of the demographic transition model, which of the following is true?
-# A) Birth rates increase and population growth rate is less rapid.
-# B) Birth rates decline and population growth rate is less rapid.
-# C) Birth rates increase and population growth rate increases.
-# D) Birth rates decrease and population growth rate increases.
-# A: Let's think step-by-step.
+# # The final answer is A
+# # ----
+# # Answer the following multiple-choice questions about college-level High School Geography, which tests for specialized knowledge and concepts like Population migration, rural land-use, urban processes, etc.
+# # During the third stage of the demographic transition model, which of the following is true?
+# # A) Birth rates increase and population growth rate is less rapid.
+# # B) Birth rates decline and population growth rate is less rapid.
+# # C) Birth rates increase and population growth rate increases.
+# # D) Birth rates decrease and population growth rate increases.
+# # A: Let's think step-by-step.
 
-# The third stage of the demographic transition model is when birth rates decline and the population growth rate is less rapid.
+# # The third stage of the demographic transition model is when birth rates decline and the population growth rate is less rapid.
 
-# The final answer is B
-# ----
-# Answer the following multiple-choice questions about college-level High School Geography, which tests for specialized knowledge and concepts like Population migration, rural land-use, urban processes, etc.
-# Which of the following statements is NOT accurate regarding the services provided by local governments in the United States?
-# A) Duplication of efforts occurs often.
-# B) Social problems of the central city spill over into the surrounding residential suburbs.
-# C) Inefficiency in providing services occurs often.
-# D) One neighborhood's efforts to reduce pollution are always supported by neighboring communities.
-# A: Let's think step-by-step.
+# # The final answer is B
+# # ----
+# # Answer the following multiple-choice questions about college-level High School Geography, which tests for specialized knowledge and concepts like Population migration, rural land-use, urban processes, etc.
+# # Which of the following statements is NOT accurate regarding the services provided by local governments in the United States?
+# # A) Duplication of efforts occurs often.
+# # B) Social problems of the central city spill over into the surrounding residential suburbs.
+# # C) Inefficiency in providing services occurs often.
+# # D) One neighborhood's efforts to reduce pollution are always supported by neighboring communities.
+# # A: Let's think step-by-step.
 
-# First, we need to identify what the question is asking. The question is asking us to identify which of the following statements is NOT accurate regarding the services provided by local governments in the United States.
+# # First, we need to identify what the question is asking. The question is asking us to identify which of the following statements is NOT accurate regarding the services provided by local governments in the United States.
 
-# Next, we need to read each answer choice and determine if it is accurate or not.
+# # Next, we need to read each answer choice and determine if it is accurate or not.
 
-# A) Duplication of efforts occurs often. - This is accurate. Local governments often duplicate efforts because they are not coordinated.
-# B) Social problems of the central city spill over into the surrounding residential suburbs. - This is accurate. Social problems in the central city often spill over into the surrounding residential suburbs.
-# C) Inefficiency in providing services occurs often. - This is accurate. Local governments often provide services inefficiently.
-# D) One neighborhood's efforts to reduce pollution are always supported by neighboring communities. - This is NOT accurate. One neighborhood's efforts to reduce pollution are not always supported by neighboring communities.
+# # A) Duplication of efforts occurs often. - This is accurate. Local governments often duplicate efforts because they are not coordinated.
+# # B) Social problems of the central city spill over into the surrounding residential suburbs. - This is accurate. Social problems in the central city often spill over into the surrounding residential suburbs.
+# # C) Inefficiency in providing services occurs often. - This is accurate. Local governments often provide services inefficiently.
+# # D) One neighborhood's efforts to reduce pollution are always supported by neighboring communities. - This is NOT accurate. One neighborhood's efforts to reduce pollution are not always supported by neighboring communities.
 
-# The final answer is D
-# ----
-# Answer the following multiple-choice questions about college-level High School Geography, which tests for specialized knowledge and concepts like Population migration, rural land-use, urban processes, etc.
-# The practice of hiring a foreign third-party service provider to run an operation is called
-# A) outsourcing.
-# B) offshoring.
-# C) maquiladoras.
-# D) locational interdependence.
-# A: Let's think step-by-step.
+# # The final answer is D
+# # ----
+# # Answer the following multiple-choice questions about college-level High School Geography, which tests for specialized knowledge and concepts like Population migration, rural land-use, urban processes, etc.
+# # The practice of hiring a foreign third-party service provider to run an operation is called
+# # A) outsourcing.
+# # B) offshoring.
+# # C) maquiladoras.
+# # D) locational interdependence.
+# # A: Let's think step-by-step.
 
-# The first step is to identify the keyword in the question, which in this case is "outsourcing." Based on the definition provided, we can eliminate options B) and D).
-# The second step is to look at the remaining options and see if we can eliminate any based on what we know. In this case, we can eliminate option C) because it is not related to outsourcing.
-# This leaves us with option A) as the correct answer.
+# # The first step is to identify the keyword in the question, which in this case is "outsourcing." Based on the definition provided, we can eliminate options B) and D).
+# # The second step is to look at the remaining options and see if we can eliminate any based on what we know. In this case, we can eliminate option C) because it is not related to outsourcing.
+# # This leaves us with option A) as the correct answer.
 
-# The final answer is A
-# ----
-# Answer the following multiple-choice questions about college-level High School Geography, which tests for specialized knowledge and concepts like Population migration, rural land-use, urban processes, etc.
-# Which one of the following items is an example of nonmaterial culture?
-# A) Dove soap
-# B) Dove candy bar
-# C) Dove symbol
-# D) A dove (bird)
-# A: Let's think step-by-step.
+# # The final answer is A
+# # ----
+# # Answer the following multiple-choice questions about college-level High School Geography, which tests for specialized knowledge and concepts like Population migration, rural land-use, urban processes, etc.
+# # Which one of the following items is an example of nonmaterial culture?
+# # A) Dove soap
+# # B) Dove candy bar
+# # C) Dove symbol
+# # D) A dove (bird)
+# # A: Let's think step-by-step.
 
-# First, we need to understand what nonmaterial culture is. Nonmaterial culture refers to the nonphysical things that people believe, think, and feel. This includes things like language, religion, and values.
+# # First, we need to understand what nonmaterial culture is. Nonmaterial culture refers to the nonphysical things that people believe, think, and feel. This includes things like language, religion, and values.
 
-# Now that we know that, we can look at the answer choices and see which one best fits the definition of nonmaterial culture.
+# # Now that we know that, we can look at the answer choices and see which one best fits the definition of nonmaterial culture.
 
-# A) Dove soap - This is a physical object and does not fit the definition of nonmaterial culture.
-# B) Dove candy bar - This is a physical object and does not fit the definition of nonmaterial culture.
-# C) Dove symbol - This could possibly be an example of nonmaterial culture, as it is something that people believe in or think about.
-# D) A dove (bird) - This is a physical object and does not fit the definition of nonmaterial culture.
-# The best answer choice is C) Dove symbol.
+# # A) Dove soap - This is a physical object and does not fit the definition of nonmaterial culture.
+# # B) Dove candy bar - This is a physical object and does not fit the definition of nonmaterial culture.
+# # C) Dove symbol - This could possibly be an example of nonmaterial culture, as it is something that people believe in or think about.
+# # D) A dove (bird) - This is a physical object and does not fit the definition of nonmaterial culture.
+# # The best answer choice is C) Dove symbol.
 
-# The final answer is C
-# ----
-# """
+# # The final answer is C
+# # ----
+# # """
 # dataset_name = "high_school_geography"
 # task_name = "High School Geography"
 # task_description = "Answer the following multiple-choice questions about college-level High School Geography, which tests for specialized knowledge and concepts like Population migration, rural land-use, urban processes, etc."
@@ -885,6 +888,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()
+    parser.add_argument("--dataset_name", type=str, default="astronomy")
     parser.add_argument("--task_name", type=str, default="astronomy")
     parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001", "davinci-codex-002-msft"], default="text-davinci-002")
     parser.add_argument("--temperature", type=float, default="0.3")

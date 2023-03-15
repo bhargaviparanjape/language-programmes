@@ -56,6 +56,8 @@ train_labels = [[str(int(l))] for l in d["validation"]["Answer"]]
 
 io_pairs = [(inp, lab) for inp, lab in zip(train_inputs[:5], train_labels[:5])]
 
+pdb.set_trace()
+
 def exact_match(labels, predictions):
     correct = 0
     count = 0

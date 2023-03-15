@@ -102,6 +102,29 @@ Turing was one of the people who worked on the first computers. He created the t
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
+def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
+
+    few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=N)
+    print(len(tokenizer(few_shot_prompt)['input_ids']))
+
+    def predict(chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=200, temperature=temperature, quote='---', n=1)
+        prompts = ["""%s\
+%s""" % (few_shot_prompt, x) for x in chunk]
+        return gpt3(prompts)
+    
+    perf_array = []
+    runs = 5
+    for run in range(runs): 
+        print("Run %d"%run)
+        answers = []
+        for x in tqdm(chunks(inputs, 10)):
+            answers.extend(predict(x))
+        preds = [x.strip() for x in answers]
+        perf_array.append(exact_match(labels, preds))
+    print("No decomposition Performance:")
+    print("Mean", np.mean(perf_array))
+    print("Std. Dev", np.std(perf_array))
 
 def human_decomposition():
     def predict(chunk):
@@ -360,7 +383,19 @@ Append "SENTENCE TO BE APPENDED." to the end of 'Turing was one of the people wh
 
 The final answer is 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program. SENTENCE TO BE APPENDED.'
 ----
+(Simple text editing) Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is.
+Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: add the word 'WORD' after every other word in the 1st sentence
+
+First, let's isolate the first sentence which is "Turing was one of the people who worked on the first computers."
+The words in this sentence are "Turing", "was", "one", "of", "the", "people", "who", "worked", "on", "the", "first", and "computers."
+Every other word in this list are "was",  "of", "people", "worked", "the", and "computers."
+We add 'WORD' after each of these selected words: "was", "WORD", "of", "WORD", "people", "WORD", "worked", "WORD", "the", "WORD", "computers", "WORD."
+Now let's these words back into the original sentence: Turing was WORD one of WORD the poeple WORD who worked WORD on the WORD first computers WORD.
+Finally, we replace the first sentence in the text with the edited version "Turing was WORD one of WORD the poeple WORD who worked WORD on the WORD first computers WORD. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program."
+
+The final answer is Turing was WORD one of WORD the poeple WORD who worked WORD on the WORD first computers WORD. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.
 """
+
 auto_cot_cleaned_prompt = """(Simple text editing) Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is.
 Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: add 'bcd' after each 'a' in the entire text
 The final answer should be the edited text.
@@ -399,6 +434,7 @@ Finally, we need to apply the edit operation to the text. So the edited text wou
 The final answer is "Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program. SENTENCE TO BE APPENDED."
 ----
 """
+
 def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
     global auto_cot_corrected_prompt
     global auto_cot_cleaned_prompt
@@ -1083,14 +1119,14 @@ def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy=
         print("Std. Dev", np.std(perf_array))
         print("Rate of affordance call", positive_rate)
 
-human_intervention(0.3, "davinci-codex-002-msft")
+# human_intervention(0.3, "davinci-codex-002-msft")
 
 
 if __name__ == "__main__":
     parser  = argparse.ArgumentParser()
     parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001", "davinci-codex-002-msft"], default="text-davinci-002")
     parser.add_argument("--temperature", type=float, default="0.3")
-    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program", "auto_cot_corrected"], default="few_shot")
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
     parser.add_argument("--self_consistency", default=False, action='store_true')
@@ -1112,6 +1148,8 @@ if __name__ == "__main__":
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
         auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
+    elif args.inference_strategy == "auto_cot_corrected":
+        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":

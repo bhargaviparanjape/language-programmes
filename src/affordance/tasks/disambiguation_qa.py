@@ -377,6 +377,125 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     print("Std. Dev", np.std(perf_array))
 
 
+few_shot_human_prompt = """Description: (Disambiguation QA) Given a sentence with a pronoun, choose the person to whom the pronoun refers to. The final answer should be one of the choices.
+Input: Sentence: The technician told the customer that they had completed the repair.
+  choice: Ambiguous
+  choice: The customer completed the repair
+  choice: The technician completed the repair
+Q1: [think step-by-step] 
+#1: Let's think step-by-step. In this sentence, the pronoun "they" refers to "the technician". So the answer is "The technician completed the repair".
+----
+Description: (Disambiguation QA) Given a sentence with a pronoun, choose the person to whom the pronoun refers to. The final answer should be one of the choices.
+Input: Sentence: The reporter and the chef discuss their favorite dishes.
+  choice: Ambiguous
+  choice: They discuss the chef's favorite dishes
+  choice: They discuss the reporter's favorite dishes
+Q1: [think step-by-step] 
+#1: Let's think step-by-step. "The reporter and the chef discuss their favorite dishes." In this sentence, "their" refers to "the reporter and the chef". So the answer is "They discuss the reporter's favorite dishes" because "the reporter and the chef" is a plural pronoun and it refers to two people.
+Q2: [EOQ]
+Ans: They discuss the reporter's favorite dishes
+----
+Description: (Disambiguation QA) Given a sentence with a pronoun, choose the person to whom the pronoun refers to. The final answer should be one of the choices.
+Input: Sentence: After meeting with the producers, Sam will go to their office.
+  choice: Ambiguous
+  choice: It will be Sam's office
+  choice: It will be the producers' office
+Q1: [think step-by-step] 
+#1: Let's think step-by-step. "After meeting with the producers, Sam will go to their office." "Their" refers to the producers. So the answer is (It will be the producers' office).
+----
+Description: (Disambiguation QA) Given a sentence with a pronoun, choose the person to whom the pronoun refers to. The final answer should be one of the choices.
+Input: Sentence: The student set up a meeting with the architect to review his blueprints.
+  choice: Ambiguous
+  choice: The blueprints were the architect's
+  choice: The blueprints were the student's
+Q1: [think step-by-step] 
+#1: Let's think step-by-step. "The student" is the subject of the sentence and "the architect" is the object. So "his" refers to "the architect". So the answer is (B).
+Q2: [EOQ]
+Ans: (B)
+----
+Description: (Disambiguation QA) Given a sentence with a pronoun, choose the person to whom the pronoun refers to. The final answer should be one of the choices.
+Input: Sentence: The visitor tells the teacher that they like the cake.
+  choice: Ambiguous
+  choice: The teacher likes the cake
+  choice: The visitor likes the cake
+Q1: [think step-by-step] 
+#1: Let's think step-by-step. The pronoun "they" could refer to either "the visitor" or "the teacher". So the answer is ambiguous.
+Q2: [EOQ]
+Ans: Ambiguous
+----
+"""
+def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+    global few_shot_cot_prompt
+
+    few_shot_cot_prompt = few_shot_human_prompt
+    interpreter = TopDownVisitorBeta(model_name=model_name)
+
+    def predict(description, chunk):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1500, temperature=temperature, quote='---', n=1)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    def predict_self_consistency(description, chunk, n=9):
+        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
+        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        return prompts, gpt3(prompts)
+
+    if self_consistency:
+        perf_array = []
+        runs = 2
+        batch_size = 2
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = [] # List of counters
+            for x in tqdm(chunks(inputs, batch_size)):
+                x = [ex.replace("In the following sentences, explain the antecedent of the pronoun (which thing the pronoun refers to), or state that it is ambiguous.\n\n", "") for ex in x]
+                x = [ex.replace("\nPronoun identification:", "") for ex in x]
+                prompts, answer_set = predict_self_consistency(task_description, x)
+                result_counter = [Counter() for i in range(batch_size)]
+                for chunk_no, ans_chunk in enumerate(chunks(answer_set, 9)):
+                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
+                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    for pred in enumerate(processed_answers):
+                        # Only add to the counter if there is a legitimate answer
+                        if pred is not None:
+                            result_counter[chunk_no].update([pred])
+                answers.extend(result_counter)
+            preds = [x.most_common(1)[0][0][1] for x in answers[:len(inputs)]]
+            perf_array.append(substring_match(labels, preds))
+            print(perf_array)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+
+    else:
+        perf_array = []
+        runs = 5
+        for run in range(runs): 
+            print("Run %d"%run)
+            answers = []
+            label_dict = {0:"(A)", 1:"(B)", 2:"(C)"}
+            choices = [[ans.strip() for ans in inp.replace("\nPronoun identification:", "").split("choice: ")][1:] for inp in inputs]
+            new_labels = [label_dict[choice.index(label)] for label, choice in zip(labels, choices)]
+            joint_labels = [[label, new_label] for label, new_label in zip(labels, new_labels)]
+            for x in tqdm(chunks(inputs, 10)):
+                x = [ex.replace("In the following sentences, explain the antecedent of the pronoun (which thing the pronoun refers to), or state that it is ambiguous.\n\n", "") for ex in x]
+                x = [ex.replace("\nPronoun identification:", "") for ex in x]
+                prompts, answer = predict(task_description, x)
+                new_answer  = interpreter.batch_visit(prompts, answer)
+                answers.extend(new_answer)
+            preds = [get_answer(x) for x in answers]
+            perf_array.append(substring_match(new_labels, preds))
+            # Report on interpreter performance
+            print(perf_array)
+            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
+            positive_rate = sum(positive_calls)/(len(interpreter.execution_details) + 1e-6)
+        print("FS-CoT Performance:")
+        print("Mean", np.mean(perf_array))
+        print("Std. Dev", np.std(perf_array))
+        print("Rate of affordance call", positive_rate)
+
+# human_decomp("text-davinci-002", 0.3)
+# human_intervention(0.3, "text-davinci-002")
 # human_decomp()
 
 if __name__ == "__main__":

@@ -1444,14 +1444,6 @@ Task 2: %s
 Are these similar? 
 """
 
-"""""
-Reason: 
-----
-Task1: arithmetic 
-Task2: code
-Similar? Yes
-Reason: 
-"""
 
 
 def llm_similar_tasks(task_name, task_description, io_pairs, N=5):
