@@ -2,9 +2,12 @@
 
 ## Requirements
 
-Python>=3.8
-```
-pip install torch==1.8.2+cu111 torchtext==0.9.2 -f https://download.pytorch.org/whl/lts/1.8/torch_lts.html
+Follow these instructions to create a conda environment that will work for this project:
+
+```sh
+conda create --name $ENV pytorch==1.12.1 pytorch-cuda==11.7 tk==8.6.12 -c pytorch -c nvidia
+conda activate $ENV
+pip install "bigbench @ https://storage.googleapis.com/public_research_data/bigbench/bigbench-0.0.1.tar.gz"
 pip install -r requirements.txt
 ```
 
