@@ -13,32 +13,28 @@ pip install -r requirements.txt
 
 ## Instructions
 
-Sore OpenAI Api key in home directory as filename `openai_api_key`
+Store your OpenAI API key in the project root as `openai.key`.
 
 Run Few-shot (Direct) prompting:
 
-```
-cd src/affordance/tasks
-python ${task_name}.py \
+```sh
+python src/affordance/tasks/${task_name}.py \
 --model_name text-davinci-002 \
 --inference_strategy few_shot
 ```
 
 Run Auto-CoT prompting:
 
-```
-cd src/affordance/tasks
-python ${task_name}.py \
+```sh
+python src/affordance/tasks/${task_name}.py \
 --model_name text-davinci-002 \
 --inference_strategy auto_cot
 ```
 
-
 Run ART prompting:
 
-```
-cd src/affordance/tasks
-python ${task_name}.py \
+```sh
+python src/affordance/tasks/${task_name}.py \
 --model_name text-davinci-002 \
 --inference_strategy nl_program
 ```

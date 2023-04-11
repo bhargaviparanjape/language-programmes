@@ -1,5 +1,4 @@
 import json
-import os
 import re
 import subprocess
 import sys
@@ -14,9 +13,9 @@ subscription_key = "28dc412935f24fb9974d80c30915483a"
 search_url = "https://api.bing.microsoft.com/v7.0/search"
 headers = {"Ocp-Apim-Subscription-Key": subscription_key}
 
-with open(os.path.expanduser("~/.openai_api_key"), "r") as file:
-    openai.api_key = file.read().replace("\n", "")
-print(openai.api_key)
+with open("openai.key", "r") as file:
+    openai.api_key = file.read().strip()
+print("OpenAI API key read successfully")
 
 cache_dir = "/home/bparanjape/language-programmes/data"
 
