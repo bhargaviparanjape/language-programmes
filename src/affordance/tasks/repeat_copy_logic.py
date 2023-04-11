@@ -1,53 +1,62 @@
 import argparse
-import json
+from collections import Counter
 import pdb
 import re
-import subprocess
-import sys
-import time
-from collections import Counter
-from enum import auto
-from re import L
-from turtle import pd
 
 import datasets
 import numpy as np
-import openai
-from prompt_library import (llm_similar_tasks, random_tasks,
-                            similar_auto_breakdowns, similar_tasks,
-                            few_shot_retrieval_prompt, few_shot_code_prompt, 
-                            few_shot_arithmetic_prompt, few_shot_string_prompt)
-from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
+from prompt_library import (
+    few_shot_arithmetic_prompt,
+    few_shot_string_prompt,
+    llm_similar_tasks,
+    random_tasks,
+    similar_auto_breakdowns,
+    similar_tasks,
+)
+from sequential_interpreter import TopDownVisitorBeta
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
-                   get_few_shot_prompt, get_subset, gpt3,
-                   propose_decomposition, propose_instruction, substring_match)
+from utils import (
+    OpenAIModel,
+    cache_dir,
+    chunks,
+    get_answer,
+    get_autocot_answer,
+    get_few_shot_prompt,
+    substring_match,
+)
 
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-import urllib.request
-from collections import Counter
 
-d = datasets.load_dataset('bigbench', 'repeat_copy_logic', cache_dir=cache_dir)
-inputs = d['train']['inputs'] + d['validation']['inputs']
+d = datasets.load_dataset("bigbench", "repeat_copy_logic", cache_dir=cache_dir)
+inputs = d["train"]["inputs"] + d["validation"]["inputs"]
 # inputs = [x.split('\n')[0] for x in inputs]
-labels = d['train']['targets'] + d['validation']['targets']
+labels = d["train"]["targets"] + d["validation"]["targets"]
 labels = [l[0] for l in labels]
 # print(len(inputs))
 
 
-train_inputs = d['train']['inputs']
-train_labels = d['train']['targets']
+train_inputs = d["train"]["inputs"]
+train_labels = d["train"]["targets"]
 
-io_pairs=[("Q: say pickup a pound of green beans twice, replacing a pound with a bunch for even times and a handful for odd",
-"pickup a handful of green beans pickup a bunch of green beans"),
-("Q: repeat a woodchuck chucks lots of wood two times, but replace lots with five pounds the first time and two tons the second time",
-"a woodchuck chucks five pounds of wood a woodchuck chucks two tons of wood"),
-("Q: Repeat squiggly line twice after the phrase can you draw",
-"can you draw squiggly line squiggly line")]
+io_pairs = [
+    (
+        "Q: say pickup a pound of green beans twice, replacing a pound with a bunch for even times and a handful for odd",
+        "pickup a handful of green beans pickup a bunch of green beans",
+    ),
+    (
+        "Q: repeat a woodchuck chucks lots of wood two times, but replace lots with five pounds the first time and two tons the second time",
+        "a woodchuck chucks five pounds of wood a woodchuck chucks two tons of wood",
+    ),
+    (
+        "Q: Repeat squiggly line twice after the phrase can you draw",
+        "can you draw squiggly line squiggly line",
+    ),
+]
 
 task_name = "Repeat with logic"
 task_description = "(Repeat with logic) Repeat the given phrase with spaces in between, following logical constraints provided in the question."
+
 
 def exact_match(labels, predictions):
     correct = 0
@@ -56,7 +65,8 @@ def exact_match(labels, predictions):
         if label.lower() == predict.lower():
             correct += 1
         count += 1
-    return (1.0*correct)/count
+    return (1.0 * correct) / count
+
 
 def token_match(labels, predictions):
     correct = 0
@@ -65,12 +75,16 @@ def token_match(labels, predictions):
         if label.lower() in [p.lower() for p in predict]:
             correct += 1
         count += 1
-    return (1.0*correct)/count
+    return (1.0 * correct) / count
+
 
 def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  temperature=temperature, max_length=200, quote='---', n=1)
-        prompts = ["""repeat with logic:
+        gpt3 = OpenAIModel(
+            model=model_name, temperature=temperature, max_length=200, quote="---", n=1
+        )
+        prompts = [
+            """repeat with logic:
 
 Q: say pickup a pound of green beans twice, replacing a pound with a bunch for even times and a handful for odd
 A:
@@ -89,13 +103,16 @@ A:
 can you draw squiggly line squiggly line
 ----
 %s
-""" % x for x in chunk]
+"""
+            % x
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
@@ -107,21 +124,27 @@ can you draw squiggly line squiggly line
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
 
+def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=N)
-    print(len(tokenizer(few_shot_prompt)['input_ids']))
+    print(len(tokenizer(few_shot_prompt)["input_ids"]))
 
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=200, temperature=temperature, quote='---', n=1)
-        prompts = ["""%s\
-%s""" % (few_shot_prompt, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=200, temperature=temperature, quote="---", n=1
+        )
+        prompts = [
+            """%s\
+%s"""
+            % (few_shot_prompt, x)
+            for x in chunk
+        ]
         return gpt3(prompts)
-    
+
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
@@ -131,14 +154,15 @@ def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
+
 auto_cot_corrected_prompt = """(Repeat with logic) Repeat the given phrase following logical constraints provided in the question.
 Q: say pickup a pound of green beans twice, replacing a pound with a bunch for even times and a handful for odd
 The final answer should be the repeated phrase.
 A: Let's think step-by-step.
 
-"Pick up a pound of green beans" is our starting phrase. This is repeated twice. 
+"Pick up a pound of green beans" is our starting phrase. This is repeated twice.
 
-"Pick up a pound of green beans Pick up a pound of green beans" 
+"Pick up a pound of green beans Pick up a pound of green beans"
 
 For the first (odd) repetition, we replace "a pound" with "a handful", so our new phrase is "Pick up a handful of green beans".
 
@@ -151,7 +175,7 @@ Q: repeat a woodchuck chucks lots of wood two times, but replace lots with five 
 The final answer should be the repeated phrase.
 A: Let's think step-by-step.
 
-"A woodchuck chucks lots of wood" is our starting phrase. This is repeated twice. 
+"A woodchuck chucks lots of wood" is our starting phrase. This is repeated twice.
 
 "A woodchuck chucks lots of wood A woodchuck chucks lots of wood"
 
@@ -205,14 +229,25 @@ Squiggly line can you draw
 The final answer is Squiggly line can you draw squiggly line
 ----
 """
-def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
+
+
+def auto_cot(
+    temperature=0.3,
+    model_name="text-davinci-002",
+    predict=True,
+    use_corrected=False,
+    self_consistency=False,
+):
     global auto_cot_corrected_prompt
     global auto_cot_cleaned_prompt
     auto_cot_prompt = ""
     for io_pair in io_pairs:
-        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=0.7, quote='---', n=1)
-        prompt = """%s\n"""% task_description + io_pair[0] + \
-            """\nThe final answer should be the repeated phrase.\nA: Let's think step-by-step.\n""" 
+        gpt3 = OpenAIModel(model=model_name, max_length=500, temperature=0.7, quote="---", n=1)
+        prompt = (
+            """%s\n""" % task_description
+            + io_pair[0]
+            + """\nThe final answer should be the repeated phrase.\nA: Let's think step-by-step.\n"""
+        )
         auto_cot_prompt += prompt
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
@@ -222,9 +257,9 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         auto_cot_prompt = auto_cot_corrected_prompt
     else:
         auto_cot_prompt = auto_cot_cleaned_prompt
-    
+
     print(auto_cot_prompt)
-    f = open("auto_cot_demonstrations.txt","a+")
+    f = open("auto_cot_demonstrations.txt", "a+")
     f.write("Language games\n\n")
     f.write(auto_cot_prompt)
 
@@ -232,24 +267,38 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         return
 
     def predict_self_consistency(description, chunk, n=5):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
-        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
-            """%s\nThe final answer should be in the repeated phrase.\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=n
+        )
+        prompts = [
+            auto_cot_prompt
+            + """%s\n""" % task_description
+            + """%s\nThe final answer should be in the repeated phrase.\nA: Let's think step-by-step.\n"""
+            % (x)
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=temperature, quote='---', n=1)
-        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
-            """%s\nThe final answer should be in the repeated phrase.\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=500, temperature=temperature, quote="---", n=1
+        )
+        prompts = [
+            auto_cot_prompt
+            + """%s\n""" % task_description
+            + """%s\nThe final answer should be in the repeated phrase.\nA: Let's think step-by-step.\n"""
+            % (x)
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     if self_consistency:
         perf_array = []
         runs = 1
         batch_size = 2
-        for run in range(runs): 
-            print("Run %d"%run)
-            answers = [] # List of counters
+        for run in range(runs):
+            print("Run %d" % run)
+            answers = []  # List of counters
             for x in tqdm(chunks(inputs, batch_size)):
                 x = [ex.replace("repeat with logic:\n\n", "") for ex in x]
                 x = [ex.replace("\nA:", "") for ex in x]
@@ -259,13 +308,15 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
                     preds = []
                     for x in ans_chunk:
                         if re.search("""The final answer is """, x):
-                            preds.append(x[re.search("""The final answer is """, x).span(0)[-1]:])
+                            preds.append(x[re.search("""The final answer is """, x).span(0)[-1] :])
                         else:
                             preds.append(x.strip())
                     for enum, pred in enumerate(ans_chunk):
                         # Only add to the counter if there is a legitimate answer
                         if re.search("""The final answer is""", pred):
-                            result_counter[chunk_no].update([pred[re.search("""The final answer is""", x).span(0)[-1]:]])
+                            result_counter[chunk_no].update(
+                                [pred[re.search("""The final answer is""", x).span(0)[-1] :]]
+                            )
                 answers.extend(result_counter)
             preds = [x.most_common(1)[0][0] for x in answers]
             perf_array.append(substring_match(labels, preds))
@@ -276,7 +327,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         perf_array = []
         runs = 5
         for run in range(runs):
-            print("Run %d"%run)
+            print("Run %d" % run)
             answers = []
             for x in tqdm(chunks(inputs, 10)):
                 x = [ex.replace("repeat with logic:\n\n", "") for ex in x]
@@ -294,9 +345,9 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
 # few_shot_cot_prompt = """In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use string operations like splitting, reformatting, editing or merging. You can also use other operations like arithmetic and logic.
 # Description: Find the required date in MM/DD/YYYY using information about related events and dates in the input. Clue: First find what day is today.
 # Input: Today is the first day of 2007. What is the date one week from today in MM/DD/YYYY?
-# Q1: [string reformat] first day of 2007 in MM/DD/YYYY 
+# Q1: [string reformat] first day of 2007 in MM/DD/YYYY
 # #1: 01/01/2007
-# Q2: [arithmetic] What date is one week from 01/01/2007? 
+# Q2: [arithmetic] What date is one week from 01/01/2007?
 # #2: 01/08/2007
 # Q3: [EOQ]
 # Ans: 01/08/2007
@@ -351,7 +402,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
 # #1: 06/01/2021
 # Q2: [arithmetic] 06/01/2021 is 2 days away from now. What date is today?
 # #2: Today is 04/01/2021
-# Q3: [arithmetic] What date is 24 hours later than today?  
+# Q3: [arithmetic] What date is 24 hours later than today?
 # #3: 05/01/2021
 # Q4: [EOQ]
 # Ans: 05/31/2021
@@ -362,8 +413,8 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
 
 few_shot_cot_prompt = few_shot_string_prompt
 
-def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
 
+def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
     global few_shot_cot_prompt
     task_name = "Repeat with Logic"
     task_description = "(Repeat with logic) Repeat the given phrase following logical constraints provided in the question."
@@ -379,25 +430,30 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     elif strategy == "llm_similar":
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
-    
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return gpt3(prompts)
 
     interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
 
     def predict_complete(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         outputs = gpt3(prompts)
-        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        completed_outputs = [
+            interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)
+        ]
         return completed_outputs
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("repeat with logic:\n\n", "") for ex in x]
@@ -413,9 +469,10 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
 
 
 def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
-
     task_name = "Repeating text with logic"
-    task_description = "Repeat the given phrase following logical constraints provided in the question."
+    task_description = (
+        "Repeat the given phrase following logical constraints provided in the question."
+    )
 
     if strategy == "random":
         few_shot_cot_prompt = random_tasks(N=6)
@@ -427,14 +484,20 @@ def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=2048, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model="text-davinci-002",
+            max_length=2048,
+            temperature=temperature,
+            quote="---",
+            n=1,
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("repeat with logic:\n\n", "") for ex in x]
@@ -447,10 +510,15 @@ def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
     print("Std. Dev", np.std(perf_array))
 
 
-
 few_shot_cot_prompt = few_shot_arithmetic_prompt
 
-def nl_program(temperature=0.3, model_name="davinci-codex-002-msft", strategy="fixed", self_consistency=False):
+
+def nl_program(
+    temperature=0.3,
+    model_name="davinci-codex-002-msft",
+    strategy="fixed",
+    self_consistency=False,
+):
     global few_shot_cot_prompt
     # task_name = "Repeating text with logic"
     # task_description = "Repeat the given phrase following logical constraints provided in the question, editing the phrase as required."
@@ -466,39 +534,48 @@ def nl_program(temperature=0.3, model_name="davinci-codex-002-msft", strategy="f
     elif strategy == "llm_similar":
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
-    interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[code generate]", "[generate python code]"])
+    interpreter = TopDownVisitorBeta(
+        model_name=model_name,
+        exclude_list=["[code generate]", "[generate python code]"],
+    )
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     def predict_self_consistency(description, chunk, n=9):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=n
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     if self_consistency:
         perf_array = []
         runs = 2
         batch_size = 2
-        for run in range(runs): 
-            print("Run %d"%run)
-            answers = [] # List of counters
+        for run in range(runs):
+            print("Run %d" % run)
+            answers = []  # List of counters
             for x in tqdm(chunks(inputs, batch_size)):
                 x = [ex.replace("repeat with logic:\n\n", "") for ex in x]
                 x = [ex.replace("\nA:", "") for ex in x]
                 prompts, answer_set = predict_self_consistency(task_description, x)
                 result_counter = [Counter() for i in range(batch_size)]
                 for chunk_no, ans_chunk in enumerate(chunks(answer_set, 9)):
-                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
-                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    new_answer = interpreter.batch_visit(
+                        [prompts[chunk_no]] * len(ans_chunk), ans_chunk
+                    )
+                    processed_answers = [get_answer(ex) for ex in new_answer]
                     for pred in enumerate(processed_answers):
                         # Only add to the counter if there is a legitimate answer
                         if pred is not None:
                             result_counter[chunk_no].update([pred])
                 answers.extend(result_counter)
-            preds = [x.most_common(1)[0][0][1] for x in answers[:len(inputs)]]
+            preds = [x.most_common(1)[0][0][1] for x in answers[: len(inputs)]]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)
         print("FS-CoT Performance:")
@@ -507,20 +584,22 @@ def nl_program(temperature=0.3, model_name="davinci-codex-002-msft", strategy="f
 
     perf_array = []
     runs = 1
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("repeat with logic:\n\n", "") for ex in x]
             x = [ex.replace("\nA:", "") for ex in x]
             prompts, answer = predict(task_description, x)
-            new_answer  = interpreter.batch_visit(prompts, answer)
+            new_answer = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
         preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
-        positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
-        positive_rate = sum(positive_calls)/len(interpreter.execution_details)
+        positive_calls = [
+            int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details
+        ]
+        positive_rate = sum(positive_calls) / len(interpreter.execution_details)
     print("FS-CoT Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
@@ -553,7 +632,7 @@ get_sentence(input_text)
 Out [1]:
 "Ibrahim Francois Pei Shu Ngo"
 
-In [2]: 
+In [2]:
 input_text = "Ibrahim Francois Pei Shu Ngo"
 def get_tokens(text):
     tokens = text.split()
@@ -573,7 +652,7 @@ get_nth_char_in_list(input_tokens, 3)
 Out [3]:
 ["r", "a", "i", "o", "u"]
 
-In [4]: 
+In [4]:
 char_list = ["r", "a", "i", "o", "u"]
 def merge_chars(char_list):
     return " ".join(char_list)
@@ -600,7 +679,7 @@ get_sentence(input_text)
 Out [1]:
 "Savita Saeed Ramos Sato Yadav"
 
-In [2]: 
+In [2]:
 input_text = "Savita Saeed Ramos Sato Yadav"
 def get_tokens(text):
     tokens = text.split()
@@ -620,7 +699,7 @@ get_nth_char_in_list(input_tokens, 3)
 Out [3]:
 ["v", "e", "m", "t", "d"]
 
-In [4]: 
+In [4]:
 char_list = ["v", "e", "m", "t", "d"]
 def merge_chars(char_list):
     return " ".join(char_list)
@@ -659,7 +738,7 @@ get_tokens(input_text)
 Out [2]:
 ["Sami", "made", "his", "way", "across", "the", "bar", "and", "hugged", "Layla"]
 
-In [3]:                                  
+In [3]:
 input_tokens = ["Sami", "made", "his", "way", "across", "the", "bar", "and", "hugged", "Layla"]
 def get_pig_latin(token_list):
     vowels = ["a", "e", "i", "o", "u", "y"]
@@ -739,19 +818,32 @@ In [1]:
 input_text = "%s"
 """
 
+
 def notebook(temperature=0.3, model_name="text-davinci-002"):
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=2048, temperature=temperature, quote='In [1]:', n=1)
-        prompts=[few_shot_notebook_prompt% (x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name,
+            max_length=2048,
+            temperature=temperature,
+            quote="In [1]:",
+            n=1,
+        )
+        prompts = [few_shot_notebook_prompt % (x) for x in chunk]
         return gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
-            x = [ex.replace("repeat with logic:\n\n", "Repeat the given phrase following logical constraints provided in the question. ") for ex in x]
+            x = [
+                ex.replace(
+                    "repeat with logic:\n\n",
+                    "Repeat the given phrase following logical constraints provided in the question. ",
+                )
+                for ex in x
+            ]
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(task_description, x))
             pdb.set_trace()
@@ -884,29 +976,40 @@ Ans: A woodchuck chucks five pounds of wood A woodchuck chucks two tons of wood
 Description: %s
 Input: %s
 Q1:"""
-def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+
+
+def human_intervention(
+    temperature=0.3,
+    model_name="text-davinci-002",
+    strategy="fixed",
+    self_consistency=False,
+):
     global few_shot_cot_prompt
 
     few_shot_cot_prompt = few_shot_human_prompt
     interpreter = TopDownVisitorBeta(model_name=model_name)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     def predict_self_consistency(description, chunk, n=9):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=n
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     if self_consistency:
         perf_array = []
         runs = 2
         batch_size = 2
-        for run in range(runs): 
-            print("Run %d"%run)
-            answers = [] # List of counters
+        for run in range(runs):
+            print("Run %d" % run)
+            answers = []  # List of counters
             for x in tqdm(chunks(inputs, batch_size)):
                 x = [ex.replace("repeat with logic:\n\n", "") for ex in x]
                 x = [ex.replace("\nA:", "") for ex in x]
@@ -914,14 +1017,16 @@ def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy=
                 prompts, answer_set = predict_self_consistency(task_description, x)
                 result_counter = [Counter() for i in range(batch_size)]
                 for chunk_no, ans_chunk in enumerate(chunks(answer_set, 9)):
-                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
-                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    new_answer = interpreter.batch_visit(
+                        [prompts[chunk_no]] * len(ans_chunk), ans_chunk
+                    )
+                    processed_answers = [get_answer(ex) for ex in new_answer]
                     for pred in enumerate(processed_answers):
                         # Only add to the counter if there is a legitimate answer
                         if pred is not None:
                             result_counter[chunk_no].update([pred])
                 answers.extend(result_counter)
-            preds = [x.most_common(1)[0][0][1] for x in answers[:len(inputs)]]
+            preds = [x.most_common(1)[0][0][1] for x in answers[: len(inputs)]]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)
         print("FS-CoT Performance:")
@@ -931,8 +1036,8 @@ def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy=
     else:
         perf_array = []
         runs = 5
-        for run in range(runs): 
-            print("Run %d"%run)
+        for run in range(runs):
+            print("Run %d" % run)
             answers = []
             for x in tqdm(chunks(inputs, 10)):
                 x = [ex.replace("repeat with logic:\n\n", "") for ex in x]
@@ -944,26 +1049,58 @@ def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy=
             preds = [x.strip() for x in answers]
             perf_array.append(substring_match(labels, preds))
             # Report on interpreter performance
-            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
-            positive_rate = sum(positive_calls)/(len(interpreter.execution_details) + 1e-6)
+            positive_calls = [
+                int(len(stack_trace_list) >= 1)
+                for stack_trace_list in interpreter.execution_details
+            ]
+            positive_rate = sum(positive_calls) / (len(interpreter.execution_details) + 1e-6)
         print("FS-CoT Performance:")
         print("Mean", np.mean(perf_array))
         print("Std. Dev", np.std(perf_array))
         print("Rate of affordance call", positive_rate)
 
+
 # human_intervention(0.3, "davinci-codex-002-msft")
 
 
-
 if __name__ == "__main__":
-    parser  = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001", "davinci-codex-002-msft"], default="text-davinci-002")
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--model_name",
+        type=str,
+        choices=[
+            "text-davinci-002",
+            "text-davinci-003",
+            "code-davinci-002",
+            "code-cushman-001",
+            "davinci-codex-002-msft",
+        ],
+        default="text-davinci-002",
+    )
     parser.add_argument("--temperature", type=float, default="0.3")
-    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program", "auto_cot_corrected"], default="few_shot")
+    parser.add_argument(
+        "--inference_strategy",
+        type=str,
+        choices=[
+            "dummy",
+            "few_shot",
+            "auto_cot",
+            "cot_rollout",
+            "few_shot_cot",
+            "nl_program",
+            "auto_cot_corrected",
+        ],
+        default="few_shot",
+    )
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
-    parser.add_argument("--self_consistency", default=False, action='store_true')
-    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
+    parser.add_argument("--self_consistency", default=False, action="store_true")
+    parser.add_argument(
+        "--selection_strategy",
+        type=str,
+        choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"],
+        default="fixed",
+    )
 
     args = parser.parse_args()
 
@@ -972,18 +1109,35 @@ if __name__ == "__main__":
     print("Training examples:", len(train_inputs))
     print("Dev examples:", len(inputs))
 
-    inputs = inputs[:args.num_dev_examples]
-    labels = labels[:args.num_dev_examples]
+    inputs = inputs[: args.num_dev_examples]
+    labels = labels[: args.num_dev_examples]
 
     if args.inference_strategy == "few_shot":
         few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=args.num_train_examples)
-        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
+        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)["input_ids"]))
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
-        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
+        auto_cot(
+            args.temperature,
+            args.model_name,
+            predict=True,
+            use_corrected=False,
+            self_consistency=False,
+        )
     elif args.inference_strategy == "auto_cot_corrected":
-        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
+        auto_cot(
+            args.temperature,
+            args.model_name,
+            predict=True,
+            use_corrected=True,
+            self_consistency=False,
+        )
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)
+        nl_program(
+            args.temperature,
+            args.model_name,
+            self_consistency=args.self_consistency,
+            strategy=args.selection_strategy,
+        )

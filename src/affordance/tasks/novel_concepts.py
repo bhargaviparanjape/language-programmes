@@ -1,19 +1,15 @@
-from re import L
-from turtle import pd
-from utils import gpt3, propose_decomposition, propose_instruction, chunks, get_subset, OpenAIModel, cache_dir
-
 import datasets
 import numpy as np
 from tqdm import tqdm
-import json, pdb
-import re
+from utils import OpenAIModel, cache_dir, chunks
 
-d = datasets.load_dataset('bigbench', 'novel_concepts', cache_dir=cache_dir)
-inputs = d['train']['inputs'] + d['validation']['inputs']
+d = datasets.load_dataset("bigbench", "novel_concepts", cache_dir=cache_dir)
+inputs = d["train"]["inputs"] + d["validation"]["inputs"]
 # inputs = [x.split('\n')[0] for x in inputs]
-labels = d['train']['targets'] + d['validation']['targets']
+labels = d["train"]["targets"] + d["validation"]["targets"]
 labels = [l[0] for l in labels]
 # print(len(inputs))
+
 
 def exact_match(labels, predictions):
     correct = 0
@@ -22,7 +18,8 @@ def exact_match(labels, predictions):
         if label.lower() == predict.lower():
             correct += 1
         count += 1
-    return (1.0*correct)/count
+    return (1.0 * correct) / count
+
 
 def token_match(labels, predictions):
     correct = 0
@@ -31,12 +28,14 @@ def token_match(labels, predictions):
         if label.lower() in [p.lower() for p in predict]:
             correct += 1
         count += 1
-    return (1.0*correct)/count
+    return (1.0 * correct) / count
+
 
 def novel_concepts():
     def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=200, quote='---', n=1)
-        prompts = ["""Let's do some find-the-common-concept problems. In these problems, your goal is to identify the underlying concept or theme that relates the things listed. Make sure to answer carefully.
+        gpt3 = OpenAIModel(model="text-davinci-002", max_length=200, quote="---", n=1)
+        prompts = [
+            """Let's do some find-the-common-concept problems. In these problems, your goal is to identify the underlying concept or theme that relates the things listed. Make sure to answer carefully.
 What do the following have in common? 1) rooks in chess 2) the Tower of London
 A:
 They are both castles.
@@ -57,13 +56,16 @@ A:
 They all can make a buzz.
 ----
 %s
-""" % x for x in chunk]
+"""
+            % x
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 20)):
             answers.extend(predict(x))

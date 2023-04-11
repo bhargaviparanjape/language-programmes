@@ -1,43 +1,32 @@
-import ast
-import json
+import argparse
+from collections import Counter
+import csv
 import os
 import pdb
 import re
-import time
-import csv
-from re import L
-import sys
-from turtle import pd
 
-import argparse
-import ast
-import json
-import pdb
-import re
-import time
-from re import L
-from turtle import pd
-
-import datasets
 import numpy as np
+from prompt_library import (
+    few_shot_retrieval_prompt,
+    llm_similar_tasks,
+    random_tasks,
+    similar_auto_breakdowns,
+    similar_tasks,
+)
+from sequential_interpreter import TopDownVisitorBeta
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer,
-                   get_few_shot_prompt, get_subset, gpt3,
-                   propose_decomposition, propose_instruction, substring_match,
-                   get_autocot_answer)
+from utils import (
+    OpenAIModel,
+    cache_dir,
+    chunks,
+    get_answer,
+    get_autocot_answer,
+    get_few_shot_prompt,
+    substring_match,
+)
 
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-import urllib.request
-from collections import Counter
-
-tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-from prompt_library import (llm_similar_tasks, random_tasks,
-                            similar_auto_breakdowns, similar_tasks,
-                            few_shot_retrieval_prompt, few_shot_code_prompt, 
-                            few_shot_arithmetic_prompt, few_shot_string_prompt,
-                            few_shot_free_prompt)
-from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
 
 few_shot_cot_prompt = few_shot_retrieval_prompt
 
@@ -271,7 +260,7 @@ few_shot_cot_prompt = few_shot_retrieval_prompt
 # D) Inside, Unlimited, Independently
 # A: Let's think step-by-step.
 
-# To ensure the independence of the non-executive board members: 
+# To ensure the independence of the non-executive board members:
 
 # 1) They can be drawn from outside the company
 # 2) They can be appointed for a limited time period
@@ -616,16 +605,31 @@ task_description = "Answer the following multiple-choice questions about college
 # task_description = "Answer the following multiple-choice questions about college-level High School Mathematics, which tests for specialized knowledge and concepts like Pre-algebra, algebra, trigonometry, calculus, etc."
 
 
-
-mmlu_namespace = os.path.join(cache_dir, 'mmlu', 'data')
-data_files = {"train": os.path.join(mmlu_namespace, "dev/{0}_dev.csv".format(dataset_name)), \
-"validation": os.path.join(mmlu_namespace, "test/{0}_test.csv".format(dataset_name))}
+mmlu_namespace = os.path.join(cache_dir, "mmlu", "data")
+data_files = {
+    "train": os.path.join(mmlu_namespace, "dev/{0}_dev.csv".format(dataset_name)),
+    "validation": os.path.join(mmlu_namespace, "test/{0}_test.csv".format(dataset_name)),
+}
 train_data = [row for row in csv.reader(open(data_files["train"]))]
-train_inputs = [row[0] + "\n" + "\n".join(["%s) %s"%(letter, choice) for letter, choice in zip(["A", "B", "C", "D"], row[1:-1])]) for row in train_data]
+train_inputs = [
+    row[0]
+    + "\n"
+    + "\n".join(
+        ["%s) %s" % (letter, choice) for letter, choice in zip(["A", "B", "C", "D"], row[1:-1])]
+    )
+    for row in train_data
+]
 train_labels = [row[-1] for row in train_data]
 
 data = [row for row in csv.reader(open(data_files["validation"]))]
-inputs = [row[0] + "\n" + "\n".join(["%s) %s"%(letter, choice) for letter, choice in zip(["A", "B", "C", "D"], row[1:-1])]) for row in data]
+inputs = [
+    row[0]
+    + "\n"
+    + "\n".join(
+        ["%s) %s" % (letter, choice) for letter, choice in zip(["A", "B", "C", "D"], row[1:-1])]
+    )
+    for row in data
+]
 labels = [row[-1] for row in data]
 
 io_pairs = [(inp, lab) for inp, lab in zip(train_inputs[:5], train_labels[:5])]
@@ -634,6 +638,7 @@ io_pairs = [(inp, lab) for inp, lab in zip(train_inputs[:5], train_labels[:5])]
 # labels = d['train']['targets'] + d['validation']['targets']
 io_prompt = "\n----\n".join([(inp + "\nAns:\n" + lab) for (inp, lab) in io_pairs])
 
+
 def exact_match(labels, predictions):
     correct = 0
     count = 0
@@ -641,24 +646,29 @@ def exact_match(labels, predictions):
         if label.lower() == predict.lower():
             correct += 1
         count += 1
-    return (1.0*correct)/count
+    return (1.0 * correct) / count
 
 
 def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
-
     few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=N)
-    print(len(tokenizer(few_shot_prompt)['input_ids']))
+    print(len(tokenizer(few_shot_prompt)["input_ids"]))
 
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=200, temperature=temperature, quote='---', n=1)
-        prompts = ["""%s\
-%s""" % (few_shot_prompt, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=200, temperature=temperature, quote="---", n=1
+        )
+        prompts = [
+            """%s\
+%s"""
+            % (few_shot_prompt, x)
+            for x in chunk
+        ]
         return gpt3(prompts)
-    
+
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
@@ -670,19 +680,27 @@ def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
 
 
 auto_cot_corrected_prompt = """"""
-def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
+
+
+def auto_cot(
+    temperature=0.3,
+    model_name="text-davinci-002",
+    predict=True,
+    use_corrected=False,
+    self_consistency=False,
+):
     global auto_cot_corrected_prompt
     global auto_cot_cleaned_prompt
     auto_cot_prompt = ""
     for io_pair in io_pairs[:10]:
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompt = """%s\n"""% task_description + io_pair[0] + \
-            """\nA: Let's think step-by-step.\n""" 
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompt = """%s\n""" % task_description + io_pair[0] + """\nA: Let's think step-by-step.\n"""
         auto_cot_prompt += prompt
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
         # Add the final answer with special format so evaluation is easier.
-
 
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
@@ -692,32 +710,42 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
     if not predict:
         return
 
-
-
     print(auto_cot_prompt)
-    f = open("auto_cot_demonstrations.txt","a+")
+    f = open("auto_cot_demonstrations.txt", "a+")
     f.write("Computer Science\n\n")
     f.write(auto_cot_prompt)
 
     def predict_self_consistency(description, chunk, n=5):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
-        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
-            """%s\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=n
+        )
+        prompts = [
+            auto_cot_prompt
+            + """%s\n""" % task_description
+            + """%s\nA: Let's think step-by-step.\n""" % (x)
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=temperature, quote='---', n=1)
-        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
-            """%s\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=500, temperature=temperature, quote="---", n=1
+        )
+        prompts = [
+            auto_cot_prompt
+            + """%s\n""" % task_description
+            + """%s\nA: Let's think step-by-step.\n""" % (x)
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     if self_consistency:
         perf_array = []
         runs = 1
         batch_size = 2
-        for run in range(runs): 
-            print("Run %d"%run)
-            answers = [] # List of counters
+        for run in range(runs):
+            print("Run %d" % run)
+            answers = []  # List of counters
             for x in tqdm(chunks(inputs, batch_size)):
                 answer_set = predict_self_consistency(task_description, x)
                 result_counter = [Counter() for i in range(batch_size)]
@@ -725,13 +753,15 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
                     preds = []
                     for x in ans_chunk:
                         if re.search("""The final answer is """, x):
-                            preds.append(x[re.search("""The final answer is """, x).span(0)[-1]:])
+                            preds.append(x[re.search("""The final answer is """, x).span(0)[-1] :])
                         else:
                             preds.append(x.strip())
                     for enum, pred in enumerate(ans_chunk):
                         # Only add to the counter if there is a legitimate answer
                         if re.search("""The final answer is """, pred):
-                            result_counter[chunk_no].update([pred[re.search("""The final answer is """, x).span(0)[-1]:]])
+                            result_counter[chunk_no].update(
+                                [pred[re.search("""The final answer is """, x).span(0)[-1] :]]
+                            )
                 answers.extend(result_counter)
             preds = [x.most_common(1)[0][0] for x in answers]
             perf_array.append(substring_match(labels, preds))
@@ -741,8 +771,8 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
     else:
         perf_array = []
         runs = 5
-        for run in range(runs): 
-            print("Run %d"%run)
+        for run in range(runs):
+            print("Run %d" % run)
             answers = []
             for x in tqdm(chunks(inputs, 10)):
                 x = [ex.replace(" Answer:", "") for ex in x]
@@ -756,7 +786,6 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
 
 
 def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
-
     global few_shot_cot_prompt
 
     if strategy == "fixed":
@@ -773,21 +802,27 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return gpt3(prompts)
 
     def predict_complete(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         outputs = gpt3(prompts)
-        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        completed_outputs = [
+            interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)
+        ]
         return completed_outputs
-    
+
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict_complete(task_description, x))
@@ -798,8 +833,6 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     print("Few-shot COT performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
-
-
 
 
 def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
@@ -819,19 +852,21 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed")
     interpreter = TopDownVisitorBeta(model_name=model_name)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nEdited:", "") for ex in x]
             prompts, answer = predict(task_description, x)
-            new_answer  = interpreter.batch_visit(prompts, answer)
+            new_answer = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
         preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
@@ -840,7 +875,12 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed")
     print("Std. Dev", np.std(perf_array))
 
 
-def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+def nl_program(
+    temperature=0.3,
+    model_name="text-davinci-002",
+    strategy="fixed",
+    self_consistency=False,
+):
     global few_shot_cot_prompt
 
     if strategy == "fixed":
@@ -857,29 +897,35 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     interpreter = TopDownVisitorBeta(model_name=model_name)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     def predict_self_consistency(description, chunk, n=5):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=n
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     perf_array = []
     runs = 3
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
-            prompts, answer = predict(task_description, x) 
-            new_answer  = interpreter.batch_visit(prompts, answer)
+            prompts, answer = predict(task_description, x)
+            new_answer = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
         preds = [get_answer(x.strip()) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
-        positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
-        positive_rate = sum(positive_calls)/len(interpreter.execution_details)
+        positive_calls = [
+            int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details
+        ]
+        positive_rate = sum(positive_calls) / len(interpreter.execution_details)
     print("FS-CoT Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
@@ -887,16 +933,44 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
 
 
 if __name__ == "__main__":
-    parser  = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser()
     parser.add_argument("--dataset_name", type=str, default="astronomy")
     parser.add_argument("--task_name", type=str, default="astronomy")
-    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001", "davinci-codex-002-msft"], default="text-davinci-002")
+    parser.add_argument(
+        "--model_name",
+        type=str,
+        choices=[
+            "text-davinci-002",
+            "text-davinci-003",
+            "code-davinci-002",
+            "code-cushman-001",
+            "davinci-codex-002-msft",
+        ],
+        default="text-davinci-002",
+    )
     parser.add_argument("--temperature", type=float, default="0.3")
-    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument(
+        "--inference_strategy",
+        type=str,
+        choices=[
+            "dummy",
+            "few_shot",
+            "auto_cot",
+            "cot_rollout",
+            "few_shot_cot",
+            "nl_program",
+        ],
+        default="few_shot",
+    )
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
-    parser.add_argument("--self_consistency", default=False, action='store_true')
-    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
+    parser.add_argument("--self_consistency", default=False, action="store_true")
+    parser.add_argument(
+        "--selection_strategy",
+        type=str,
+        choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"],
+        default="fixed",
+    )
 
     args = parser.parse_args()
 
@@ -905,16 +979,27 @@ if __name__ == "__main__":
     print("Training examples:", len(train_inputs))
     print("Dev examples:", len(inputs))
 
-    inputs = inputs[:args.num_dev_examples]
-    labels = labels[:args.num_dev_examples]
+    inputs = inputs[: args.num_dev_examples]
+    labels = labels[: args.num_dev_examples]
 
     if args.inference_strategy == "few_shot":
         few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=args.num_train_examples)
-        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
+        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)["input_ids"]))
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
-        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
+        auto_cot(
+            args.temperature,
+            args.model_name,
+            predict=True,
+            use_corrected=False,
+            self_consistency=False,
+        )
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)
+        nl_program(
+            args.temperature,
+            args.model_name,
+            self_consistency=args.self_consistency,
+            strategy=args.selection_strategy,
+        )

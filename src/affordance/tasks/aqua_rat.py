@@ -1,64 +1,87 @@
 import argparse
-import ast
-import json
-import pdb
+from collections import Counter
 import re
 import time
-from re import L
-from turtle import pd
 
 import datasets
 import numpy as np
+from prompt_library import (
+    few_shot_arithmetic_prompt,
+    llm_similar_tasks,
+    random_tasks,
+    similar_auto_breakdowns,
+    similar_tasks,
+)
+from sequential_interpreter import TopDownVisitorBeta
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
-                   get_few_shot_prompt, get_subset, gpt3,
-                   propose_decomposition, propose_instruction, substring_match)
+from utils import (
+    OpenAIModel,
+    cache_dir,
+    chunks,
+    get_answer,
+    get_autocot_answer,
+    get_few_shot_prompt,
+    gpt3,
+    substring_match,
+)
 
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-import urllib.request
-from collections import Counter
 
-tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-from prompt_library import (llm_similar_tasks, random_tasks,
-                            similar_auto_breakdowns, similar_tasks,
-                            few_shot_retrieval_prompt, few_shot_code_prompt, 
-                            few_shot_arithmetic_prompt, few_shot_string_prompt)
-from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
-
-data = datasets.load_dataset('aqua_rat', 'raw', cache_dir=cache_dir)['validation']
-inputs = [d['question'] + " " + " ".join(d['options']) for d in data]
-labels = [d['correct'] for d in data]
+data = datasets.load_dataset("aqua_rat", "raw", cache_dir=cache_dir)["validation"]
+inputs = [d["question"] + " " + " ".join(d["options"]) for d in data]
+labels = [d["correct"] for d in data]
 print(len(inputs))
 
-data = datasets.load_dataset('aqua_rat', 'raw', cache_dir=cache_dir)['train']
-train_inputs = [d['question'] + " " + " ".join(d['options']) for d in data]
-train_labels = [d['correct'] for d in data]
+data = datasets.load_dataset("aqua_rat", "raw", cache_dir=cache_dir)["train"]
+train_inputs = [d["question"] + " " + " ".join(d["options"]) for d in data]
+train_labels = [d["correct"] for d in data]
 
-task_description="Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer."
+task_description = "Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer."
 
 io_pairs = [
-("""What is the sum of 100 consecutive integers from -49 inclusive, in a increasing order? A)-29 B)50 C)-30 D)30 E)60""",
-"50"),
-("""A box contains nine bulbs out of which 4 are defective. If four bulbs are chosen at random, find the probability that atleast one bulb is good? A)125/128 B)125/120 C)125/126 D)125/125 E)125/121""",
-"125/126"),
-("""Four of the five parts numbered (a), (b), (c), (d) and (e) are exactly equal. Which of the parts is not equal to the other four? The number of that part is the answer. A)16.80 × 4.50 + 4.4 B)1600 ÷ 40 + 16 × 2.5 C)5.5 × 8.4 + 34.6 D)1620 ÷ 20 – 1 E)1856.95 – 1680.65 – 96.3""",
-"5.5 × 8.4 + 34.6"),
-("""An investment of $3000 was made in a certain account and earned interest that was compounded annually. The annual interest rate was fixed for the duration of the investment, and after 12 years the $3000 increased to $12000 by earning interest. In how many years after the initial investment was made the $3000 have increased to $24000 by earning interest at that rate? A)16 B)22 C)20 D)18 E)30""",
-"18"),
-("""Ramu bought an old car for Rs. 42000. He spent Rs. 13000 on repairs and sold it for Rs. 64900. What is his profit percent? A)16%% B)88%% C)18%% D)14%% E)28%%""",
-"18%%"),
-("""C and D started a business investing Rs. 49,000 and Rs. 35,000 respectively. In what ratio the profit earned after 4 years be divided between C and D respectively? A)7:4 B)7:5 C)6:4 D)5:5 E)None of these""",
-"7:5"),
-("""What is the area M of the square with the following coordinates: (x, y), (20, 20), (20, 5), (x, 5)? A)60. B)85. C)125. D)225. E)It cannot be determined from the information given""",
-"225"),
-("""Shobha's Mathematics Test had 75 problems i.e. 10 arithmetic, 30 algebra and 35 geometry problems. Although she answered 70%% of the arithmetic, 40%% of the algebra and 60%% 0f the geometry problems correctly, she did not pass the test because she got less than 60%% of the problems right. How many more questions she would have needed to answer correctly to earn a 60%% passing grade? A)5 B)10 C)15 D)20 E)25""",
-"5"),
-("""If a, b, and c are consecutive even integers and a < b < c, all of the following must be divisible by 4 EXCEPT A)a + c B)b + c C)ac D)(bc)/2 E)(abc)/4""",
-"b + c"),
-("""Two trains, each 160 m long, moving in opposite directions, cross other in 8 sec. If one is moving twice as fast the other, then the speed of the faster train is? A)26 km/hr B)17 km/hr C)60 km/hr D)77 km/hr E)96 km/hr""",
-"96 km/hr"),
+    (
+        """What is the sum of 100 consecutive integers from -49 inclusive, in a increasing order? A)-29 B)50 C)-30 D)30 E)60""",
+        "50",
+    ),
+    (
+        """A box contains nine bulbs out of which 4 are defective. If four bulbs are chosen at random, find the probability that atleast one bulb is good? A)125/128 B)125/120 C)125/126 D)125/125 E)125/121""",
+        "125/126",
+    ),
+    (
+        """Four of the five parts numbered (a), (b), (c), (d) and (e) are exactly equal. Which of the parts is not equal to the other four? The number of that part is the answer. A)16.80 × 4.50 + 4.4 B)1600 ÷ 40 + 16 × 2.5 C)5.5 × 8.4 + 34.6 D)1620 ÷ 20 – 1 E)1856.95 – 1680.65 – 96.3""",
+        "5.5 × 8.4 + 34.6",
+    ),
+    (
+        """An investment of $3000 was made in a certain account and earned interest that was compounded annually. The annual interest rate was fixed for the duration of the investment, and after 12 years the $3000 increased to $12000 by earning interest. In how many years after the initial investment was made the $3000 have increased to $24000 by earning interest at that rate? A)16 B)22 C)20 D)18 E)30""",
+        "18",
+    ),
+    (
+        """Ramu bought an old car for Rs. 42000. He spent Rs. 13000 on repairs and sold it for Rs. 64900. What is his profit percent? A)16%% B)88%% C)18%% D)14%% E)28%%""",
+        "18%%",
+    ),
+    (
+        """C and D started a business investing Rs. 49,000 and Rs. 35,000 respectively. In what ratio the profit earned after 4 years be divided between C and D respectively? A)7:4 B)7:5 C)6:4 D)5:5 E)None of these""",
+        "7:5",
+    ),
+    (
+        """What is the area M of the square with the following coordinates: (x, y), (20, 20), (20, 5), (x, 5)? A)60. B)85. C)125. D)225. E)It cannot be determined from the information given""",
+        "225",
+    ),
+    (
+        """Shobha's Mathematics Test had 75 problems i.e. 10 arithmetic, 30 algebra and 35 geometry problems. Although she answered 70%% of the arithmetic, 40%% of the algebra and 60%% 0f the geometry problems correctly, she did not pass the test because she got less than 60%% of the problems right. How many more questions she would have needed to answer correctly to earn a 60%% passing grade? A)5 B)10 C)15 D)20 E)25""",
+        "5",
+    ),
+    (
+        """If a, b, and c are consecutive even integers and a < b < c, all of the following must be divisible by 4 EXCEPT A)a + c B)b + c C)ac D)(bc)/2 E)(abc)/4""",
+        "b + c",
+    ),
+    (
+        """Two trains, each 160 m long, moving in opposite directions, cross other in 8 sec. If one is moving twice as fast the other, then the speed of the faster train is? A)26 km/hr B)17 km/hr C)60 km/hr D)77 km/hr E)96 km/hr""",
+        "96 km/hr",
+    ),
 ]
+
 
 def exact_match(labels, predictions):
     correct = 0
@@ -67,7 +90,8 @@ def exact_match(labels, predictions):
         if label.lower() == predict.lower():
             correct += 1
         count += 1
-    return (1.0*correct)/count
+    return (1.0 * correct) / count
+
 
 def token_match(labels, predictions):
     correct = 0
@@ -76,13 +100,16 @@ def token_match(labels, predictions):
         if label.lower() in [p.lower() for p in predict]:
             correct += 1
         count += 1
-    return (1.0*correct)/count
+    return (1.0 * correct) / count
 
 
 def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name, temperature=temperature, max_length=200, quote='---', n=1)
-        prompts = ["""What is the sum of 100 consecutive integers from -49 inclusive, in a increasing order? A)-29 B)50 C)-30 D)30 E)60
+        gpt3 = OpenAIModel(
+            model=model_name, temperature=temperature, max_length=200, quote="---", n=1
+        )
+        prompts = [
+            """What is the sum of 100 consecutive integers from -49 inclusive, in a increasing order? A)-29 B)50 C)-30 D)30 E)60
 B
 ----
 A box contains nine bulbs out of which 4 are defective. If four bulbs are chosen at random, find the probability that atleast one bulb is good? A)125/128 B)125/120 C)125/126 D)125/125 E)125/121
@@ -110,13 +137,16 @@ Two trains, each 160 m long, moving in opposite directions, cross other in 8 sec
 E
 ----
 %s
-""" % x for x in chunk]
+"""
+            % x
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
@@ -129,20 +159,25 @@ E
 
 
 def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
-
     few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=N)
-    print(len(tokenizer(few_shot_prompt)['input_ids']))
+    print(len(tokenizer(few_shot_prompt)["input_ids"]))
 
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=200, temperature=temperature, quote='---', n=1)
-        prompts = ["""%s\
-%s""" % (few_shot_prompt, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=200, temperature=temperature, quote="---", n=1
+        )
+        prompts = [
+            """%s\
+%s"""
+            % (few_shot_prompt, x)
+            for x in chunk
+        ]
         return gpt3(prompts)
-    
+
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
@@ -151,7 +186,6 @@ def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     print("No decomposition Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
-
 
 
 auto_cot_corrected_prompt = """Answer the following multiple-choice arithmetic reasoning problems, choosing one of the five options as the final answer.
@@ -189,7 +223,7 @@ What is the area M of the square with the following coordinates: (x, y), (20, 20
 The final answer one of the five options.
 A: Let's think step-by-step.
 
-First, we need to calculate the length of one side of the square. We can do this by finding the difference between the x-coordinates or y-coordinates of the two points on that side. 
+First, we need to calculate the length of one side of the square. We can do this by finding the difference between the x-coordinates or y-coordinates of the two points on that side.
 There are two consecutive coordinates that we know make a side: (20, 20), (20, 5).
 In this case, the difference between the y-coordinates of the points (20, 20) and (20, 5) is 20 - 5 = 15.
 Next, we need to find the area of the square. The area of a square is equal to the length of one side squared. In this case, that would be 15^2.
@@ -227,7 +261,7 @@ a, b, and c are consecutive even integers and a < b < c. Thus b is a+2 and c is 
 Therefore a is 2x, b is 2x + 2, and c is 2x + 4
 Let's consider each option.
 a + c is 2x + 2x + 4 which is 2x + 4. 4x + 4 is divisible by 4. This eliminates option A.
-b + c is 2x + 2 + 2x + 4 which is 4x + 6. 4x is divisible by 4 but 6 is not. Thus, this option is not divisible by 4. 
+b + c is 2x + 2 + 2x + 4 which is 4x + 6. 4x is divisible by 4 but 6 is not. Thus, this option is not divisible by 4.
 ac is 2x*(2x+4), which is 4x^2 + 8x. 4x^2 + 8x is divisible by 4. This eliminates option C.
 bc/2 is (2x + 2)*(2x + 4)/2. This evaluates to 2x^2 + 6x + 4. For both even and odd values of x, this expression is divisible by 4. This eliminates option D.
 (abc)/4 is 2x*(2x + 2)*(2x + 4)/4. This evaluates to 2x^3 + 6x^2 + 4x. divisible by 4. As before, for both even and odd values of x, this expression is divisible by 4. This eliminates option E.
@@ -295,19 +329,19 @@ Answer the following multiple-choice arithmetic reasoning problems, choosing one
 Four of the five parts numbered (a), (b), (c), (d) and (e) are exactly equal. Which of the parts is not equal to the other four? The number of that part is the answer. A)16.80 × 4.50 + 4.4 B)1600 ÷ 40 + 16 × 2.5 C)5.5 × 8.4 + 34.6 D)1620 ÷ 20 – 1 E)1856.95 – 1680.65 – 96.3
 The final answer one of the five options.
 A: Let's think step-by-step.
-16.80 × 4.50 + 4.4 = 
+16.80 × 4.50 + 4.4 =
 16.80 × 4.50 = 75.60
 75.60 + 4.4 = 80.00
-1600 ÷ 40 + 16 × 2.5 = 
+1600 ÷ 40 + 16 × 2.5 =
 1600 ÷ 40 = 40
 40 + 16 × 2.5 = 80
-5.5 × 8.4 + 34.6 = 
+5.5 × 8.4 + 34.6 =
 5.5 × 8.4 = 46.20
 46.20 + 34.6 = 80.80
-1620 ÷ 20 – 1 = 
+1620 ÷ 20 – 1 =
 1620 ÷ 20 = 81
 81 – 1 = 80
-1856.95 – 1680.65 – 96.3 = 
+1856.95 – 1680.65 – 96.3 =
 1856.95 – 1680.65 = 176.30
 176.30 – 96.3 = 80.00
 From this, we can see that B, C, D and E are equal, and that A is not equal to the other four.
@@ -368,14 +402,24 @@ The final answer is D.
 ----
 """
 
-def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
+
+def auto_cot(
+    temperature=0.3,
+    model_name="text-davinci-002",
+    predict=True,
+    use_corrected=False,
+    self_consistency=False,
+):
     global auto_cot_corrected_prompt
     global auto_cot_cleaned_prompt
     auto_cot_prompt = ""
     for io_pair in io_pairs:
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=0.7, quote='---', n=1)
-        prompt = """%s\n"""% task_description + io_pair[0] + \
-            """\nThe final answer one of the five options.\nA: Let's think step-by-step.\n""" 
+        gpt3 = OpenAIModel(model=model_name, max_length=1000, temperature=0.7, quote="---", n=1)
+        prompt = (
+            """%s\n""" % task_description
+            + io_pair[0]
+            + """\nThe final answer one of the five options.\nA: Let's think step-by-step.\n"""
+        )
         auto_cot_prompt += prompt
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
@@ -385,9 +429,9 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         auto_cot_prompt = auto_cot_corrected_prompt
     else:
         auto_cot_prompt = auto_cot_cleaned_prompt
-    
+
     print(auto_cot_prompt)
-    f = open("auto_cot_demonstrations.txt","a+")
+    f = open("auto_cot_demonstrations.txt", "a+")
     f.write("Anachronisms\n\n")
     f.write(auto_cot_prompt)
 
@@ -395,24 +439,40 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         return
 
     def predict_self_consistency(description, chunk, n=5):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
-        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
-            """%s\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=n
+        )
+        prompts = [
+            auto_cot_prompt
+            + """%s\n""" % task_description
+            + """%s\nA: Let's think step-by-step.\n""" % (x)
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=temperature, quote='---', n=1)
-        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
-            """%s\nThe final answer one of the five options.\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=500, temperature=temperature, quote="---", n=1
+        )
+        prompts = [
+            auto_cot_prompt
+            + """%s\n""" % task_description
+            + """%s\nThe final answer one of the five options.\nA: Let's think step-by-step.\n"""
+            % (x)
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         label_dict = ["ABCDE".index(l) for l in labels]
-        new_labels = [re.split('[ABCDE]\)', inp[re.search("A\)", inp).span(0)[0]:])[1:][label_dict[i]] for i, inp in enumerate(inputs)]
+        new_labels = [
+            re.split("[ABCDE]\)", inp[re.search("A\)", inp).span(0)[0] :])[1:][label_dict[i]]
+            for i, inp in enumerate(inputs)
+        ]
         for x in tqdm(chunks(inputs, 10)):
             # x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
@@ -429,10 +489,10 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
 # few_shot_cot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use arithmetic and algebra functions in one or more of your substeps.
 # Description: Solve the following arithmetic problems on ratios and fractions, , writing out intermediate arithmetic calculations as needed.
 # Input: Divide the number 49 into two parts, such that if the greater part is increased by 6 and the lesser part is decreased by 11, their ratio is 9 to 2. What is the greater number?
-#     choice: 29 
-#     choice: 30 
-#     choice: 31 
-#     choice: 32 
+#     choice: 29
+#     choice: 30
+#     choice: 31
+#     choice: 32
 #     choice: None
 # Q1: [algebra] Let the greater part be x. What is the lesser part?
 # #1: 49-x
@@ -457,7 +517,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
 # #1: The traditional calendar quarters that make up the year are: Dates for Q1: January 1 – March 31. Dates for Q2: April 1 – June 3. Dates for Q3: July 1 – September 30. Dates for Q4: October 1 – December 31.
 # Q2: [arithmetic] What is the last day of the first quarter?
 # #2: March 31
-# Q3: [arithmetic] What day is today?  
+# Q3: [arithmetic] What day is today?
 # #3: March 31, 2008
 # Q4: [string reformat] March 31, 2008
 # #4: 03/31/2008
@@ -523,15 +583,15 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
 # Q6: [subquestion] What is the distance moved left?
 # #6: 0 steps
 # Q7: [arithmetic] What is total distance moved from starting point?
-# #7: 7 steps vertically, 8 steps horizontally 
-# Q8: [subquestion] Is the total distance moved, both vertically and horizontally, 0? 
+# #7: 7 steps vertically, 8 steps horizontally
+# Q8: [subquestion] Is the total distance moved, both vertically and horizontally, 0?
 # #8: No
 # Q9: [EOC]
 # No
 # ----
-# Description: 
+# Description:
 # Input: If two trains depart from a station in opposite directions, and one train is traveling 60 miles an hour while the other is traveling half that distance per hour, how far apart are they from each other after 3 hours?
-# Q1: [arithmetic] What is the speed of the second train? 
+# Q1: [arithmetic] What is the speed of the second train?
 # #1: 60/2=30 miles an hour
 # Q2: [arithmetic] What is distance travelled by first train?
 # #2: 60*3=180 miles
@@ -550,8 +610,8 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
 
 few_shot_cot_prompt = few_shot_arithmetic_prompt
 
-def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
 
+def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
     global few_shot_cot_prompt
     global few_shot_pot_prompt
     task_name = "Arithmetic about ratios"
@@ -571,24 +631,35 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1024, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1024, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return gpt3(prompts)
 
     def predict_complete(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         outputs = gpt3(prompts)
-        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        completed_outputs = [
+            interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)
+        ]
         return completed_outputs
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         label_dict = ["ABCDE".index(l) for l in labels]
-        new_labels = [re.split('[ABCDE]\)', inp[re.search("A\)", inp).span(0)[0]:])[1:][label_dict[i]].strip() for i, inp in enumerate(inputs)]
+        new_labels = [
+            re.split("[ABCDE]\)", inp[re.search("A\)", inp).span(0)[0] :])[1:][
+                label_dict[i]
+            ].strip()
+            for i, inp in enumerate(inputs)
+        ]
         for x in tqdm(chunks(inputs, 5)):
             x = [ex.replace("\nA:", "") for ex in x]
             # answers.extend(predict(task_description, x))
@@ -601,6 +672,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     print("FS-CoT performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
+
 
 def PoT(temperature=0.3, model_name="text-davinci-002"):
     prompt_4shot = """# Write Python Code to solve the following questions. Store your result as a variable named 'ans'.
@@ -685,8 +757,7 @@ ans = (solution[width], solution[height])
 # Answer option: [%s]
 """
 
-
-    compare_prompt="""
+    compare_prompt = """
 Find the closest options based on the question and prediction.
 Question: A company produces 420 units of a particular computer component every month, at a production cost to the company of $110 per component, and sells all of the components by the end of each month. What is the minimum selling price per component that will guarantee that the yearly profit (revenue from sales minus production costs) will be at least $626,400 ?
 Options: ['A)226', 'B)230', 'C)240', 'D)260', 'E)280']
@@ -716,20 +787,37 @@ Question: %s
 Options: %s
 Prediction: %s
 Closest Option: """
-    
+
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1024, temperature=temperature, quote='# Question:', n=1)
-        prompts=[prompt_4shot % (x[0], x[1]) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name,
+            max_length=1024,
+            temperature=temperature,
+            quote="# Question:",
+            n=1,
+        )
+        prompts = [prompt_4shot % (x[0], x[1]) for x in chunk]
         return gpt3(prompts)
 
     perf_array = []
     runs = 1
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
-        options = [repr([opt_name + ")" + opt.strip() for opt_name, opt in zip(['A','B','C', 'D','E'],re.split('[ABCDE]\)', inp[re.search("A\)", inp).span(0)[0]:])[1:])]) for inp in inputs]
-        questions = [inp[:re.search("A\)", inp).span(0)[0]-1] for inp in inputs]
-        combined_inputs = [(q, o) for q,o in zip(questions, options)]
+        options = [
+            repr(
+                [
+                    opt_name + ")" + opt.strip()
+                    for opt_name, opt in zip(
+                        ["A", "B", "C", "D", "E"],
+                        re.split("[ABCDE]\)", inp[re.search("A\)", inp).span(0)[0] :])[1:],
+                    )
+                ]
+            )
+            for inp in inputs
+        ]
+        questions = [inp[: re.search("A\)", inp).span(0)[0] - 1] for inp in inputs]
+        combined_inputs = [(q, o) for q, o in zip(questions, options)]
         for x in tqdm(chunks(combined_inputs, 10)):
             codes = predict(x)
             ans = []
@@ -739,9 +827,9 @@ Closest Option: """
                 code_output = simplify_ans(execute_output)
                 code_outputs.append(code_output)
                 if code_output is not None:
-                    ans.append(gpt3(compare_prompt%(x[0], x[1], code_output))[0])
+                    ans.append(gpt3(compare_prompt % (x[0], x[1], code_output))[0])
                 else:
-                    ans.append('A')
+                    ans.append("A")
             answers.extend(ans)
         # preds = [[y.strip() for y in x.split("\n")] for x in answers]
         preds = [x.strip() for x in answers]
@@ -751,7 +839,8 @@ Closest Option: """
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-few_shot_pot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can generate python code to solve arithmetic and algebra equations in using functions from sympy.
+
+few_shot_pot_prompt = """In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can generate python code to solve arithmetic and algebra equations in using functions from sympy.
 from sympy import Symbol
 from sympy import simplify
 import math
@@ -773,7 +862,7 @@ print(ans)
 Q2: [code execute] Execute the python code in #1 and get the value of "ans"
 #2:
 1.0
-Q3: [compare] Which of the options among A)1 hour B)2 hours C)3 hours D)4 hours E)5 hours is most similar to the answer? 
+Q3: [compare] Which of the options among A)1 hour B)2 hours C)3 hours D)4 hours E)5 hours is most similar to the answer?
 #3: A
 Q4: [EOQ]
 Ans: A
@@ -790,7 +879,7 @@ ans=simplify(cost_after_dropout - cost_before_dropout)
 print(ans)
 Q2: [code execute] Execute the python code in #1 and get the value of "ans"
 #2: 3*D/(M*(M - 3))
-Q3: [compare] Which of the options among A)D/(M-3) B)MD/3 C)M/(D-3) D)3D/(M**2-3M) E)None of these is most similar to the answer? 
+Q3: [compare] Which of the options among A)D/(M-3) B)MD/3 C)M/(D-3) D)3D/(M**2-3M) E)None of these is most similar to the answer?
 #3: D
 Q4: [EOQ]
 Ans: D
@@ -828,7 +917,7 @@ Q3: [EOQ]
 Ans: 20
 ----
 Description: Solve the following middle-school arithmetic problems, writing out intermediate arithmetic calculations as python code. Store your result as a variable named 'ans'.
-Input: Joseph and Getty went to buy ice creams, they together bought 36 ice creams. On the way back, Joseph ate 12 of the ice creasm, and he has 2 ice creams left now. 
+Input: Joseph and Getty went to buy ice creams, they together bought 36 ice creams. On the way back, Joseph ate 12 of the ice creasm, and he has 2 ice creams left now.
 Q1: [generate python code] write down the arithmetic or algebra equations as python code
 #1:
 num_ice_creams_bought_by_joseph = 2 + 12
@@ -859,7 +948,13 @@ Descripton: %s
 Input: %s
 Q1:"""
 
-def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+
+def nl_program(
+    temperature=0.3,
+    model_name="text-davinci-002",
+    strategy="fixed",
+    self_consistency=False,
+):
     global few_shot_cot_prompt
     global few_shot_pot_prompt
     task_name = "Arithmetic about ratios"
@@ -879,22 +974,26 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     interpreter = TopDownVisitorBeta(model_name=model_name)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     def predict_self_consistency(description, chunk, n=5):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=n
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     if self_consistency:
         perf_array = []
         runs = 5
         batch_size = 10
-        for run in range(runs): 
-            print("Run %d"%run)
-            answers = [] # List of counters
+        for run in range(runs):
+            print("Run %d" % run)
+            answers = []  # List of counters
             for x in tqdm(chunks(inputs, batch_size)):
                 prompts, answer_set = predict_self_consistency(task_description, x)
                 result_counter = [Counter() for i in range(batch_size)]
@@ -913,15 +1012,20 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
 
     perf_array = []
     runs = 1
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         label_dict = ["ABCDE".index(l) for l in labels]
-        new_labels = [re.split('[ABCDE]\)', inp[re.search("A\)", inp).span(0)[0]:])[1:][label_dict[i]].strip() for i, inp in enumerate(inputs)]
+        new_labels = [
+            re.split("[ABCDE]\)", inp[re.search("A\)", inp).span(0)[0] :])[1:][
+                label_dict[i]
+            ].strip()
+            for i, inp in enumerate(inputs)
+        ]
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
             prompts, answer = predict(task_description, x)
-            new_answer  = interpreter.batch_visit(prompts, answer)
+            new_answer = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
             # time.sleep(10)
         preds = [get_answer(x.strip()) for x in answers]
@@ -929,8 +1033,10 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
         print(perf_array)
 
         # Report on interpreter performance
-        positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
-        positive_rate = sum(positive_calls)/len(interpreter.execution_details)
+        positive_calls = [
+            int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details
+        ]
+        positive_rate = sum(positive_calls) / len(interpreter.execution_details)
     print("FS-CoT Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
@@ -938,14 +1044,42 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
 
 
 if __name__ == "__main__":
-    parser  = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001", 'davinci-codex-002-msft'], default="text-davinci-002")
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--model_name",
+        type=str,
+        choices=[
+            "text-davinci-002",
+            "text-davinci-003",
+            "code-davinci-002",
+            "code-cushman-001",
+            "davinci-codex-002-msft",
+        ],
+        default="text-davinci-002",
+    )
     parser.add_argument("--temperature", type=float, default="0.3")
-    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument(
+        "--inference_strategy",
+        type=str,
+        choices=[
+            "dummy",
+            "few_shot",
+            "auto_cot",
+            "cot_rollout",
+            "few_shot_cot",
+            "nl_program",
+        ],
+        default="few_shot",
+    )
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
-    parser.add_argument("--self_consistency", default=False, action='store_true')
-    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
+    parser.add_argument("--self_consistency", default=False, action="store_true")
+    parser.add_argument(
+        "--selection_strategy",
+        type=str,
+        choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"],
+        default="fixed",
+    )
 
     args = parser.parse_args()
 
@@ -954,19 +1088,27 @@ if __name__ == "__main__":
     print("Training examples:", len(train_inputs))
     print("Dev examples:", len(inputs))
 
-    inputs = inputs[:args.num_dev_examples]
-    labels = labels[:args.num_dev_examples]
+    inputs = inputs[: args.num_dev_examples]
+    labels = labels[: args.num_dev_examples]
 
     if args.inference_strategy == "few_shot":
         few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=args.num_train_examples)
-        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
+        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)["input_ids"]))
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
-        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
+        auto_cot(
+            args.temperature,
+            args.model_name,
+            predict=True,
+            use_corrected=False,
+            self_consistency=False,
+        )
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)
-
-
-
+        nl_program(
+            args.temperature,
+            args.model_name,
+            self_consistency=args.self_consistency,
+            strategy=args.selection_strategy,
+        )

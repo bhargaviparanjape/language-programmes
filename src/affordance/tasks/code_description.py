@@ -1,43 +1,45 @@
 import argparse
-import ast
-import json
-import pdb
+from collections import Counter
 import re
-import time
-from re import L
-from turtle import pd
 
 import datasets
 import numpy as np
+from prompt_library import (
+    few_shot_code_prompt,
+    llm_similar_tasks,
+    random_tasks,
+    similar_auto_breakdowns,
+    similar_tasks,
+)
+from sequential_interpreter import TopDownVisitorBeta
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
-                   get_few_shot_prompt, get_subset, gpt3,
-                   propose_decomposition, propose_instruction, substring_match)
+from utils import (
+    OpenAIModel,
+    cache_dir,
+    chunks,
+    get_answer,
+    get_autocot_answer,
+    get_few_shot_prompt,
+    substring_match,
+)
 
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-import urllib.request
-from collections import Counter
 
-tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-from prompt_library import (llm_similar_tasks, random_tasks,
-                            similar_auto_breakdowns, similar_tasks,
-                            few_shot_retrieval_prompt, few_shot_code_prompt, 
-                            few_shot_arithmetic_prompt, few_shot_string_prompt)
-from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
-
-d = datasets.load_dataset('bigbench', 'code_line_description', cache_dir=cache_dir)
-inputs =  d['validation']['inputs'] + d['train']['inputs']
+d = datasets.load_dataset("bigbench", "code_line_description", cache_dir=cache_dir)
+inputs = d["validation"]["inputs"] + d["train"]["inputs"]
 # inputs = [x.split('\n')[0] for x in inputs]
-labels =  d['validation']['targets'] + d['train']['targets']
+labels = d["validation"]["targets"] + d["train"]["targets"]
 labels = [l[0] for l in labels]
 
-train_inputs = d['train']['inputs']
-train_labels = d['train']['targets']
+train_inputs = d["train"]["inputs"]
+train_labels = d["train"]["targets"]
 
 task_description = "(Code Description) Which of the following choices best describes the functionality of the given python code snippet."
 
-io_pairs = [("""Python code:
+io_pairs = [
+    (
+        """Python code:
 try:
     n = int(input())
     m = int(input())
@@ -50,8 +52,10 @@ except:
   choice: try input and except error
   choice: inputs the string 'try'
   choice: prints sum of two input numbers only if they are integers otherwise raises error""",
-"""prints sum of two input numbers only if they are integers otherwise raises error"""),
-("""Python code:
+        """prints sum of two input numbers only if they are integers otherwise raises error""",
+    ),
+    (
+        """Python code:
 numbers_list = [2, 6, 8, 10, 11, 4, 12, 7, 13, 17, 0, 3, 21]
 filtered_list = list(filter(lambda num: (num > 7), numbers_list))
 print(filtered_list)
@@ -60,8 +64,10 @@ print(filtered_list)
   choice: returns a filtered list
   choice: prints a list of numbers greater than 7 from numbers_list
   choice: prints numbers from 2 to 6""",
-"""prints a list of numbers greater than 7 from numbers_list"""),
-("""Python code:
+        """prints a list of numbers greater than 7 from numbers_list""",
+    ),
+    (
+        """Python code:
 sum_of_numbers = 0
 num = 10
 while(num > 0):
@@ -73,8 +79,10 @@ print('The sum is', sum_of_numbers)
   choice: prints the sum of first 10 natural numbers
   choice: prints number from 10 to 0 in ascending order
   choice: prints the numbers from 1 to 10""",
-"""prints the sum of first 10 natural numbers"""),
-("""Python code:
+        """prints the sum of first 10 natural numbers""",
+    ),
+    (
+        """Python code:
 for i in range(23):
     print(i)
 
@@ -82,15 +90,21 @@ for i in range(23):
   choice: prints values from 1 to 10
   choice: computes first 10 prime numbers
   choice: prints values from 0 to 22""",
-"""prints values from 0 to 22"""),
-("""Python code:
+        """prints values from 0 to 22""",
+    ),
+    (
+        """Python code:
 def sum_two(a,b):
     return a+b
 
   choice: returns a and b
   choice: returns the sum of two numbers
   choice: returns 5 and 6
-  choice: returns numbers between 5 and 6""", """returns the sum of two numbers""")]
+  choice: returns numbers between 5 and 6""",
+        """returns the sum of two numbers""",
+    ),
+]
+
 
 def exact_match(labels, predictions):
     correct = 0
@@ -99,25 +113,29 @@ def exact_match(labels, predictions):
         if label.lower() == predict.lower():
             correct += 1
         count += 1
-    return (1.0*correct)/count
-
+    return (1.0 * correct) / count
 
 
 def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
-
     few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=N)
-    print(len(tokenizer(few_shot_prompt)['input_ids']))
+    print(len(tokenizer(few_shot_prompt)["input_ids"]))
 
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=200, temperature=temperature, quote='---', n=1)
-        prompts = ["""%s\
-%s""" % (few_shot_prompt, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=200, temperature=temperature, quote="---", n=1
+        )
+        prompts = [
+            """%s\
+%s"""
+            % (few_shot_prompt, x)
+            for x in chunk
+        ]
         return gpt3(prompts)
-    
+
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 20)):
             answers.extend(predict(x))
@@ -130,11 +148,13 @@ def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     print("Std. Dev", np.std(perf_array))
 
 
-
 def code_description(temperature=0.3):
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name, temperature=temperature, max_length=1000, quote='---', n=1)
-        prompts = ["""Python code:
+        gpt3 = OpenAIModel(
+            model=model_name, temperature=temperature, max_length=1000, quote="---", n=1
+        )
+        prompts = [
+            """Python code:
 try:
     n = int(input())
     m = int(input())
@@ -204,13 +224,16 @@ def sum_two(a,b):
 English language description:
 returns the sum of two numbers
 ----
-%s""" % x for x in chunk]
+%s"""
+            % x
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 20)):
             answers.extend(predict(x))
@@ -444,14 +467,24 @@ The best answer choice is returns the sum of two numbers.
 ----
 """
 
-def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
+
+def auto_cot(
+    temperature=0.3,
+    model_name="text-davinci-002",
+    predict=True,
+    use_corrected=False,
+    self_consistency=False,
+):
     global auto_cot_corrected_prompt
     global auto_cot_cleaned_prompt
     auto_cot_prompt = ""
     for io_pair in io_pairs:
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=0.7, quote='---', n=1)
-        prompt = """%s\n"""% task_description + io_pair[0] + \
-            """\nThe final answer is one of the choices.\nA: Let's think step-by-step.\n""" 
+        gpt3 = OpenAIModel(model=model_name, max_length=1000, temperature=0.7, quote="---", n=1)
+        prompt = (
+            """%s\n""" % task_description
+            + io_pair[0]
+            + """\nThe final answer is one of the choices.\nA: Let's think step-by-step.\n"""
+        )
         auto_cot_prompt += prompt
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
@@ -461,9 +494,9 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         auto_cot_prompt = auto_cot_corrected_prompt
     else:
         auto_cot_prompt = auto_cot_cleaned_prompt
-    
+
     print(auto_cot_prompt)
-    f = open("auto_cot_demonstrations.txt","a+")
+    f = open("auto_cot_demonstrations.txt", "a+")
     f.write("Anachronisms\n\n")
     f.write(auto_cot_prompt)
 
@@ -471,24 +504,38 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         return
 
     def predict_self_consistency(description, chunk, n=5):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
-        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
-            """%s\nThe final answer is one of the choices.\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=n
+        )
+        prompts = [
+            auto_cot_prompt
+            + """%s\n""" % task_description
+            + """%s\nThe final answer is one of the choices.\nA: Let's think step-by-step.\n"""
+            % (x)
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=temperature, quote='---', n=1)
-        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
-            """%s\nThe final answer is one of the choices.\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=500, temperature=temperature, quote="---", n=1
+        )
+        prompts = [
+            auto_cot_prompt
+            + """%s\n""" % task_description
+            + """%s\nThe final answer is one of the choices.\nA: Let's think step-by-step.\n"""
+            % (x)
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     if self_consistency:
         perf_array = []
         runs = 1
         batch_size = 2
-        for run in range(runs): 
-            print("Run %d"%run)
-            answers = [] # List of counters
+        for run in range(runs):
+            print("Run %d" % run)
+            answers = []  # List of counters
             for x in tqdm(chunks(inputs, batch_size)):
                 answer_set = predict_self_consistency(task_description, x)
                 result_counter = [Counter() for i in range(batch_size)]
@@ -496,13 +543,15 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
                     preds = []
                     for x in ans_chunk:
                         if re.search("""The final answer is """, x):
-                            preds.append(x[re.search("""The final answer is """, x).span(0)[-1]:])
+                            preds.append(x[re.search("""The final answer is """, x).span(0)[-1] :])
                         else:
                             preds.append(x.strip())
                     for enum, pred in enumerate(ans_chunk):
                         # Only add to the counter if there is a legitimate answer
                         if re.search("""The final answer is """, pred):
-                            result_counter[chunk_no].update([pred[re.search("""The final answer is """, x).span(0)[-1]:]])
+                            result_counter[chunk_no].update(
+                                [pred[re.search("""The final answer is """, x).span(0)[-1] :]]
+                            )
                 answers.extend(result_counter)
             preds = [x.most_common(1)[0][0] for x in answers]
             perf_array.append(substring_match(labels, preds))
@@ -512,14 +561,16 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
     else:
         perf_array = []
         runs = 5
-        for run in range(runs): 
-            print("Run %d"%run)
+        for run in range(runs):
+            print("Run %d" % run)
             answers = []
             for x in tqdm(chunks(inputs, 20)):
                 x = [ex.replace("\n\nEnglish language description:", "") for ex in x]
                 answers.extend(predict(x))
                 # time.sleep(10)
-            preds = [get_autocot_answer(x, answer_prompt="The best answer choice is ") for x in answers]
+            preds = [
+                get_autocot_answer(x, answer_prompt="The best answer choice is ") for x in answers
+            ]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)
         print("Auto-CoT Performance:")
@@ -527,10 +578,9 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         print("Std. Dev", np.std(perf_array))
 
 
-
-# few_shot_cot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use a python code generation and execution function in one or more of your substeps, if required. Other functions like arithmetic and logical operations can also be used. 
+# few_shot_cot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use a python code generation and execution function in one or more of your substeps, if required. Other functions like arithmetic and logical operations can also be used.
 # Description: (Auto Debugging) Debug the following code snippets by finding the answer or the error message.
-# Input: 
+# Input:
 # ```
 # if x < 5:
 # 	pass
@@ -566,7 +616,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
 # Q3: [EOQ]
 # Ans: {1, 2, 3}
 # ----
-# Description: (Code Description) Which of the following choices best describes the functionality of the given python code snippet. 
+# Description: (Code Description) Which of the following choices best describes the functionality of the given python code snippet.
 # Input:
 # Python code:
 # try:
@@ -616,7 +666,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
 # Q6: [EOQ]
 # Ans: prints sum of two input numbers only if they are integers otherwise raises error
 # ----
-# Description: (Code Description) Which of the following choices best describes the functionality of the given python code snippet. 
+# Description: (Code Description) Which of the following choices best describes the functionality of the given python code snippet.
 # Input:
 # Python code:
 # numbers_list = [2, 6, 8, 10, 11, 4, 12, 7, 13, 17, 0, 3, 21]
@@ -656,6 +706,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
 
 few_shot_cot_prompt = few_shot_code_prompt
 
+
 def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
     global few_shot_cot_prompt
     task_name = "Code Description"
@@ -673,23 +724,29 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return gpt3(prompts)
 
     interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
 
     def predict_complete(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         outputs = gpt3(prompts)
-        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        completed_outputs = [
+            interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)
+        ]
         return completed_outputs
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 20)):
             x = [ex.replace("\n\nEnglish language description:", "") for ex in x]
@@ -702,8 +759,12 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     print("Std. Dev", np.std(perf_array))
 
 
-
-def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+def nl_program(
+    temperature=0.3,
+    model_name="text-davinci-002",
+    strategy="fixed",
+    self_consistency=False,
+):
     global few_shot_cot_prompt
     task_name = "Code Description"
     task_description = "(Code Description) Which of the following choices best describes the functionality of the given python code snippet."
@@ -722,22 +783,26 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     interpreter = TopDownVisitorBeta(model_name=model_name)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     def predict_self_consistency(description, chunk, n=5):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=n
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     if self_consistency:
         perf_array = []
         runs = 5
         batch_size = 10
-        for run in range(runs): 
-            print("Run %d"%run)
-            answers = [] # List of counters
+        for run in range(runs):
+            print("Run %d" % run)
+            answers = []  # List of counters
             for x in tqdm(chunks(inputs, batch_size)):
                 x = [ex.replace("\n\nEnglish language description:", "") for ex in x]
                 prompts, answer_set = predict_self_consistency(task_description, x)
@@ -757,13 +822,13 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
 
     perf_array = []
     runs = 1
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\n\nEnglish language description:", "") for ex in x]
             prompts, answer = predict(task_description, x)
-            new_answer  = interpreter.batch_visit(prompts, answer)
+            new_answer = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
             # time.sleep(60)
         preds = [get_answer(x) for x in answers]
@@ -775,13 +840,36 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
 
 
 if __name__ == "__main__":
-    parser  = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001", "davinci-codex-002-msft"], default="text-davinci-002")
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--model_name",
+        type=str,
+        choices=[
+            "text-davinci-002",
+            "text-davinci-003",
+            "code-davinci-002",
+            "code-cushman-001",
+            "davinci-codex-002-msft",
+        ],
+        default="text-davinci-002",
+    )
     parser.add_argument("--temperature", type=float, default="0.3")
-    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument(
+        "--inference_strategy",
+        type=str,
+        choices=[
+            "dummy",
+            "few_shot",
+            "auto_cot",
+            "cot_rollout",
+            "few_shot_cot",
+            "nl_program",
+        ],
+        default="few_shot",
+    )
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
-    parser.add_argument("--self_consistency", default=False, action='store_true')
+    parser.add_argument("--self_consistency", default=False, action="store_true")
 
     args = parser.parse_args()
 
@@ -790,15 +878,21 @@ if __name__ == "__main__":
     print("Training examples:", len(train_inputs))
     print("Dev examples:", len(inputs))
 
-    inputs = inputs[:args.num_dev_examples]
-    labels = labels[:args.num_dev_examples]
+    inputs = inputs[: args.num_dev_examples]
+    labels = labels[: args.num_dev_examples]
 
     if args.inference_strategy == "few_shot":
         few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=args.num_train_examples)
-        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
+        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)["input_ids"]))
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
-        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
+        auto_cot(
+            args.temperature,
+            args.model_name,
+            predict=True,
+            use_corrected=False,
+            self_consistency=False,
+        )
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name)
     elif args.inference_strategy == "nl_program":

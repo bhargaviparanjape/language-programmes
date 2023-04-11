@@ -1,57 +1,86 @@
 import argparse
-import ast
-import json
-import pdb
-import re
-import time
-from re import L
-from turtle import pd
 
 import datasets
 import numpy as np
+from prompt_library import (
+    few_shot_arithmetic_prompt,
+    llm_similar_tasks,
+    random_tasks,
+    similar_auto_breakdowns,
+    similar_tasks,
+)
+from sequential_interpreter import TopDownVisitorBeta
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
-                   get_few_shot_prompt, get_subset, gpt3,
-                   propose_decomposition, propose_instruction, substring_match,
-                   substring_match_v2)
-
-tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-import urllib.request
-from collections import Counter
-
-tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-from prompt_library import (llm_similar_tasks, random_tasks,
-                            similar_auto_breakdowns, similar_tasks,
-                            few_shot_retrieval_prompt, few_shot_code_prompt, 
-                            few_shot_arithmetic_prompt, few_shot_string_prompt)
-from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
+from utils import (
+    OpenAIModel,
+    cache_dir,
+    chunks,
+    get_answer,
+    get_autocot_answer,
+    get_few_shot_prompt,
+    substring_match,
+    substring_match_v2,
+)
 from word2number import w2n
 
-d = datasets.load_dataset('bigbench', 'object_counting', cache_dir=cache_dir)
-inputs = d['validation']['inputs']
+tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+
+d = datasets.load_dataset("bigbench", "object_counting", cache_dir=cache_dir)
+inputs = d["validation"]["inputs"]
 # inputs = [x.split('\n')[0] for x in inputs]
-labels = d['validation']['targets']
+labels = d["validation"]["targets"]
 labels = [l[0] for l in labels]
 # print(len(inputs))
 
-train_inputs = d['train']['inputs']
-train_labels = d['train']['targets']
+train_inputs = d["train"]["inputs"]
+train_labels = d["train"]["targets"]
 
 
-task_description  = "Object counting: You are given a bunch of items and asked to count a specific kind of item."
+task_description = (
+    "Object counting: You are given a bunch of items and asked to count a specific kind of item."
+)
 
 io_pairs = [
-("Q: I have a trombone, a flute, an accordion, three violins, four clarinets, a drum, a trumpet, and a piano. How many musical instruments do I have?","thirteen"),
-("Q: I have a mouse, a goat, and two fish. How many animals do I have?","four"),
-("Q: I have a strawberry, a grape, an apple, an orange, a plum, two nectarines, two bananas, and a peach. How many fruits do I have?","ten"),
-("Q: I have a violin, two nectarines, a flute, a banana, an accordion, two strawberries, a clarinet, a drum, a trumpet, a piano, and a trombone. How many musical instruments do I have?","eight"),
-("Q: I have three bananas, a trumpet, a clarinet, a piano, a nectarine, a trombone, a blackberry, and a violin. How many musical instruments do I have?","five"),
-("Q: I have five stoves, a fridge, a lamp, a microwave, a table, and an oven. How many objects do I have?","ten"),
-("Q: I have a cabbage, a stalk of celery, a carrot, a lettuce head, a yam, three heads of broccoli, three potatoes, and two cauliflowers. How many vegetables do I have?","thirteen"),
-("Q: I have a donkey, a cat, two bears, a pig, and a goat. How many animals do I have?","six"),
-("Q: I have a frog, a duck, a bear, two donkeys, a fish, a goat, and a rabbit. How many animals do I have?","eight"),
-("Q: I have a duck, a donkey, a cow, a bear, a dog, and a mouse. How many animals do I have?","six")]
+    (
+        "Q: I have a trombone, a flute, an accordion, three violins, four clarinets, a drum, a trumpet, and a piano. How many musical instruments do I have?",
+        "thirteen",
+    ),
+    ("Q: I have a mouse, a goat, and two fish. How many animals do I have?", "four"),
+    (
+        "Q: I have a strawberry, a grape, an apple, an orange, a plum, two nectarines, two bananas, and a peach. How many fruits do I have?",
+        "ten",
+    ),
+    (
+        "Q: I have a violin, two nectarines, a flute, a banana, an accordion, two strawberries, a clarinet, a drum, a trumpet, a piano, and a trombone. How many musical instruments do I have?",
+        "eight",
+    ),
+    (
+        "Q: I have three bananas, a trumpet, a clarinet, a piano, a nectarine, a trombone, a blackberry, and a violin. How many musical instruments do I have?",
+        "five",
+    ),
+    (
+        "Q: I have five stoves, a fridge, a lamp, a microwave, a table, and an oven. How many objects do I have?",
+        "ten",
+    ),
+    (
+        "Q: I have a cabbage, a stalk of celery, a carrot, a lettuce head, a yam, three heads of broccoli, three potatoes, and two cauliflowers. How many vegetables do I have?",
+        "thirteen",
+    ),
+    (
+        "Q: I have a donkey, a cat, two bears, a pig, and a goat. How many animals do I have?",
+        "six",
+    ),
+    (
+        "Q: I have a frog, a duck, a bear, two donkeys, a fish, a goat, and a rabbit. How many animals do I have?",
+        "eight",
+    ),
+    (
+        "Q: I have a duck, a donkey, a cow, a bear, a dog, and a mouse. How many animals do I have?",
+        "six",
+    ),
+]
+
 
 def exact_match(labels, predictions):
     correct = 0
@@ -60,7 +89,8 @@ def exact_match(labels, predictions):
         if label.lower() == predict.lower():
             correct += 1
         count += 1
-    return (1.0*correct)/count
+    return (1.0 * correct) / count
+
 
 def token_match(labels, predictions):
     correct = 0
@@ -69,12 +99,16 @@ def token_match(labels, predictions):
         if label.lower() in [p.lower() for p in predict]:
             correct += 1
         count += 1
-    return (1.0*correct)/count
+    return (1.0 * correct) / count
+
 
 def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name, temperature=temperature, max_length=200, quote='---', n=1)
-        prompts = ["""Q: I have a trombone, a flute, an accordion, three violins, four clarinets, a drum, a trumpet, and a piano. How many musical instruments do I have?
+        gpt3 = OpenAIModel(
+            model=model_name, temperature=temperature, max_length=200, quote="---", n=1
+        )
+        prompts = [
+            """Q: I have a trombone, a flute, an accordion, three violins, four clarinets, a drum, a trumpet, and a piano. How many musical instruments do I have?
 A:
 thirteen
 ----
@@ -114,13 +148,16 @@ Q: I have a duck, a donkey, a cow, a bear, a dog, and a mouse. How many animals 
 A:
 six
 ----
-%s""" % x for x in chunk]
+%s"""
+            % x
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
@@ -132,21 +169,27 @@ six
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
 
+def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=N)
-    print(len(tokenizer(few_shot_prompt)['input_ids']))
+    print(len(tokenizer(few_shot_prompt)["input_ids"]))
 
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=200, temperature=temperature, quote='---', n=1)
-        prompts = ["""%s\
-%s""" % (few_shot_prompt, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=200, temperature=temperature, quote="---", n=1
+        )
+        prompts = [
+            """%s\
+%s"""
+            % (few_shot_prompt, x)
+            for x in chunk
+        ]
         return gpt3(prompts)
-    
+
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
@@ -156,10 +199,14 @@ def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-def human_decomp(model_name ="text-davinci-002", temperature=0.3):
+
+def human_decomp(model_name="text-davinci-002", temperature=0.3):
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts = ["""Q: I have a blackberry, a clarinet, a nectarine, a plum, a strawberry, a banana, a flute, an orange, and a violin. How many fruits do I have?
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [
+            """Q: I have a blackberry, a clarinet, a nectarine, a plum, a strawberry, a banana, a flute, an orange, and a violin. How many fruits do I have?
 A: Let's think step by step.
 We first identify the fruits on the list and include their quantity in parentheses:
 - blackberry (1)
@@ -196,13 +243,16 @@ We first identify the vegetables on the list and include their quantity in paren
 Now, let's add the numbers in parentheses: 1 + 1 + 1 + 1 + 2 + 1 + 1 = 8. So the answer is 8.
 ----
 %s
-A: Let's think step by step.""" % x for x in chunk]
+A: Let's think step by step."""
+            % x
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         numeric_labels = [str(w2n.word_to_num(l)) for l in labels]
         for x in tqdm(chunks(inputs, 10)):
@@ -213,8 +263,6 @@ A: Let's think step by step.""" % x for x in chunk]
     print("Human decomposition Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
-
-
 
 
 auto_cot_corrected_prompt = """Object counting: You are given a bunch of items and asked to count a specific kind of item.
@@ -419,26 +467,37 @@ That means there are five animals in total.
 The final answer is five
 ----
 """
-def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
+
+
+def auto_cot(
+    temperature=0.3,
+    model_name="text-davinci-002",
+    predict=True,
+    use_corrected=False,
+    self_consistency=False,
+):
     global auto_cot_corrected_prompt
     global auto_cot_cleaned_prompt
     auto_cot_prompt = ""
     for io_pair in io_pairs:
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=0.7, quote='---', n=1)
-        prompt = """%s\n"""% task_description + io_pair[0] + \
-            """\nThe final answer is the count of requested items in words, like "six" or "ten".\nA: Let's think step-by-step.\n""" 
+        gpt3 = OpenAIModel(model=model_name, max_length=1000, temperature=0.7, quote="---", n=1)
+        prompt = (
+            """%s\n""" % task_description
+            + io_pair[0]
+            + """\nThe final answer is the count of requested items in words, like "six" or "ten".\nA: Let's think step-by-step.\n"""
+        )
         auto_cot_prompt += prompt
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
         # Add the final answer with special format so evaluation is easier.
-    
+
     if use_corrected:
         auto_cot_prompt = auto_cot_corrected_prompt
     else:
         auto_cot_prompt = auto_cot_cleaned_prompt
-    
+
     print(auto_cot_prompt)
-    f = open("auto_cot_demonstrations.txt","a+")
+    f = open("auto_cot_demonstrations.txt", "a+")
     f.write("Anachronisms\n\n")
     f.write(auto_cot_prompt)
 
@@ -446,21 +505,34 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         return
 
     def predict_self_consistency(description, chunk, n=5):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
-        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
-            """%s\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=n
+        )
+        prompts = [
+            auto_cot_prompt
+            + """%s\n""" % task_description
+            + """%s\nA: Let's think step-by-step.\n""" % (x)
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=temperature, quote='---', n=1)
-        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
-            """%s\nThe final answer is the count of requested items in words, like "six" or "ten".\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=500, temperature=temperature, quote="---", n=1
+        )
+        prompts = [
+            auto_cot_prompt
+            + """%s\n""" % task_description
+            + """%s\nThe final answer is the count of requested items in words, like "six" or "ten".\nA: Let's think step-by-step.\n"""
+            % (x)
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
@@ -474,14 +546,13 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
     print("Std. Dev", np.std(perf_array))
 
 
-
-few_shot_cot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use arithmetic and algebra functions in one or more of your substeps.
+few_shot_cot_prompt = """In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use arithmetic and algebra functions in one or more of your substeps.
 Description: Solve the following arithmetic problems on ratios and fractions, , writing out intermediate arithmetic calculations as needed.
 Input: Divide the number 49 into two parts, such that if the greater part is increased by 6 and the lesser part is decreased by 11, their ratio is 9 to 2. What is the greater number?
-    choice: 29 
-    choice: 30 
-    choice: 31 
-    choice: 32 
+    choice: 29
+    choice: 30
+    choice: 31
+    choice: 32
     choice: None
 Q1: [algebra] Let the greater part be x. What is the lesser part?
 #1: 49-x
@@ -506,7 +577,7 @@ Q1: [search] What is the first quarter of a year?
 #1: The traditional calendar quarters that make up the year are: Dates for Q1: January 1 – March 31. Dates for Q2: April 1 – June 3. Dates for Q3: July 1 – September 30. Dates for Q4: October 1 – December 31.
 Q2: [arithmetic] What is the last day of the first quarter?
 #2: March 31
-Q3: [arithmetic] What day is today?  
+Q3: [arithmetic] What day is today?
 #3: March 31, 2008
 Q4: [string reformat] March 31, 2008
 #4: 03/31/2008
@@ -572,15 +643,15 @@ Q5: [subquestion] What is the distance moved backward?
 Q6: [subquestion] What is the distance moved left?
 #6: 0 steps
 Q7: [arithmetic] What is total distance moved from starting point?
-#7: 7 steps vertically, 8 steps horizontally 
-Q8: [subquestion] Is the total distance moved, both vertically and horizontally, 0? 
+#7: 7 steps vertically, 8 steps horizontally
+Q8: [subquestion] Is the total distance moved, both vertically and horizontally, 0?
 #8: No
 Q9: [EOC]
 No
 ----
-Description: 
+Description:
 Input: If two trains depart from a station in opposite directions, and one train is traveling 60 miles an hour while the other is traveling half that distance per hour, how far apart are they from each other after 3 hours?
-Q1: [arithmetic] What is the speed of the second train? 
+Q1: [arithmetic] What is the speed of the second train?
 #1: 60/2=30 miles an hour
 Q2: [arithmetic] What is distance travelled by first train?
 #2: 60*3=180 miles
@@ -597,9 +668,10 @@ Desciption: %s
 Input: %s
 Q1: """
 
-few_shot_cot_prompt =few_shot_arithmetic_prompt
-def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
+few_shot_cot_prompt = few_shot_arithmetic_prompt
 
+
+def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
     global few_shot_cot_prompt
     task_name = "Object counting"
     task_description = "(Object counting) You are given a bunch of items and asked to count a specific kind of item."
@@ -615,25 +687,46 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     elif strategy == "llm_similar":
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
-    
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1024, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description + """The final answer is the count of requested items in words, like "six" or "ten".""", x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1024, temperature=temperature, quote="---", n=1
+        )
+        prompts = [
+            few_shot_cot_prompt
+            % (
+                description
+                + """The final answer is the count of requested items in words, like "six" or "ten".""",
+                x,
+            )
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
 
     def predict_complete(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description + """The final answer is the count of requested items in words, like "six" or "ten".""", x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [
+            few_shot_cot_prompt
+            % (
+                description
+                + """The final answer is the count of requested items in words, like "six" or "ten".""",
+                x,
+            )
+            for x in chunk
+        ]
         outputs = gpt3(prompts)
-        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        completed_outputs = [
+            interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)
+        ]
         return completed_outputs
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         numeric_labels = [str(w2n.word_to_num(l)) for l in labels]
         new_labels = [[l1, l2] for l1, l2 in zip(labels, numeric_labels)]
@@ -650,10 +743,12 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     print("Std. Dev", np.std(perf_array))
 
 
-
-
-def nl_program(temperature=0.3, model_name="davinci-codex-002-msft", strategy="fixed", self_consistency=False):
-    
+def nl_program(
+    temperature=0.3,
+    model_name="davinci-codex-002-msft",
+    strategy="fixed",
+    self_consistency=False,
+):
     global few_shot_cot_prompt
     task_name = "Object counting"
     task_description = "(Object counting) You are given a bunch of items and asked to count a specific kind of item."
@@ -672,43 +767,84 @@ def nl_program(temperature=0.3, model_name="davinci-codex-002-msft", strategy="f
     interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[generate python code]"])
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description + """The final answer is the count of requested items in words, like "six" or "ten".""", x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [
+            few_shot_cot_prompt
+            % (
+                description
+                + """The final answer is the count of requested items in words, like "six" or "ten".""",
+                x,
+            )
+            for x in chunk
+        ]
         return prompts, gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         numeric_labels = [str(w2n.word_to_num(l)) for l in labels]
         new_labels = [[l1, l2] for l1, l2 in zip(labels, numeric_labels)]
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
             prompts, answer = predict(task_description, x)
-            new_answer  = interpreter.batch_visit(prompts, answer)
+            new_answer = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
         preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match_v2(new_labels, preds))
         print(perf_array)
-        positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
-        positive_rate = sum(positive_calls)/len(interpreter.execution_details)
+        positive_calls = [
+            int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details
+        ]
+        positive_rate = sum(positive_calls) / len(interpreter.execution_details)
     print("FS-CoT Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
     print("Rate of affordance call", positive_rate)
 
+
 # human_decomp()
 
 if __name__ == "__main__":
-    parser  = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001", "davinci-codex-002-msft"], default="text-davinci-002")
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--model_name",
+        type=str,
+        choices=[
+            "text-davinci-002",
+            "text-davinci-003",
+            "code-davinci-002",
+            "code-cushman-001",
+            "davinci-codex-002-msft",
+        ],
+        default="text-davinci-002",
+    )
     parser.add_argument("--temperature", type=float, default="0.3")
-    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument(
+        "--inference_strategy",
+        type=str,
+        choices=[
+            "dummy",
+            "few_shot",
+            "auto_cot",
+            "cot_rollout",
+            "few_shot_cot",
+            "nl_program",
+        ],
+        default="few_shot",
+    )
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
-    parser.add_argument("--self_consistency", default=False, action='store_true')
-    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
+    parser.add_argument("--self_consistency", default=False, action="store_true")
+    parser.add_argument(
+        "--selection_strategy",
+        type=str,
+        choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"],
+        default="fixed",
+    )
 
     args = parser.parse_args()
 
@@ -717,16 +853,27 @@ if __name__ == "__main__":
     print("Training examples:", len(train_inputs))
     print("Dev examples:", len(inputs))
 
-    inputs = inputs[:args.num_dev_examples]
-    labels = labels[:args.num_dev_examples]
+    inputs = inputs[: args.num_dev_examples]
+    labels = labels[: args.num_dev_examples]
 
     if args.inference_strategy == "few_shot":
         few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=args.num_train_examples)
-        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
+        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)["input_ids"]))
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
-        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
+        auto_cot(
+            args.temperature,
+            args.model_name,
+            predict=True,
+            use_corrected=False,
+            self_consistency=False,
+        )
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)
+        nl_program(
+            args.temperature,
+            args.model_name,
+            self_consistency=args.self_consistency,
+            strategy=args.selection_strategy,
+        )

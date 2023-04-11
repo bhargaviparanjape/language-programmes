@@ -1,53 +1,85 @@
 import argparse
-import ast
-import json
-import pdb
+from collections import Counter
 import re
 import time
-from re import L
-from turtle import pd
 
 import datasets
 import numpy as np
+from prompt_library import (
+    few_shot_free_prompt,
+    llm_similar_tasks,
+    random_tasks,
+    similar_auto_breakdowns,
+    similar_tasks,
+)
+from sequential_interpreter import TopDownVisitorBeta
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer,
-                   get_few_shot_prompt, get_subset, gpt3,
-                   propose_decomposition, propose_instruction, substring_match, substring_match_v2,
-                   get_autocot_answer)
+from utils import (
+    OpenAIModel,
+    cache_dir,
+    chunks,
+    get_answer,
+    get_autocot_answer,
+    get_few_shot_prompt,
+    substring_match,
+    substring_match_v2,
+)
 
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-import urllib.request
-from collections import Counter
 
-tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-from prompt_library import (llm_similar_tasks, random_tasks,
-                            similar_auto_breakdowns, similar_tasks,
-                            few_shot_retrieval_prompt, few_shot_code_prompt, 
-                            few_shot_arithmetic_prompt, few_shot_string_prompt,
-                            few_shot_free_prompt)
-from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
-
-d = datasets.load_dataset('bigbench', 'ruin_names', cache_dir=cache_dir)
-inputs = d['validation']['inputs']
+d = datasets.load_dataset("bigbench", "ruin_names", cache_dir=cache_dir)
+inputs = d["validation"]["inputs"]
 # inputs = [x.split('\n')[0] for x in inputs]
-labels = d['validation']['targets']
+labels = d["validation"]["targets"]
 labels = [l[0] for l in labels]
 print(len(inputs))
 
-io_pairs = [("Q: Which of the following is a humorous edit of this artist or movie name: 'rain man'?\n  choice: rainmman\n  choice: ruin man\n  choice: rain men\n  choice: rains man", 'ruin man'), 
-("Q: Which of the following is a humorous edit of this artist or movie name: 'the dark knight rises'?\n  choice: the dark kniggt rises\n  choice: thetdark knight rises\n  choice: the bark knight rises\n  choice: the dork knight rises", 'the dork knight rises'), 
-("Q: Which of the following is a humorous edit of this artist or movie name: 'the shawshank redemption'?\n  choice: the shawshanknredemption\n  choice: the shcawshank redemption\n  choice: the shapwshank redemption\n  choice: the shawshark redemption", 'the shawshark redemption'), 
-("Q: Which of the following is a humorous edit of this artist or movie name: 'the third man'?\n  choice: the third pan\n  choice: thed third man\n  choice: the third men\n  choice: the trird man", 'the third pan'), 
-("Q: Which of the following is a humorous edit of this artist or movie name: 'coldplay'?\n  choice: coldpnay\n  choice: soldplay\n  choice: coldglay\n  choice: colldplay", 'soldplay'), 
-("Q: Which of the following is a humorous edit of this artist or movie name: 'paul revere and the raiders'?\n  choice: paul erevere and the raiders\n  choice: paul severe and the raiders\n  choice: mpaul revere and the raiders\n  choice: paul rfevere and the raiders", 'paul severe and the raiders'), 
-("Q: Which of the following is a humorous edit of this artist or movie name: 'the smashing pumpkins'?\n  choice: the smashing bumpkins\n  choice: thez smashing pumpkins\n  choice: the rmashing pumpkins\n  choice: the smashingq pumpkins", 'the smashing bumpkins'), 
-("Q: Which of the following is a humorous edit of this artist or movie name: 'guns n' roses'?\n  choice: guns n' hoses\n  choice: guns n'z roses\n  choice: gunh n' roses\n  choice: guns n' ropes", "guns n' hoses"), 
-("Q: Which of the following is a humorous edit of this artist or movie name: 'the beatles'?\n  choice: the bdeatles\n  choice: thp beatles\n  choice: tce beatles\n  choice: the beatless", 'the beatless'), 
-("Q: Which of the following is a humorous edit of this artist or movie name: 'hellboy'?\n  choice: hellbby\n  choice: hpllboy\n  choice: cellboy\n  choice: hellbfoy", 'cellboy'), ]
+io_pairs = [
+    (
+        "Q: Which of the following is a humorous edit of this artist or movie name: 'rain man'?\n  choice: rainmman\n  choice: ruin man\n  choice: rain men\n  choice: rains man",
+        "ruin man",
+    ),
+    (
+        "Q: Which of the following is a humorous edit of this artist or movie name: 'the dark knight rises'?\n  choice: the dark kniggt rises\n  choice: thetdark knight rises\n  choice: the bark knight rises\n  choice: the dork knight rises",
+        "the dork knight rises",
+    ),
+    (
+        "Q: Which of the following is a humorous edit of this artist or movie name: 'the shawshank redemption'?\n  choice: the shawshanknredemption\n  choice: the shcawshank redemption\n  choice: the shapwshank redemption\n  choice: the shawshark redemption",
+        "the shawshark redemption",
+    ),
+    (
+        "Q: Which of the following is a humorous edit of this artist or movie name: 'the third man'?\n  choice: the third pan\n  choice: thed third man\n  choice: the third men\n  choice: the trird man",
+        "the third pan",
+    ),
+    (
+        "Q: Which of the following is a humorous edit of this artist or movie name: 'coldplay'?\n  choice: coldpnay\n  choice: soldplay\n  choice: coldglay\n  choice: colldplay",
+        "soldplay",
+    ),
+    (
+        "Q: Which of the following is a humorous edit of this artist or movie name: 'paul revere and the raiders'?\n  choice: paul erevere and the raiders\n  choice: paul severe and the raiders\n  choice: mpaul revere and the raiders\n  choice: paul rfevere and the raiders",
+        "paul severe and the raiders",
+    ),
+    (
+        "Q: Which of the following is a humorous edit of this artist or movie name: 'the smashing pumpkins'?\n  choice: the smashing bumpkins\n  choice: thez smashing pumpkins\n  choice: the rmashing pumpkins\n  choice: the smashingq pumpkins",
+        "the smashing bumpkins",
+    ),
+    (
+        "Q: Which of the following is a humorous edit of this artist or movie name: 'guns n' roses'?\n  choice: guns n' hoses\n  choice: guns n'z roses\n  choice: gunh n' roses\n  choice: guns n' ropes",
+        "guns n' hoses",
+    ),
+    (
+        "Q: Which of the following is a humorous edit of this artist or movie name: 'the beatles'?\n  choice: the bdeatles\n  choice: thp beatles\n  choice: tce beatles\n  choice: the beatless",
+        "the beatless",
+    ),
+    (
+        "Q: Which of the following is a humorous edit of this artist or movie name: 'hellboy'?\n  choice: hellbby\n  choice: hpllboy\n  choice: cellboy\n  choice: hellbfoy",
+        "cellboy",
+    ),
+]
 
-train_inputs = d['train']['inputs']
-train_labels = d['train']['targets']
+train_inputs = d["train"]["inputs"]
+train_labels = d["train"]["targets"]
 
 task_name = "Ruin Names"
 task_description = """(Ruin Names) Pick out which simple (measured by Levenshtein distance) edit to the name of a band or movie makes it funny. Go over the choices one by one, figuring out if they are funny."""
@@ -60,24 +92,29 @@ def exact_match(labels, predictions):
         if label.lower() == predict.lower():
             correct += 1
         count += 1
-    return (1.0*correct)/count
+    return (1.0 * correct) / count
 
 
 def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
-
     few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=N)
-    print(len(tokenizer(few_shot_prompt)['input_ids']))
+    print(len(tokenizer(few_shot_prompt)["input_ids"]))
 
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=200, temperature=temperature, quote='---', n=1)
-        prompts = ["""%s\
-%s""" % (few_shot_prompt, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=200, temperature=temperature, quote="---", n=1
+        )
+        prompts = [
+            """%s\
+%s"""
+            % (few_shot_prompt, x)
+            for x in chunk
+        ]
         return gpt3(prompts)
-    
+
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
@@ -262,14 +299,26 @@ The final answer is hellbfoy
 ----
 """
 
-def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
+
+def auto_cot(
+    temperature=0.3,
+    model_name="text-davinci-002",
+    predict=True,
+    use_corrected=False,
+    self_consistency=False,
+):
     global auto_cot_corrected_prompt
     global auto_cot_cleaned_prompt
     auto_cot_prompt = ""
     for io_pair in io_pairs[:10]:
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompt = """%s\n"""% task_description + io_pair[0] + \
-            """\nThe final answer is one of the choices.\nA: Let's think step-by-step.\n""" 
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompt = (
+            """%s\n""" % task_description
+            + io_pair[0]
+            + """\nThe final answer is one of the choices.\nA: Let's think step-by-step.\n"""
+        )
         auto_cot_prompt += prompt
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
@@ -281,7 +330,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         auto_cot_prompt = auto_cot_cleaned_prompt
 
     print(auto_cot_prompt)
-    f = open("auto_cot_demonstrations.txt","a+")
+    f = open("auto_cot_demonstrations.txt", "a+")
     f.write("Formal Fallacies\n\n")
     f.write(auto_cot_prompt)
 
@@ -289,24 +338,38 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         return
 
     def predict_self_consistency(description, chunk, n=5):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
-        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
-            """%s\nThe final answer is one of the choices.\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=n
+        )
+        prompts = [
+            auto_cot_prompt
+            + """%s\n""" % task_description
+            + """%s\nThe final answer is one of the choices.\nA: Let's think step-by-step.\n"""
+            % (x)
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=temperature, quote='---', n=1)
-        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
-            """%s\nThe final answer is one of the choices.\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=500, temperature=temperature, quote="---", n=1
+        )
+        prompts = [
+            auto_cot_prompt
+            + """%s\n""" % task_description
+            + """%s\nThe final answer is one of the choices.\nA: Let's think step-by-step.\n"""
+            % (x)
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     if self_consistency:
         perf_array = []
         runs = 1
         batch_size = 2
-        for run in range(runs): 
-            print("Run %d"%run)
-            answers = [] # List of counters
+        for run in range(runs):
+            print("Run %d" % run)
+            answers = []  # List of counters
             for x in tqdm(chunks(inputs, batch_size)):
                 answer_set = predict_self_consistency(task_description, x)
                 result_counter = [Counter() for i in range(batch_size)]
@@ -314,13 +377,15 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
                     preds = []
                     for x in ans_chunk:
                         if re.search("""The final answer is """, x):
-                            preds.append(x[re.search("""The final answer is """, x).span(0)[-1]:])
+                            preds.append(x[re.search("""The final answer is """, x).span(0)[-1] :])
                         else:
                             preds.append(x.strip())
                     for enum, pred in enumerate(ans_chunk):
                         # Only add to the counter if there is a legitimate answer
                         if re.search("""The final answer is """, pred):
-                            result_counter[chunk_no].update([pred[re.search("""The final answer is """, x).span(0)[-1]:]])
+                            result_counter[chunk_no].update(
+                                [pred[re.search("""The final answer is """, x).span(0)[-1] :]]
+                            )
                 answers.extend(result_counter)
             preds = [x.most_common(1)[0][0] for x in answers]
             perf_array.append(substring_match(labels, preds))
@@ -330,8 +395,8 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
     else:
         perf_array = []
         runs = 5
-        for run in range(runs): 
-            print("Run %d"%run)
+        for run in range(runs):
+            print("Run %d" % run)
             answers = []
             for x in tqdm(chunks(inputs, 10)):
                 answers.extend(predict(x))
@@ -343,10 +408,11 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         print("Mean", np.mean(perf_array))
         print("Std. Dev", np.std(perf_array))
 
+
 few_shot_cot_prompt = few_shot_free_prompt
 
-def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
 
+def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
     global few_shot_cot_prompt
 
     if strategy == "fixed":
@@ -363,24 +429,32 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return gpt3(prompts)
 
     def predict_complete(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         outputs = gpt3(prompts)
-        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        completed_outputs = [
+            interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)
+        ]
         return completed_outputs
-    
+
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
-        label_dict = {0:"(A)", 1:"(B)", 2:"(C)", 3:"(D)"}
-        choices = [[ans.strip() for ans in inp.replace("\nA:", "").split("choice: ")][1:] for inp in inputs]
+        label_dict = {0: "(A)", 1: "(B)", 2: "(C)", 3: "(D)"}
+        choices = [
+            [ans.strip() for ans in inp.replace("\nA:", "").split("choice: ")][1:] for inp in inputs
+        ]
         new_labels = [label_dict[choice.index(label)] for label, choice in zip(labels, choices)]
         joint_labels = [[label, new_label] for label, new_label in zip(labels, new_labels)]
         for x in tqdm(chunks(inputs, 10)):
@@ -396,16 +470,43 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     print("Std. Dev", np.std(perf_array))
 
 
-
 if __name__ == "__main__":
-    parser  = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001", "davinci-codex-002-msft"], default="text-davinci-002")
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--model_name",
+        type=str,
+        choices=[
+            "text-davinci-002",
+            "text-davinci-003",
+            "code-davinci-002",
+            "code-cushman-001",
+            "davinci-codex-002-msft",
+        ],
+        default="text-davinci-002",
+    )
     parser.add_argument("--temperature", type=float, default="0.3")
-    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument(
+        "--inference_strategy",
+        type=str,
+        choices=[
+            "dummy",
+            "few_shot",
+            "auto_cot",
+            "cot_rollout",
+            "few_shot_cot",
+            "nl_program",
+        ],
+        default="few_shot",
+    )
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
-    parser.add_argument("--self_consistency", default=False, action='store_true')
-    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
+    parser.add_argument("--self_consistency", default=False, action="store_true")
+    parser.add_argument(
+        "--selection_strategy",
+        type=str,
+        choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"],
+        default="fixed",
+    )
 
     args = parser.parse_args()
 
@@ -414,15 +515,20 @@ if __name__ == "__main__":
     print("Training examples:", len(train_inputs))
     print("Dev examples:", len(inputs))
 
-    inputs = inputs[:args.num_dev_examples]
-    labels = labels[:args.num_dev_examples]
-
+    inputs = inputs[: args.num_dev_examples]
+    labels = labels[: args.num_dev_examples]
 
     if args.inference_strategy == "few_shot":
         few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=args.num_train_examples)
-        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
+        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)["input_ids"]))
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
-        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
+        auto_cot(
+            args.temperature,
+            args.model_name,
+            predict=True,
+            use_corrected=False,
+            self_consistency=False,
+        )
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)

@@ -1,75 +1,86 @@
 import argparse
-import ast
-import json
+from collections import Counter
 import pdb
 import re
-import time
-from re import L
-import os
-from turtle import pd
 
 import datasets
 import numpy as np
+from prompt_library import (
+    few_shot_retrieval_prompt,
+    llm_similar_tasks,
+    random_tasks,
+    similar_auto_breakdowns,
+    similar_tasks,
+)
+from sequential_interpreter import TopDownVisitorBeta
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
-                   get_few_shot_prompt, get_subset, gpt3,
-                   propose_decomposition, propose_instruction, substring_match)
+from utils import (
+    OpenAIModel,
+    cache_dir,
+    chunks,
+    get_answer,
+    get_autocot_answer,
+    get_few_shot_prompt,
+    substring_match,
+)
 
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-import urllib.request
-from collections import Counter
 
-tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-from prompt_library import (llm_similar_tasks, random_tasks,
-                            similar_auto_breakdowns, similar_tasks,
-                            few_shot_retrieval_prompt, few_shot_code_prompt, 
-                            few_shot_arithmetic_prompt, few_shot_string_prompt,
-                            few_shot_free_prompt)
-from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
-
-
-d = datasets.load_dataset('bigbench', 'physics', cache_dir=cache_dir)
-inputs = d['train']['inputs'] + d['validation']['inputs']
+d = datasets.load_dataset("bigbench", "physics", cache_dir=cache_dir)
+inputs = d["train"]["inputs"] + d["validation"]["inputs"]
 # inputs = [x.split('\n')[0] for x in inputs]
-labels = d['train']['targets'] + d['validation']['targets']
+labels = d["train"]["targets"] + d["validation"]["targets"]
 labels = [l[0] for l in labels]
 
-train_inputs = d['train']['inputs']
-train_labels = d['train']['targets']
+train_inputs = d["train"]["inputs"]
+train_labels = d["train"]["targets"]
 
 task_description = "Identify the physics formula that would be most useful for finding the answer to each of the following word problems."
 
-io_pairs = [("""Q: In an experiment, a positively charged oil droplet weighing 6.5 * 10 ^ -15 N is held stationary by a vertical electric field. If the electric field strength is 5.3 * 10 ^ 3 N/C, what is the charge on the oil droplet?
+io_pairs = [
+    (
+        """Q: In an experiment, a positively charged oil droplet weighing 6.5 * 10 ^ -15 N is held stationary by a vertical electric field. If the electric field strength is 5.3 * 10 ^ 3 N/C, what is the charge on the oil droplet?
   choice: dt = dx / v
   choice: v = λ * f
   choice: F = q * E
   choice: v = v_0 + a * t""",
-"F = q * E"),
-("""Q: A 3.0 kg ball rolls down from the top of a ramp as shown. If the ball is moving at 10.0 m/sat the bottom, how much energy was lost due to friction (thermal energy)?
+        "F = q * E",
+    ),
+    (
+        """Q: A 3.0 kg ball rolls down from the top of a ramp as shown. If the ball is moving at 10.0 m/sat the bottom, how much energy was lost due to friction (thermal energy)?
   choice: Q = m * c * dT
   choice: ɸ = E * A * cos(θ)
   choice: E = F / q
   choice: a = dv / dt""",
-"Q = m * c * dT"),
-("""Q: A 1200 kg car rounds a flat circular section of road at 20 m/s as shown in the diagram. The coefficient of friction between the car tires and the road surface is 0.65. What minimum friction force is required for the car to follow this curve?
+        "Q = m * c * dT",
+    ),
+    (
+        """Q: A 1200 kg car rounds a flat circular section of road at 20 m/s as shown in the diagram. The coefficient of friction between the car tires and the road surface is 0.65. What minimum friction force is required for the car to follow this curve?
   choice: F = m * a
   choice: dq = ρ * dV
   choice: E = q * σ / (2 * ε)
   choice: P = dE / dt""",
-"F = m * a"),
-("""Q: A 6.6 N object is traveling at a velocity of 3.0 m/s north. What is the object’s momentum?
+        "F = m * a",
+    ),
+    (
+        """Q: A 6.6 N object is traveling at a velocity of 3.0 m/s north. What is the object’s momentum?
   choice: p = m * v
   choice: v = v_0 + a * t
   choice: d = x_0 + v_0 * t + 1/2 * a * t ^ 2
   choice: q = Q * dθ / π""",
-"p = m * v"),
-("""Q: A 1250 W electric motor is used to lift an 80.0 kg weight to a height of 4.0 m in 3.00 s. What is the efficiency of the motor?
+        "p = m * v",
+    ),
+    (
+        """Q: A 1250 W electric motor is used to lift an 80.0 kg weight to a height of 4.0 m in 3.00 s. What is the efficiency of the motor?
   choice: U = m * g * h
   choice: dt = dx / v
   choice: E = K + U + Q
   choice: d = x_0 + v_0 * t + 1/2 * a * t ^ 2""",
-"U = m * g * h"),]
+        "U = m * g * h",
+    ),
+]
+
 
 def exact_match(labels, predictions):
     correct = 0
@@ -78,7 +89,8 @@ def exact_match(labels, predictions):
         if label.lower() == predict.lower():
             correct += 1
         count += 1
-    return (1.0*correct)/count
+    return (1.0 * correct) / count
+
 
 def token_match(labels, predictions):
     correct = 0
@@ -87,22 +99,29 @@ def token_match(labels, predictions):
         if label.lower() in [p.lower() for p in predict]:
             correct += 1
         count += 1
-    return (1.0*correct)/count
+    return (1.0 * correct) / count
+
 
 def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     few_shot_prompt = get_few_shot_prompt(inputs, [[l] for l in labels], n=N)
-    print(len(tokenizer(few_shot_prompt)['input_ids']))
+    print(len(tokenizer(few_shot_prompt)["input_ids"]))
 
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=200, temperature=temperature, quote='---', n=1)
-        prompts = ["""%s\
-%s""" % (few_shot_prompt, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=200, temperature=temperature, quote="---", n=1
+        )
+        prompts = [
+            """%s\
+%s"""
+            % (few_shot_prompt, x)
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
@@ -114,10 +133,12 @@ def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
+
 def physics():
     def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=200, quote='---', n=1)
-        prompts = ["""Identify the physics formula that would be most useful for finding the answer to each of the following word problems.
+        gpt3 = OpenAIModel(model="text-davinci-002", max_length=200, quote="---", n=1)
+        prompts = [
+            """Identify the physics formula that would be most useful for finding the answer to each of the following word problems.
 
 
 Q: In an experiment, a positively charged oil droplet weighing 6.5 * 10 ^ -15 N is held stationary by a vertical electric field. If the electric field strength is 5.3 * 10 ^ 3 N/C, what is the charge on the oil droplet?
@@ -150,13 +171,16 @@ Q: A 1200 kg car rounds a flat circular section of road at 20 m/s as shown in th
 A:
 F = m * a
 ----
-%s""" % x for x in chunk]
+%s"""
+            % x
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
@@ -167,12 +191,12 @@ F = m * a
     print("Std. Dev", np.std(perf_array))
 
 
-# few_shot_cot_prompt = """In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use search functions like Google search in one or more of your substeps, if there in insufficient information. Other functions like arithmetic and logical operations can also be used.  
-# Description: Choose the option that best answers the question. If the question does not have a known answer, choose "Unknown". 
+# few_shot_cot_prompt = """In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use search functions like Google search in one or more of your substeps, if there in insufficient information. Other functions like arithmetic and logical operations can also be used.
+# Description: Choose the option that best answers the question. If the question does not have a known answer, choose "Unknown".
 # Input: How many hairs were on Neil Armstrong's head when he landed on the moon?
 #   choice: Unknown
 #   choice: Five million
-# Q1: [search] How many hairs were on Neil Armstrong's head when he landed on the moon? 
+# Q1: [search] How many hairs were on Neil Armstrong's head when he landed on the moon?
 # #1:
 # Apollo 11 (July 16–24, 1969) was the American spaceflight that first landed humans on the Moon. Commander Neil Armstrong and lunar module pilot Buzz Aldrin.
 # Neil Alden Armstrong (August 5, 1930 – August 25, 2012) was an American astronaut and aeronautical engineer who became the first person to walk on the Moon.
@@ -230,7 +254,7 @@ F = m * a
 # Q3: [EOQ]
 # Ans: Brahmastra
 # ----
-# Description: Choose the option that best answers the question. If the question does not have a known answer, choose "Unknown". 
+# Description: Choose the option that best answers the question. If the question does not have a known answer, choose "Unknown".
 # Input: Where was Mark Twain born?
 #   choice: Unknown
 #   choice: Florida, Missouri
@@ -244,14 +268,14 @@ F = m * a
 # Q4: [EOQ]
 # Ans: Florida, Missouri
 # ----
-# Desciption: %s 
+# Desciption: %s
 # Input: %s
 # Q1:"""
 
 few_shot_cot_prompt = few_shot_retrieval_prompt
 
-def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
 
+def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
     global few_shot_cot_prompt
     task_name = "Physics questions"
     task_description = "(Physics questions) Given a physics word problem, choose which physics formula from among the choices is most helpful in solving the word problem. The final answer should be one of the choices."
@@ -268,27 +292,39 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return gpt3(prompts)
 
     interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
 
     def predict_complete(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         outputs = gpt3(prompts)
-        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        completed_outputs = [
+            interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)
+        ]
         return completed_outputs
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
-            x = [ex.replace("Identify the physics formula that would be most useful for finding the answer to each of the following word problems.\n\n\n", "") for ex in x]
+            x = [
+                ex.replace(
+                    "Identify the physics formula that would be most useful for finding the answer to each of the following word problems.\n\n\n",
+                    "",
+                )
+                for ex in x
+            ]
             answers.extend(predict_complete(task_description, x))
             # time.sleep(10)
         preds = [get_answer(x.strip()) for x in answers]
@@ -297,6 +333,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     print("Few-shot COT performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
+
 
 auto_cot_cleaned_prompt = """Physics: Identify the physics formula that would be most useful for finding the answer to each of the following word problems.
 Q: In an experiment, a positively charged oil droplet weighing 6.5 * 10 ^ -15 N is held stationary by a vertical electric field. If the electric field strength is 5.3 * 10 ^ 3 N/C, what is the charge on the oil droplet?
@@ -461,14 +498,26 @@ The best answer choice is U = m * g * h.
 ----
 """
 
-def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
+
+def auto_cot(
+    temperature=0.3,
+    model_name="text-davinci-002",
+    predict=True,
+    use_corrected=False,
+    self_consistency=False,
+):
     global auto_cot_corrected_prompt
     auto_cot_prompt = ""
     description = """Physics: Identify the physics formula that would be most useful for finding the answer to each of the following word problems."""
     for io_pair in io_pairs:
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=500, temperature=0.7, quote='---', n=1)
-        prompt = """%s\n"""%description + io_pair[0] + \
-            """\nThe final answer should be one of the choices.\nA: Let's think step-by-step.\n"""
+        gpt3 = OpenAIModel(
+            model="text-davinci-002", max_length=500, temperature=0.7, quote="---", n=1
+        )
+        prompt = (
+            """%s\n""" % description
+            + io_pair[0]
+            + """\nThe final answer should be one of the choices.\nA: Let's think step-by-step.\n"""
+        )
         auto_cot_prompt += prompt
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
@@ -477,9 +526,9 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         auto_cot_prompt = auto_cot_corrected_prompt
     else:
         auto_cot_prompt = auto_cot_cleaned_prompt
-    
+
     print(auto_cot_prompt)
-    f = open("auto_cot_demonstrations.txt","a+")
+    f = open("auto_cot_demonstrations.txt", "a+")
     f.write("Physics Questions\n\n")
     f.write(auto_cot_prompt)
 
@@ -487,24 +536,38 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         return
 
     def predict_self_consistency(description, chunk, n=5):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
-        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
-            """%s\nThe final answer should be one of the choices.\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=n
+        )
+        prompts = [
+            auto_cot_prompt
+            + """%s\n""" % task_description
+            + """%s\nThe final answer should be one of the choices.\nA: Let's think step-by-step.\n"""
+            % (x)
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=temperature, quote='---', n=1)
-        prompts=[auto_cot_prompt + """%s\n""" %description + \
-            """%s\nThe final answer should be one of the choices.\nA: Let's think step-by-step.\n"""%x for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=500, temperature=temperature, quote="---", n=1
+        )
+        prompts = [
+            auto_cot_prompt
+            + """%s\n""" % description
+            + """%s\nThe final answer should be one of the choices.\nA: Let's think step-by-step.\n"""
+            % x
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     if self_consistency:
         perf_array = []
         runs = 1
         batch_size = 2
-        for run in range(runs): 
-            print("Run %d"%run)
-            answers = [] # List of counters
+        for run in range(runs):
+            print("Run %d" % run)
+            answers = []  # List of counters
             for x in tqdm(chunks(inputs, batch_size)):
                 answer_set = predict_self_consistency(task_description, x)
                 result_counter = [Counter() for i in range(batch_size)]
@@ -512,13 +575,17 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
                     preds = []
                     for x in ans_chunk:
                         if re.search("""The best answer choice is """, x):
-                            preds.append(x[re.search("""The best answer choice is """, x).span(0)[-1]:])
+                            preds.append(
+                                x[re.search("""The best answer choice is """, x).span(0)[-1] :]
+                            )
                         else:
                             preds.append(x.strip())
                     for enum, pred in enumerate(ans_chunk):
                         # Only add to the counter if there is a legitimate answer
                         if re.search("""The best answer choice is """, pred):
-                            result_counter[chunk_no].update([pred[re.search("""The best answer choice is """, x).span(0)[-1]:]])
+                            result_counter[chunk_no].update(
+                                [pred[re.search("""The best answer choice is """, x).span(0)[-1] :]]
+                            )
                 answers.extend(result_counter)
             preds = [x.most_common(1)[0][0] for x in answers]
             perf_array.append(substring_match(labels, preds))
@@ -528,15 +595,23 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
     else:
         perf_array = []
         runs = 5
-        for run in range(runs): 
-            print("Run %d"%run)
+        for run in range(runs):
+            print("Run %d" % run)
             answers = []
             for x in tqdm(chunks(inputs, 10)):
-                x = [ex.replace("Identify the physics formula that would be most useful for finding the answer to each of the following word problems.", "") for ex in x]
+                x = [
+                    ex.replace(
+                        "Identify the physics formula that would be most useful for finding the answer to each of the following word problems.",
+                        "",
+                    )
+                    for ex in x
+                ]
                 x = [ex.replace("\nA:", "") for ex in x]
                 answers.extend(predict(x))
                 # time.sleep(10)
-            preds = [get_autocot_answer(x, answer_prompt="The best answer choice is") for x in answers]
+            preds = [
+                get_autocot_answer(x, answer_prompt="The best answer choice is") for x in answers
+            ]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)
         print("Auto-CoT Performance:")
@@ -545,7 +620,6 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
 
 
 def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
-
     if strategy == "random":
         few_shot_cot_prompt = random_tasks(N=6)
     elif strategy == "similar":
@@ -556,17 +630,29 @@ def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
         few_shot_cot_prompt = llm_similar_tasks(task_description, io_pairs, N=6)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=2048, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model="text-davinci-002",
+            max_length=2048,
+            temperature=temperature,
+            quote="---",
+            n=1,
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
-            x = [ex.replace("Identify the physics formula that would be most useful for finding the answer to each of the following word problems.", "") for ex in x]
+            x = [
+                ex.replace(
+                    "Identify the physics formula that would be most useful for finding the answer to each of the following word problems.",
+                    "",
+                )
+                for ex in x
+            ]
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(task_description, x))
         preds = [x.strip() for x in answers]
@@ -577,7 +663,12 @@ def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
     print("Std. Dev", np.std(perf_array))
 
 
-def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+def nl_program(
+    temperature=0.3,
+    model_name="text-davinci-002",
+    strategy="fixed",
+    self_consistency=False,
+):
     global few_shot_cot_prompt
     task_name = "Physics Formulas"
     task_description = "Identify the physics formula that would be most useful for finding the answer to each of the following word problems."
@@ -596,36 +687,42 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     interpreter = TopDownVisitorBeta(model_name=model_name)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     def predict_self_consistency(description, chunk, n=5):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=n
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     if self_consistency:
         perf_array = []
         runs = 2
         batch_size = 2
-        for run in range(runs): 
-            print("Run %d"%run)
-            answers = [] # List of counters
+        for run in range(runs):
+            print("Run %d" % run)
+            answers = []  # List of counters
             for x in tqdm(chunks(inputs, batch_size)):
                 x = [ex.replace("\n\n\nQ: ", "") for ex in x]
                 x = [ex.replace("\nA:", "") for ex in x]
                 prompts, answer_set = predict_self_consistency(task_description, x)
                 result_counter = [Counter() for i in range(batch_size)]
                 for chunk_no, ans_chunk in enumerate(chunks(answer_set, 9)):
-                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
-                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    new_answer = interpreter.batch_visit(
+                        [prompts[chunk_no]] * len(ans_chunk), ans_chunk
+                    )
+                    processed_answers = [get_answer(ex) for ex in new_answer]
                     for pred in processed_answers:
                         # Only add to the counter if there is a legitimate answer
                         if pred is not None:
                             result_counter[chunk_no].update([pred])
                 answers.extend(result_counter)
-            preds = [x.most_common(1)[0][0] for x in answers[:len(inputs)]]
+            preds = [x.most_common(1)[0][0] for x in answers[: len(inputs)]]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)
         print("FS-CoT Performance:")
@@ -634,22 +731,25 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     else:
         perf_array = []
         runs = 5
-        for run in range(runs): 
-            print("Run %d"%run)
+        for run in range(runs):
+            print("Run %d" % run)
             answers = []
             for x in tqdm(chunks(inputs, 10)):
                 # x = [ex.replace("Identify the physics formula that would be most useful for finding the answer to each of the following word problems.", "") for ex in x]
                 x = [ex.replace("\n\n\nQ: ", "") for ex in x]
                 x = [ex.replace("\nA:", "") for ex in x]
-                prompts, answer = predict(task_description, x) 
-                new_answer  = interpreter.batch_visit(prompts, answer)
+                prompts, answer = predict(task_description, x)
+                new_answer = interpreter.batch_visit(prompts, answer)
                 answers.extend(new_answer)
                 pdb.set_trace()
             preds = [get_answer(x.strip()) for x in answers]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)
-            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
-            positive_rate = sum(positive_calls)/len(interpreter.execution_details)
+            positive_calls = [
+                int(len(stack_trace_list) >= 1)
+                for stack_trace_list in interpreter.execution_details
+            ]
+            positive_rate = sum(positive_calls) / len(interpreter.execution_details)
         print("FS-CoT Performance:")
         print("Mean", np.mean(perf_array))
         print("Std. Dev", np.std(perf_array))
@@ -682,7 +782,7 @@ Q1: [subquestion] What quantity is being asked for in "A particle of mass 6.8 * 
 Q2: [subquestion] What other information is given in "A particle of mass 6.8 * 10 ^ −5 g and charge 58 mC moves in a region of space where the electric field is uniform and is 7.2 N/C in the x direction and zero in the y and z direction. If the initial velocity of the particle is given by vy = 1.7 * 10 ^ 6 m/s, vx = vz = 0, what is the speed of the particle at 0.7 s"
 #2: mass of particle (6.8 * 10 ^ −5 g), charge(58 mC), electric field (7.2 N/C), initial velocity (vy = 1.7 * 10 ^ 6 m/s, vx = vz = 0)
 Q3: [search] Given mass of the particle, charge and initial velocity of particle, and electric field, what can we compute for the particle? Give the physics formula.
-#3: 
+#3:
 We can compute acceleration of the particle, as follows:
 a = (q/m) * E
 This formula is derived from the Lorentz force law, which states that the force (F) on a particle of charge q in an electric field E is given by the equation:
@@ -723,7 +823,7 @@ Q3: [search] Given mass, velocity, acceleration, time, what can we compute for t
 #3:
 With these values, we can compute the dragster's momentum using the formula: momentum = mass * velocity + (acceleration * time^2)/2 Solving for Final Velocity from Distance and Acceleration
 A fourth useful equation can be obtained from another algebraic manipulation of previous equations. If we solve v = v0 + at  for t, we get ...
-Q4: [subquestion] What is the physics formula in the choices that is closest to v = v0 + at 
+Q4: [subquestion] What is the physics formula in the choices that is closest to v = v0 + at
 #4: v = v_0 + a * t
 Q5: [EOQ]
 Ans: v = v_0 + a * t
@@ -731,42 +831,55 @@ Ans: v = v_0 + a * t
 Description: %s
 Input: %s
 Q1: """
-def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+
+
+def human_intervention(
+    temperature=0.3,
+    model_name="text-davinci-002",
+    strategy="fixed",
+    self_consistency=False,
+):
     global few_shot_cot_prompt
 
     few_shot_cot_prompt = few_shot_human_prompt
     interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[generate python code]"])
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     def predict_self_consistency(description, chunk, n=9):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=n
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     if self_consistency:
         perf_array = []
         runs = 2
         batch_size = 2
-        for run in range(runs): 
-            print("Run %d"%run)
-            answers = [] # List of counters
+        for run in range(runs):
+            print("Run %d" % run)
+            answers = []  # List of counters
             for x in tqdm(chunks(inputs, batch_size)):
                 x = [ex.replace("\nEdited:", "") for ex in x]
                 prompts, answer_set = predict_self_consistency(task_description, x)
                 result_counter = [Counter() for i in range(batch_size)]
                 for chunk_no, ans_chunk in enumerate(chunks(answer_set, 9)):
-                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
-                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    new_answer = interpreter.batch_visit(
+                        [prompts[chunk_no]] * len(ans_chunk), ans_chunk
+                    )
+                    processed_answers = [get_answer(ex) for ex in new_answer]
                     for pred in enumerate(processed_answers):
                         # Only add to the counter if there is a legitimate answer
                         if pred is not None:
                             result_counter[chunk_no].update([pred])
                 answers.extend(result_counter)
-            preds = [x.most_common(1)[0][0][1] for x in answers[:len(inputs)]]
+            preds = [x.most_common(1)[0][0][1] for x in answers[: len(inputs)]]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)
         print("FS-CoT Performance:")
@@ -776,36 +889,68 @@ def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy=
     else:
         perf_array = []
         runs = 1
-        for run in range(runs): 
-            print("Run %d"%run)
+        for run in range(runs):
+            print("Run %d" % run)
             answers = []
             for x in tqdm(chunks(inputs, 10)):
                 x = [ex.replace("\n\n\nQ: ", "") for ex in x]
                 x = [ex.replace("\nA:", "") for ex in x]
                 prompts, answer = predict(task_description, x)
-                new_answer  = interpreter.batch_visit(prompts, answer)
+                new_answer = interpreter.batch_visit(prompts, answer)
                 answers.extend(new_answer)
             preds = [get_answer(x) for x in answers]
             perf_array.append(substring_match(labels, preds))
             # Report on interpreter performance
-            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
-            positive_rate = sum(positive_calls)/(len(interpreter.execution_details) + 1e-6)
+            positive_calls = [
+                int(len(stack_trace_list) >= 1)
+                for stack_trace_list in interpreter.execution_details
+            ]
+            positive_rate = sum(positive_calls) / (len(interpreter.execution_details) + 1e-6)
         print("FS-CoT Performance:")
         print("Mean", np.mean(perf_array))
         print("Std. Dev", np.std(perf_array))
         print("Rate of affordance call", positive_rate)
 
+
 # human_intervention(0.3, "text-davinci-002")
 
 if __name__ == "__main__":
-    parser  = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--model_name",
+        type=str,
+        choices=[
+            "text-davinci-002",
+            "text-davinci-003",
+            "code-davinci-002",
+            "code-cushman-001",
+        ],
+        default="text-davinci-002",
+    )
     parser.add_argument("--temperature", type=float, default="0.3")
-    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "auto_cot_corrected", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument(
+        "--inference_strategy",
+        type=str,
+        choices=[
+            "dummy",
+            "few_shot",
+            "auto_cot",
+            "auto_cot_corrected",
+            "cot_rollout",
+            "few_shot_cot",
+            "nl_program",
+        ],
+        default="few_shot",
+    )
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
-    parser.add_argument("--self_consistency", default=False, action='store_true')
-    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
+    parser.add_argument("--self_consistency", default=False, action="store_true")
+    parser.add_argument(
+        "--selection_strategy",
+        type=str,
+        choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"],
+        default="fixed",
+    )
 
     args = parser.parse_args()
 
@@ -814,18 +959,35 @@ if __name__ == "__main__":
     print("Training examples:", len(train_inputs))
     print("Dev examples:", len(inputs))
 
-    inputs = inputs[:args.num_dev_examples]
-    labels = labels[:args.num_dev_examples]
+    inputs = inputs[: args.num_dev_examples]
+    labels = labels[: args.num_dev_examples]
 
     if args.inference_strategy == "few_shot":
         few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=args.num_train_examples)
-        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
+        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)["input_ids"]))
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
-        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
+        auto_cot(
+            args.temperature,
+            args.model_name,
+            predict=True,
+            use_corrected=False,
+            self_consistency=False,
+        )
     elif args.inference_strategy == "auto_cot_corrected":
-        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
+        auto_cot(
+            args.temperature,
+            args.model_name,
+            predict=True,
+            use_corrected=True,
+            self_consistency=False,
+        )
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)
+        nl_program(
+            args.temperature,
+            args.model_name,
+            self_consistency=args.self_consistency,
+            strategy=args.selection_strategy,
+        )

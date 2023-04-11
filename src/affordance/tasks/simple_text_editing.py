@@ -1,52 +1,67 @@
 import argparse
-import json
+from collections import Counter
 import pdb
 import re
 import subprocess
 import sys
 import time
-from collections import Counter
-from enum import auto
-from re import L
-from turtle import pd
 
 import datasets
 import numpy as np
 import openai
-from prompt_library import (llm_similar_tasks, random_tasks,
-                            similar_auto_breakdowns, similar_tasks,
-                            few_shot_retrieval_prompt, few_shot_code_prompt, 
-                            few_shot_arithmetic_prompt, few_shot_string_prompt)
-from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
+from prompt_library import (
+    few_shot_code_prompt,
+    few_shot_string_prompt,
+    llm_similar_tasks,
+    random_tasks,
+    similar_auto_breakdowns,
+    similar_tasks,
+)
+from sequential_interpreter import TopDownVisitorBeta
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer, 
-                   get_few_shot_prompt, get_subset, gpt3,
-                   propose_decomposition, propose_instruction, substring_match)
+from utils import (
+    OpenAIModel,
+    cache_dir,
+    chunks,
+    get_answer,
+    get_autocot_answer,
+    get_few_shot_prompt,
+    get_subset,
+    propose_decomposition,
+    substring_match,
+)
 
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-import urllib.request
-from collections import Counter
 
-d = datasets.load_dataset('bigbench', 'simple_text_editing', cache_dir=cache_dir)
-inputs = d['train']['inputs'] + d['validation']['inputs']
+d = datasets.load_dataset("bigbench", "simple_text_editing", cache_dir=cache_dir)
+inputs = d["train"]["inputs"] + d["validation"]["inputs"]
 # inputs = [x.split('\n')[0] for x in inputs]
-labels = d['train']['targets'] + d['validation']['targets']
+labels = d["train"]["targets"] + d["validation"]["targets"]
 labels = [l[0] for l in labels]
 # print(len(inputs))
 
 
-train_inputs = d['train']['inputs']
-train_labels = d['train']['targets']
+train_inputs = d["train"]["inputs"]
+train_labels = d["train"]["targets"]
 
-task_description="(Simple text editing) Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is."
+task_description = "(Simple text editing) Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is."
 
-io_pairs = [("""Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: add 'bcd' after each 'a' in the entire text""",
-"""Turing wabcds one of the people who worked on the first computers. He creabcdted the theoreticabcdl Turing mabcdchine in 1936. The mabcdchine wabcds imabcdginabcdry, but it included the ideabcd of abcd computer prograbcdm."""),
-("""Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: replace all occurrencies of the character 'o' with 'a' in the entire text""",
-"""Turing was ane af the peaple wha warked an the first camputers. He created the thearetical Turing machine in 1936. The machine was imaginary, but it included the idea af a camputer pragram."""),
-("""Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: append the sentence 'SENTENCE TO BE APPENDED.' to the text""",
-"""Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program. SENTENCE TO BE APPENDED.""")]
+io_pairs = [
+    (
+        """Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: add 'bcd' after each 'a' in the entire text""",
+        """Turing wabcds one of the people who worked on the first computers. He creabcdted the theoreticabcdl Turing mabcdchine in 1936. The mabcdchine wabcds imabcdginabcdry, but it included the ideabcd of abcd computer prograbcdm.""",
+    ),
+    (
+        """Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: replace all occurrencies of the character 'o' with 'a' in the entire text""",
+        """Turing was ane af the peaple wha warked an the first camputers. He created the thearetical Turing machine in 1936. The machine was imaginary, but it included the idea af a camputer pragram.""",
+    ),
+    (
+        """Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: append the sentence 'SENTENCE TO BE APPENDED.' to the text""",
+        """Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program. SENTENCE TO BE APPENDED.""",
+    ),
+]
+
 
 def exact_match(labels, predictions):
     correct = 0
@@ -55,7 +70,7 @@ def exact_match(labels, predictions):
         if label.lower() == predict.lower():
             correct += 1
         count += 1
-    return (1.0*correct)/count
+    return (1.0 * correct) / count
 
 
 def token_match(labels, predictions):
@@ -65,13 +80,16 @@ def token_match(labels, predictions):
         if label.lower() in [p.lower() for p in predict]:
             correct += 1
         count += 1
-    return (1.0*correct)/count
+    return (1.0 * correct) / count
 
 
 def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=200, temperature=temperature, quote='---', n=1)
-        prompts = ["""Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: add 'bcd' after each 'a' in the entire text
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=200, temperature=temperature, quote="---", n=1
+        )
+        prompts = [
+            """Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: add 'bcd' after each 'a' in the entire text
 Edited:
 Turing wabcds one of the people who worked on the first computers. He creabcdted the theoreticabcdl Turing mabcdchine in 1936. The mabcdchine wabcds imabcdginabcdry, but it included the ideabcd of abcd computer prograbcdm.
 ----
@@ -84,13 +102,16 @@ Edited:
 Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program. SENTENCE TO BE APPENDED.
 ----
 %s
-""" % x for x in chunk]
+"""
+            % x
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
@@ -102,21 +123,27 @@ Turing was one of the people who worked on the first computers. He created the t
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
 
+def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=N)
-    print(len(tokenizer(few_shot_prompt)['input_ids']))
+    print(len(tokenizer(few_shot_prompt)["input_ids"]))
 
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=200, temperature=temperature, quote='---', n=1)
-        prompts = ["""%s\
-%s""" % (few_shot_prompt, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=200, temperature=temperature, quote="---", n=1
+        )
+        prompts = [
+            """%s\
+%s"""
+            % (few_shot_prompt, x)
+            for x in chunk
+        ]
         return gpt3(prompts)
-    
+
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
@@ -126,17 +153,21 @@ def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
+
 def human_decomposition():
     def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002", temperature=0.3,  max_length=2000, quote='---', n=1)
-        prompts = ["""Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: add 'bcd' after each 'a' in the entire text
+        gpt3 = OpenAIModel(
+            model="text-davinci-002", temperature=0.3, max_length=2000, quote="---", n=1
+        )
+        prompts = [
+            """Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: add 'bcd' after each 'a' in the entire text
 Step1: Split the text into a list of words.
 #1: ['Turing', 'was', 'one', 'of', 'the', 'people', 'who', 'worked', 'on', 'the', 'first', 'computers.', 'He', 'created', 'the', 'theoretical', 'Turing', 'machine', 'in', '1936.', 'The', 'machine', 'was', 'imaginary,', 'but', 'it', 'included', 'the', 'idea', 'of', 'a', 'computer', 'program.']
 Step2: For each word, add "bcd" after every occurrence of "a"
 #2: [Turing', 'wabcds', 'one', 'of', 'the', 'people', 'who', 'worked', 'on', 'the', 'first', 'computers.', 'He', 'creabcdted', 'the', 'theoreticabcdl', 'Turing', 'mabcdchine', 'in', '1936.', 'The', 'mabcdchine', 'wabcds', 'imabcdginabcdry,', 'but', 'it', 'included', 'the', 'ideabcd', 'of', 'abcd', 'computer', 'prograbcdm.]
 Step3: Merge words back into a sentence with spaces.
 #3: Turing wabcds one of the people who worked on the first computers. He creabcdted the theoreticabcdl Turing mabcdchine in 1936. The mabcdchine wabcds imabcdginabcdry, but it included the ideabcd of abcd computer prograbcdm.
-Edited: 
+Edited:
 Turing wabcds one of the people who worked on the first computers. He creabcdted the theoreticabcdl Turing mabcdchine in 1936. The mabcdchine wabcds imabcdginabcdry, but it included the ideabcd of abcd computer prograbcdm.
 ----
 Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: replace all occurrencies of the character 'o' with 'a' in the entire text
@@ -146,7 +177,7 @@ Step2: For each word, replace all occurrences of "o" with "a".
 #2: ['Turing', 'was', 'ane', 'af', 'the', 'peaple', 'wha', 'warked', 'an', 'the', 'first', 'camputers.', 'He', 'created', 'the', 'thearetical', 'Turing', 'machine', 'in', '1936.', 'The', 'machine', 'was', 'imaginary,', 'but', 'it', 'included', 'the', 'idea', 'af', 'a', 'camputer', 'pragram.']
 Step3: Merge words back into a sentence with spaces.
 #3: Turing was ane af the peaple wha warked an the first camputers. He created the thearetical Turing machine in 1936. The machine was imaginary, but it included the idea af a camputer pragram.
-Edited: 
+Edited:
 Turing was ane af the peaple wha warked an the first camputers. He created the thearetical Turing machine in 1936. The machine was imaginary, but it included the idea af a camputer pragram.
 ----
 Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: append the sentence 'SENTENCE TO BE APPENDED.' to the text
@@ -162,13 +193,16 @@ Edited:
 Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program. SENTENCE TO BE APPENDED.
 ----
 %s
-Step1:""" % x for x in chunk]
+Step1:"""
+            % x
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
@@ -180,34 +214,50 @@ Step1:""" % x for x in chunk]
 
 
 def auto_decomp(N=10, temperature=0.3):
-    # The other ways to do this is to ask what functions to use and given these functions, come up with required steps. 
-    decomp_prompt = "%s I want to break this task into individual steps to make it easier to solve." % task_description
+    # The other ways to do this is to ask what functions to use and given these functions, come up with required steps.
+    decomp_prompt = (
+        "%s I want to break this task into individual steps to make it easier to solve."
+        % task_description
+    )
     decompositions = propose_decomposition(decomp_prompt, io_pairs, N)
+
     def get_decomp_func(decomposition, batch_size=10):
-            decomposition = '1.'+ decomposition
-            last_n = int(re.findall(r'(\d+)\.', decomposition)[-1])
-            decomposition += '\n%s. The final answer should be the edited text.' % (last_n + 1)
-            def decomposition_fn(sentences):
-                gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=temperature, quote='---', n=1)
-                out = []
-                for chunk in chunks(sentences, batch_size):
-                    prompts = ['''%s Using the following steps will help.
+        decomposition = "1." + decomposition
+        last_n = int(re.findall(r"(\d+)\.", decomposition)[-1])
+        decomposition += "\n%s. The final answer should be the edited text." % (last_n + 1)
+
+        def decomposition_fn(sentences):
+            gpt3 = OpenAIModel(
+                model="text-davinci-002",
+                max_length=1000,
+                temperature=temperature,
+                quote="---",
+                n=1,
+            )
+            out = []
+            for chunk in chunks(sentences, batch_size):
+                prompts = [
+                    """%s Using the following steps will help.
 Steps:
 %s
 ----
 %s
-Also show how you used the steps provided to arrive at the answer.''' % (task_description, decomposition, x) for x in chunk]
-                    out.extend(gpt3(prompts))
-                return out
-            return decomposition_fn
-        
+Also show how you used the steps provided to arrive at the answer."""
+                    % (task_description, decomposition, x)
+                    for x in chunk
+                ]
+                out.extend(gpt3(prompts))
+            return out
+
+        return decomposition_fn
+
     labs, subset = get_subset(inputs, labels=labels, n=len(inputs))
     preds = []
     pps = []
     accs = []
     subset = [ex.replace("\nEdited:", "") for ex in subset]
     for z, decomposition in enumerate(decompositions):
-        print('Decomposition:', z)
+        print("Decomposition:", z)
         print(decompositions[z])
         fn = get_decomp_func(decomposition, batch_size=20)
         this_preds = fn(subset)
@@ -221,12 +271,13 @@ Also show how you used the steps provided to arrive at the answer.''' % (task_de
     print("Mean", np.mean(accs))
     print("Std. Dev", np.std(accs))
 
+
 # few_shot_cot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use string operations like splitting, reformatting, editing or merging. You can also use other operations like arithmetic and logic.
 # Description: Find the required date in MM/DD/YYYY using information about related events and dates in the input. Clue: First find what day is today.
 # Input: Today is the first day of 2007. What is the date one week from today in MM/DD/YYYY?
-# Q1: [string reformat] first day of 2007 in MM/DD/YYYY 
+# Q1: [string reformat] first day of 2007 in MM/DD/YYYY
 # #1: 01/01/2007
-# Q2: What date is one week from 01/01/2007? 
+# Q2: What date is one week from 01/01/2007?
 # #2: 01/08/2007
 # Q3: [EOQ]
 # Ans: 01/08/2007
@@ -281,7 +332,7 @@ Also show how you used the steps provided to arrive at the answer.''' % (task_de
 # #1: 06/01/2021
 # Q2: 06/01/2021 is 2 days away from now. What date is today?
 # #2: Today is 04/01/2021
-# Q3: What date is 24 hours later than today?  
+# Q3: What date is 24 hours later than today?
 # #3: 05/01/2021
 # Q4: [EOQ]
 # Ans: 05/31/2021
@@ -292,8 +343,8 @@ Also show how you used the steps provided to arrive at the answer.''' % (task_de
 
 few_shot_cot_prompt = few_shot_string_prompt
 
-def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
 
+def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
     global few_shot_cot_prompt
     task_name = "Kth Letter concatenation"
     task_description = "(Kth Letter concatenation) Take the letters at position 3 of the words in a list of words and concatenate them using a space."
@@ -310,23 +361,29 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=2048, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=2048, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return gpt3(prompts)
 
     interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
 
     def predict_complete(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         outputs = gpt3(prompts)
-        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        completed_outputs = [
+            interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)
+        ]
         return completed_outputs
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nEdited:", "") for ex in x]
@@ -339,6 +396,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     print("Few-shot COT performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
+
 
 auto_cot_corrected_prompt = """(Simple text editing) Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is.
 Edit the text 'Turing was one of the people who worked on the first computers. He created the theoretical Turing machine in 1936. The machine was imaginary, but it included the idea of a computer program.' with the following edit operation and the scope of the edit and replicate the remaining text as is: replace all occurrencies of the character 'o' with 'a' in the entire text
@@ -435,14 +493,24 @@ The final answer is "Turing was one of the people who worked on the first comput
 ----
 """
 
-def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
+
+def auto_cot(
+    temperature=0.3,
+    model_name="text-davinci-002",
+    predict=True,
+    use_corrected=False,
+    self_consistency=False,
+):
     global auto_cot_corrected_prompt
     global auto_cot_cleaned_prompt
     auto_cot_prompt = ""
     for io_pair in io_pairs:
-        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=0.7, quote='---', n=1)
-        prompt = """%s\n"""% task_description + io_pair[0] + \
-            """\nThe final answer should be the edited text.\nA: Let's think step-by-step.\n""" 
+        gpt3 = OpenAIModel(model=model_name, max_length=500, temperature=0.7, quote="---", n=1)
+        prompt = (
+            """%s\n""" % task_description
+            + io_pair[0]
+            + """\nThe final answer should be the edited text.\nA: Let's think step-by-step.\n"""
+        )
         auto_cot_prompt += prompt
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
@@ -452,9 +520,9 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         auto_cot_prompt = auto_cot_corrected_prompt
     else:
         auto_cot_prompt = auto_cot_cleaned_prompt
-    
+
     print(auto_cot_prompt)
-    f = open("auto_cot_demonstrations.txt","a+")
+    f = open("auto_cot_demonstrations.txt", "a+")
     f.write("Language games\n\n")
     f.write(auto_cot_prompt)
 
@@ -462,24 +530,38 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         return
 
     def predict_self_consistency(description, chunk, n=5):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
-        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
-            """%s\nThe final answer should be the edited text.\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=n
+        )
+        prompts = [
+            auto_cot_prompt
+            + """%s\n""" % task_description
+            + """%s\nThe final answer should be the edited text.\nA: Let's think step-by-step.\n"""
+            % (x)
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=temperature, quote='---', n=1)
-        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
-            """%s\nThe final answer should be the edited text.\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=500, temperature=temperature, quote="---", n=1
+        )
+        prompts = [
+            auto_cot_prompt
+            + """%s\n""" % task_description
+            + """%s\nThe final answer should be the edited text.\nA: Let's think step-by-step.\n"""
+            % (x)
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     if self_consistency:
         perf_array = []
         runs = 1
         batch_size = 2
-        for run in range(runs): 
-            print("Run %d"%run)
-            answers = [] # List of counters
+        for run in range(runs):
+            print("Run %d" % run)
+            answers = []  # List of counters
             for x in tqdm(chunks(inputs, batch_size)):
                 x = [ex.replace("\nEdited:", "") for ex in x]
                 answer_set = predict_self_consistency(task_description, x)
@@ -488,13 +570,15 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
                     preds = []
                     for x in ans_chunk:
                         if re.search("""The final answer is """, x):
-                            preds.append(x[re.search("""The final answer is """, x).span(0)[-1]:])
+                            preds.append(x[re.search("""The final answer is """, x).span(0)[-1] :])
                         else:
                             preds.append(x.strip())
                     for enum, pred in enumerate(ans_chunk):
                         # Only add to the counter if there is a legitimate answer
                         if re.search("""The final answer is """, pred):
-                            result_counter[chunk_no].update([pred[re.search("""The final answer is """, x).span(0)[-1]:]])
+                            result_counter[chunk_no].update(
+                                [pred[re.search("""The final answer is """, x).span(0)[-1] :]]
+                            )
                 answers.extend(result_counter)
             preds = [x.most_common(1)[0][0] for x in answers]
             perf_array.append(substring_match(labels, preds))
@@ -505,7 +589,7 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         perf_array = []
         runs = 5
         for run in range(runs):
-            print("Run %d"%run)
+            print("Run %d" % run)
             answers = []
             for x in tqdm(chunks(inputs, 10)):
                 x = [ex.replace("\nEdited:", "") for ex in x]
@@ -521,8 +605,14 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
 
 def affordance(temperature=0.3):
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=2048, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model="text-davinci-002",
+            max_length=2048,
+            temperature=temperature,
+            quote="---",
+            n=1,
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return gpt3(prompts)
 
     def string_edit(sequence, edit_operation):
@@ -530,25 +620,37 @@ def affordance(temperature=0.3):
         # Sequencce is either a list of sentences or words.
         edit_op = "Python program to " + edit_operation.strip()
         code_input = "x = " + sequence
-        response = openai.Edit.create(model="code-davinci-edit-001", input=code_input, instruction=edit_op, temperature=0, top_p=1)
-        #program_output = exec(response['choices'][0]['text'])
-        code = response['choices'][0]['text']
+        response = openai.Edit.create(
+            model="code-davinci-edit-001",
+            input=code_input,
+            instruction=edit_op,
+            temperature=0,
+            top_p=1,
+        )
+        # program_output = exec(response['choices'][0]['text'])
+        code = response["choices"][0]["text"]
         result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
         return result.stdout
 
     def predict_with_affordance(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=2048, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model="text-davinci-002",
+            max_length=2048,
+            temperature=temperature,
+            quote="---",
+            n=1,
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         new_answers = []
         for x in tqdm(chunks(inputs, 10)):
-            x = [ex.replace("\nEdited:", "") for ex in x] 
+            x = [ex.replace("\nEdited:", "") for ex in x]
             answers = predict(task_description, x)
             # Two programs that work, #1 string_split followed by string_edit #2 direct string edit.
             # affordance_inputs = [json.loads(a.strip().split("\n")[1].replace("#1: ", "")) for a in answers]
@@ -558,10 +660,12 @@ def affordance(temperature=0.3):
                 affordance_outputs = []
                 if ("string split" in a) and ("string edit" in a):
                     # Only split into sentences and ignore words.
-                    editing_input = a[re.search("#1: ", a).span(0)[1]:re.search("Q2: ", a).span(0)[0]].strip()
+                    editing_input = a[
+                        re.search("#1: ", a).span(0)[1] : re.search("Q2: ", a).span(0)[0]
+                    ].strip()
                     affordance_output = string_edit(editing_input, x[i].split(":")[1])
                     affordance_outputs.append(affordance_output)
-                    ex = x[i] + "\nQ1:" + a[:re.search("#2: ", a).span(0)[1]] + affordance_output
+                    ex = x[i] + "\nQ1:" + a[: re.search("#2: ", a).span(0)[1]] + affordance_output
                     time.sleep(60)
                 else:
                     ex = x[i]
@@ -580,7 +684,14 @@ def affordance(temperature=0.3):
 
 
 few_shot_cot_prompt = few_shot_code_prompt
-def nl_program(temperature=0.3, model_name="davinci-codex-002-msft", strategy="fixed", self_consistency=False):
+
+
+def nl_program(
+    temperature=0.3,
+    model_name="davinci-codex-002-msft",
+    strategy="fixed",
+    self_consistency=False,
+):
     global few_shot_cot_prompt
     task_name = "Simple Text Editing"
     task_description = "Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is."
@@ -596,39 +707,48 @@ def nl_program(temperature=0.3, model_name="davinci-codex-002-msft", strategy="f
     elif strategy == "llm_similar":
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
-    interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[generate python code]", "[code generate]"])
+    interpreter = TopDownVisitorBeta(
+        model_name=model_name,
+        exclude_list=["[generate python code]", "[code generate]"],
+    )
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     def predict_self_consistency(description, chunk, n=15):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=n
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     if self_consistency:
         perf_array = []
         runs = 2
         batch_size = 2
-        for run in range(runs): 
-            print("Run %d"%run)
-            answers = [] # List of counters
+        for run in range(runs):
+            print("Run %d" % run)
+            answers = []  # List of counters
             for x in tqdm(chunks(inputs, batch_size)):
                 x = [ex.replace("\nEdited:", "") for ex in x]
                 prompts, answer_set = predict_self_consistency(task_description, x)
                 result_counter = [Counter() for i in range(batch_size)]
                 for chunk_no, ans_chunk in enumerate(chunks(answer_set, 15)):
-                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
-                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    new_answer = interpreter.batch_visit(
+                        [prompts[chunk_no]] * len(ans_chunk), ans_chunk
+                    )
+                    processed_answers = [get_answer(ex) for ex in new_answer]
                     for pred in enumerate(processed_answers):
                         # Only add to the counter if there is a legitimate answer
                         if pred is not None:
                             result_counter[chunk_no].update([pred])
                 answers.extend(result_counter)
                 time.sleep(5)
-            preds = [x.most_common(1)[0][0][1] for x in answers[:len(inputs)]]
+            preds = [x.most_common(1)[0][0][1] for x in answers[: len(inputs)]]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)
         print("FS-CoT Performance:")
@@ -638,19 +758,22 @@ def nl_program(temperature=0.3, model_name="davinci-codex-002-msft", strategy="f
     else:
         perf_array = []
         runs = 1
-        for run in range(runs): 
-            print("Run %d"%run)
+        for run in range(runs):
+            print("Run %d" % run)
             answers = []
             for x in tqdm(chunks(inputs, 10)):
                 x = [ex.replace("\nEdited:", "") for ex in x]
                 prompts, answer = predict(task_description, x)
-                new_answer  = interpreter.batch_visit(prompts, answer)
+                new_answer = interpreter.batch_visit(prompts, answer)
                 answers.extend(new_answer)
             preds = [x.strip() for x in answers]
             perf_array.append(substring_match(labels, preds))
             # Report on interpreter performance
-            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
-            positive_rate = sum(positive_calls)/len(interpreter.execution_details)
+            positive_calls = [
+                int(len(stack_trace_list) >= 1)
+                for stack_trace_list in interpreter.execution_details
+            ]
+            positive_rate = sum(positive_calls) / len(interpreter.execution_details)
         print("FS-CoT Performance:")
         print("Mean", np.mean(perf_array))
         print("Std. Dev", np.std(perf_array))
@@ -661,7 +784,13 @@ def measure_task_selection_accuracy():
     task_name = "Simple Text Editing"
     task_description = "Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is."
     from prompt_library import task_selection_accuracy
-    task_selection_accuracy(["date_understanding", "language_games", "k_letter_concatenation"], task_name, task_description, io_pairs)
+
+    task_selection_accuracy(
+        ["date_understanding", "language_games", "k_letter_concatenation"],
+        task_name,
+        task_description,
+        io_pairs,
+    )
 
 
 few_shot_notebook_prompt = """In [1]:
@@ -690,7 +819,7 @@ get_sentence(input_text)
 Out [1]:
 "Ibrahim Francois Pei Shu Ngo"
 
-In [2]: 
+In [2]:
 input_text = "Ibrahim Francois Pei Shu Ngo"
 def get_tokens(text):
     tokens = text.split()
@@ -710,7 +839,7 @@ get_nth_char_in_list(input_tokens, 3)
 Out [3]:
 ["r", "a", "i", "o", "u"]
 
-In [4]: 
+In [4]:
 char_list = ["r", "a", "i", "o", "u"]
 def merge_chars(char_list):
     return " ".join(char_list)
@@ -737,7 +866,7 @@ get_sentence(input_text)
 Out [1]:
 "Savita Saeed Ramos Sato Yadav"
 
-In [2]: 
+In [2]:
 input_text = "Savita Saeed Ramos Sato Yadav"
 def get_tokens(text):
     tokens = text.split()
@@ -757,7 +886,7 @@ get_nth_char_in_list(input_tokens, 3)
 Out [3]:
 ["v", "e", "m", "t", "d"]
 
-In [4]: 
+In [4]:
 char_list = ["v", "e", "m", "t", "d"]
 def merge_chars(char_list):
     return " ".join(char_list)
@@ -796,7 +925,7 @@ get_tokens(input_text)
 Out [2]:
 ["Sami", "made", "his", "way", "across", "the", "bar", "and", "hugged", "Layla"]
 
-In [3]:                                  
+In [3]:
 input_tokens = ["Sami", "made", "his", "way", "across", "the", "bar", "and", "hugged", "Layla"]
 def get_pig_latin(token_list):
     vowels = ["a", "e", "i", "o", "u", "y"]
@@ -876,16 +1005,23 @@ In [1]:
 input_text = "%s"
 """
 
+
 def notebook(temperature=0.3, model_name="text-davinci-002"):
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=2048, temperature=temperature, quote='In [1]:', n=1)
-        prompts=[few_shot_notebook_prompt% (x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name,
+            max_length=2048,
+            temperature=temperature,
+            quote="In [1]:",
+            n=1,
+        )
+        prompts = [few_shot_notebook_prompt % (x) for x in chunk]
         return gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nEdited:", "") for ex in x]
@@ -945,7 +1081,7 @@ def swap_chars(word):
     if word[-1] in [".", "!", "?"]:
         return word[-2] + word[1:-2] + word[0] + word[-1]
     return word[-1] + word[1:-1] + word[0]
-    
+
 
 ans = []
 for i, sent in enumerate(pat.findall(text)):
@@ -965,7 +1101,7 @@ def swap_chars(word):
     if word[-1] in [".", "!", "?"]:
         return word[-2] + word[1:-2] + word[0] + word[-1]
     return word[-1] + word[1:-1] + word[0]
-    
+
 
 ans = []
 for i, sent in enumerate(pat.findall(text)):
@@ -1054,44 +1190,56 @@ Ans: Turing was WORD one of WORD the people WORD who worked WORD on the WORD fir
 Description: %s
 Input: %s
 Q1:"""
-def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+
+
+def human_intervention(
+    temperature=0.3,
+    model_name="text-davinci-002",
+    strategy="fixed",
+    self_consistency=False,
+):
     global few_shot_cot_prompt
-    task_name = "Simple Text Editing"
     task_description = "Edit the text in quotes based the edit operation provided at the end. Only edit relevant portions and replicate the remaining text as is."
 
     few_shot_cot_prompt = few_shot_human_prompt
     interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[code generate]"])
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     def predict_self_consistency(description, chunk, n=15):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=n
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     if self_consistency:
         perf_array = []
         runs = 2
         batch_size = 2
-        for run in range(runs): 
-            print("Run %d"%run)
-            answers = [] # List of counters
+        for run in range(runs):
+            print("Run %d" % run)
+            answers = []  # List of counters
             for x in tqdm(chunks(inputs, batch_size)):
                 x = [ex.replace("\nEdited:", "") for ex in x]
                 prompts, answer_set = predict_self_consistency(task_description, x)
                 result_counter = [Counter() for i in range(batch_size)]
                 for chunk_no, ans_chunk in enumerate(chunks(answer_set, 15)):
-                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
-                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    new_answer = interpreter.batch_visit(
+                        [prompts[chunk_no]] * len(ans_chunk), ans_chunk
+                    )
+                    processed_answers = [get_answer(ex) for ex in new_answer]
                     for pred in processed_answers:
                         # Only add to the counter if there is a legitimate answer
                         if pred is not None:
                             result_counter[chunk_no].update([pred])
                 answers.extend(result_counter)
-            preds = [x.most_common(1)[0][0] for x in answers[:len(inputs)]]
+            preds = [x.most_common(1)[0][0] for x in answers[: len(inputs)]]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)
         print("FS-CoT Performance:")
@@ -1101,36 +1249,69 @@ def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy=
     else:
         perf_array = []
         runs = 5
-        for run in range(runs): 
-            print("Run %d"%run)
+        for run in range(runs):
+            print("Run %d" % run)
             answers = []
             for x in tqdm(chunks(inputs, 10)):
                 x = [ex.replace("\nEdited:", "") for ex in x]
                 prompts, answer = predict(task_description, x)
-                new_answer  = interpreter.batch_visit(prompts, answer)
+                new_answer = interpreter.batch_visit(prompts, answer)
                 answers.extend(new_answer)
             preds = [get_answer(x) for x in answers]
             perf_array.append(substring_match(labels, preds))
             # Report on interpreter performance
-            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
-            positive_rate = sum(positive_calls)/(len(interpreter.execution_details) + 1e-6)
+            positive_calls = [
+                int(len(stack_trace_list) >= 1)
+                for stack_trace_list in interpreter.execution_details
+            ]
+            positive_rate = sum(positive_calls) / (len(interpreter.execution_details) + 1e-6)
         print("FS-CoT Performance:")
         print("Mean", np.mean(perf_array))
         print("Std. Dev", np.std(perf_array))
         print("Rate of affordance call", positive_rate)
 
+
 # human_intervention(0.3, "davinci-codex-002-msft")
 
 
 if __name__ == "__main__":
-    parser  = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001", "davinci-codex-002-msft"], default="text-davinci-002")
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--model_name",
+        type=str,
+        choices=[
+            "text-davinci-002",
+            "text-davinci-003",
+            "code-davinci-002",
+            "code-cushman-001",
+            "davinci-codex-002-msft",
+        ],
+        default="text-davinci-002",
+    )
     parser.add_argument("--temperature", type=float, default="0.3")
-    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program", "auto_cot_corrected"], default="few_shot")
+    parser.add_argument(
+        "--inference_strategy",
+        type=str,
+        choices=[
+            "dummy",
+            "few_shot",
+            "auto_cot",
+            "cot_rollout",
+            "few_shot_cot",
+            "nl_program",
+            "auto_cot_corrected",
+        ],
+        default="few_shot",
+    )
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
-    parser.add_argument("--self_consistency", default=False, action='store_true')
-    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
+    parser.add_argument("--self_consistency", default=False, action="store_true")
+    parser.add_argument(
+        "--selection_strategy",
+        type=str,
+        choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"],
+        default="fixed",
+    )
 
     args = parser.parse_args()
 
@@ -1139,20 +1320,35 @@ if __name__ == "__main__":
     print("Training examples:", len(train_inputs))
     print("Dev examples:", len(inputs))
 
-    inputs = inputs[:args.num_dev_examples]
-    labels = labels[:args.num_dev_examples]
+    inputs = inputs[: args.num_dev_examples]
+    labels = labels[: args.num_dev_examples]
 
     if args.inference_strategy == "few_shot":
         few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=args.num_train_examples)
-        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
+        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)["input_ids"]))
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
-        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
+        auto_cot(
+            args.temperature,
+            args.model_name,
+            predict=True,
+            use_corrected=False,
+            self_consistency=False,
+        )
     elif args.inference_strategy == "auto_cot_corrected":
-        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
+        auto_cot(
+            args.temperature,
+            args.model_name,
+            predict=True,
+            use_corrected=True,
+            self_consistency=False,
+        )
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)
-
-
+        nl_program(
+            args.temperature,
+            args.model_name,
+            self_consistency=args.self_consistency,
+            strategy=args.selection_strategy,
+        )

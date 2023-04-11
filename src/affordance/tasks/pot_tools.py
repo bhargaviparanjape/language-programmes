@@ -1,35 +1,31 @@
-from typing import Union, Any
 from math import isclose
+from typing import Union
+
 import func_timeout
 from sympy.solvers import solve
-from sympy import Symbol, Eq
-import math
-from sympy import simplify
-import numpy as np
-import cvxpy as cp
-import statistics
-import pdb
 
 
 def get_precision(gt_ans: float) -> int:
     precision = 5
-    if '.' in str(gt_ans):
-        precision = len(str(gt_ans).split('.')[-1])
+    if "." in str(gt_ans):
+        precision = len(str(gt_ans).split(".")[-1])
     return precision
 
 
-def finqa_equal(prediction: Union[bool, float, str],
-                reference: Union[float, str],
-                include_percentage: bool = False,
-                is_close: float = False) -> bool:
+def finqa_equal(
+    prediction: Union[bool, float, str],
+    reference: Union[float, str],
+    include_percentage: bool = False,
+    is_close: float = False,
+) -> bool:
     if prediction is None:
         return False
     elif type(prediction) == bool:
         # bool questions
         if prediction:
-            return reference == 'yes'
+            return reference == "yes"
         else:
-            return reference == 'no'
+            return reference == "no"
     elif type(reference) == str or type(prediction) == str:
         # string questions
         return prediction == reference
@@ -53,9 +49,9 @@ def finqa_equal(prediction: Union[bool, float, str],
 
 
 def simplify_ans(ans, convert_to_str: bool = True):
-    if 'relational' in str(type(ans)):
+    if "relational" in str(type(ans)):
         return str(ans)
-    elif 'numpy' in str(type(ans)):
+    elif "numpy" in str(type(ans)):
         if ans.shape == ():
             # scalar value
             ans = round(float(ans), 2)
@@ -70,7 +66,7 @@ def simplify_ans(ans, convert_to_str: bool = True):
         return None
     else:
         if type(ans) in [list, tuple]:
-            if 'sympy' in str(type(ans[0])):
+            if "sympy" in str(type(ans[0])):
                 try:
                     ans = [round(float(x), 2) for x in ans]
                 except Exception:
@@ -78,7 +74,7 @@ def simplify_ans(ans, convert_to_str: bool = True):
             if len(ans) == 1:
                 ans = ans[0]
         else:
-            if 'sympy' in str(type(ans)):
+            if "sympy" in str(type(ans)):
                 try:
                     ans = round(float(ans), 2)
                 except Exception:
@@ -114,9 +110,9 @@ def floatify_ans(ans):
 
 def parse_api_result(result):
     to_return = []
-    for idx, g in enumerate(result['choices']):
-        text = g['text']
-        logprob = sum(g['logprobs']['token_logprobs'])
+    for idx, g in enumerate(result["choices"]):
+        text = g["text"]
+        logprob = sum(g["logprobs"]["token_logprobs"])
         to_return.append((text, logprob))
     to_return = sorted(to_return, key=lambda tup: tup[1], reverse=True)
     to_return = [r[0] for r in to_return]
@@ -151,16 +147,18 @@ def solve_it(equation, variable):
         solution = solution[0]
         return solution
 """
+
     def execute(x):
         try:
             exec(code_prefix + x)
             locals_ = locals()
             if keys is None:
-                return locals_.get('ans', None)
+                return locals_.get("ans", None)
             else:
                 return [locals_.get(k, None) for k in keys]
         except Exception:
             return None
+
     try:
         ans = func_timeout.func_timeout(5, execute, args=(code_string,))
     except func_timeout.FunctionTimedOut:
@@ -171,13 +169,13 @@ def solve_it(equation, variable):
 
 def synthesize_program(result: str, prefix: str) -> str:
     program = prefix
-    for i, line in enumerate(result.split('\n')):
+    for i, line in enumerate(result.split("\n")):
         if i == 0:
-            program += line + '\n'
+            program += line + "\n"
         else:
-            if line.startswith('    '):
-                program += line + '\n'
+            if line.startswith("    "):
+                program += line + "\n"
             else:
                 break
-    program += 'ans = solver()'    
+    program += "ans = solver()"
     return program

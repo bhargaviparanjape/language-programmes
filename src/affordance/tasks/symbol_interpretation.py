@@ -1,44 +1,46 @@
 import argparse
-import ast
-import json
+from collections import Counter
 import pdb
-import re
-import time
-from re import L
-from turtle import pd
 
 import datasets
 import numpy as np
+from prompt_library import (
+    few_shot_code_prompt,
+    llm_similar_tasks,
+    random_tasks,
+    similar_auto_breakdowns,
+    similar_tasks,
+)
+from sequential_interpreter import TopDownVisitorBeta
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
-                   get_few_shot_prompt, get_subset, gpt3,
-                   propose_decomposition, propose_instruction, substring_match)
+from utils import (
+    OpenAIModel,
+    cache_dir,
+    chunks,
+    get_answer,
+    get_autocot_answer,
+    get_few_shot_prompt,
+    substring_match,
+)
 
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-import urllib.request
-from collections import Counter
 
-tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-from prompt_library import (llm_similar_tasks, random_tasks,
-                            similar_auto_breakdowns, similar_tasks,
-                            few_shot_retrieval_prompt, few_shot_code_prompt, 
-                            few_shot_arithmetic_prompt, few_shot_string_prompt)
-from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
-
-d = datasets.load_dataset('bigbench', 'symbol_interpretation', cache_dir=cache_dir)
-inputs = d['validation']['inputs']
+d = datasets.load_dataset("bigbench", "symbol_interpretation", cache_dir=cache_dir)
+inputs = d["validation"]["inputs"]
 # inputs = [x.split('\n')[0] for x in inputs]
-labels = d['validation']['targets']
+labels = d["validation"]["targets"]
 labels = [l[0] for l in labels]
 # print(len(inputs))
 
-train_inputs = d['train']['inputs']
-train_labels = d['train']['targets']
+train_inputs = d["train"]["inputs"]
+train_labels = d["train"]["targets"]
 
 task_description = "In different SIT worlds, a structure is a sequence of six emojis. You are given the emojis used and thier descriptions. You are given two structures and have to choose the sentence from five provided choices that is consistently describes one structure consistently but not another."
 
-io_pairs = [("""In the SIT-adversarial world a structure is a sequence of six emojis.
+io_pairs = [
+    (
+        """In the SIT-adversarial world a structure is a sequence of six emojis.
 Hereafter are reported the emojis used along with their descriptions.
  🔺 is a red circle;
  🟦 is a blue circle;
@@ -61,8 +63,10 @@ Choose the sentence consistent with the structure 🟥 🔻 🟨 _ 🔴 🟨 and
   choice: There are at least two yellow squares.
 
   choice: There is exactly one blue circle.""",
-"There is at least one triangle pointing down."),
-("""In the SIT-adversarial world a structure is a sequence of six emojis.
+        "There is at least one triangle pointing down.",
+    ),
+    (
+        """In the SIT-adversarial world a structure is a sequence of six emojis.
 Hereafter are reported the emojis used along with their descriptions.
  🔺 is a red circle;
  🟦 is a blue circle;
@@ -85,8 +89,10 @@ Choose the sentence consistent with the structure 🟥 🔴 🟥 🔺 🟥 🟡 
   choice: There are at most two triangles pointing up and at most one blue square.
 
   choice: There is at most one triangle pointing down or at least one blue square.""",
-"There are exactly two yellow pieces or exactly one yellow circle."),
-("""In the SIT-emoji-agnostic world a structure is a sequence of six emojis.
+        "There are exactly two yellow pieces or exactly one yellow circle.",
+    ),
+    (
+        """In the SIT-emoji-agnostic world a structure is a sequence of six emojis.
 Hereafter are reported the emojis used along with their descriptions.
  🐮 is a red circle;
  🐺 is a blue circle;
@@ -109,8 +115,10 @@ Choose the sentence consistent with the structure 🐱 🦁 🦁 🦝 🐔 🦁 
   choice: There are at least two yellow circles surrounded by circles.
 
   choice: There is exactly one blue square at the right of a triangle pointing up.""",
-"There is exactly one red piece at the left of a yellow circle."),
-("""In the SIT-emoji-agnostic world a structure is a sequence of six emojis.
+        "There is exactly one red piece at the left of a yellow circle.",
+    ),
+    (
+        """In the SIT-emoji-agnostic world a structure is a sequence of six emojis.
 Hereafter are reported the emojis used along with their descriptions.
  🐮 is a red circle;
  🐺 is a blue circle;
@@ -133,8 +141,10 @@ Choose the sentence consistent with the structure 🐯 🐮 🐱 🐮 🐯 🐯 
   choice: There are at most two yellow circles and exactly one triangle.
 
   choice: There is at most one red circle and exactly two red pieces.""",
-"There is exactly one red square and at least two red circles."),
-("""In the SIT-name-agnostic world a structure is a sequence of six emojis.
+        "There is exactly one red square and at least two red circles.",
+    ),
+    (
+        """In the SIT-name-agnostic world a structure is a sequence of six emojis.
 Hereafter are reported the emojis used along with their descriptions.
  🔴 is a X D;
  🔵 is a H D;
@@ -157,8 +167,10 @@ Choose the sentence consistent with the structure 🟡 🔵 🔴 🟨 🟦 🔺 
   choice: There are at least two X Ds or exactly one X I.
 
   choice: There is at least one U B or exactly one Y A.""",
-"There are exactly two U Is and at most one H B."),
-("""In the SIT-name-agnostic world a structure is a sequence of six emojis.
+        "There are exactly two U Is and at most one H B.",
+    ),
+    (
+        """In the SIT-name-agnostic world a structure is a sequence of six emojis.
 Hereafter are reported the emojis used along with their descriptions.
  🔴 is a X D;
  🔵 is a H D;
@@ -181,8 +193,10 @@ Choose the sentence consistent with the structure 🟨 🟨 🔵 🔴 🟨 _ and
   choice: There are at least two Ys surrounded by X Bs.
 
   choice: There is at least one U B at the left of a Y.""",
-"There are zero Ys touching a D."),
-("""In the SIT-name-agnostic world a structure is a sequence of six emojis.
+        "There are zero Ys touching a D.",
+    ),
+    (
+        """In the SIT-name-agnostic world a structure is a sequence of six emojis.
 Hereafter are reported the emojis used along with their descriptions.
  🔴 is a X D;
  🔵 is a H D;
@@ -205,8 +219,10 @@ Choose the sentence consistent with the structure 🔻 🔻 🔻 🔴 🔻 🔻 
   choice: There are exactly two U Is or exactly one U D.
 
   choice: There is at most one H I and at least two Ys A.""",
-"There is at most one H I and at least two Ys A."),
-("""In the SIT-plain world a structure is a sequence of six emojis.
+        "There is at most one H I and at least two Ys A.",
+    ),
+    (
+        """In the SIT-plain world a structure is a sequence of six emojis.
 Hereafter are reported the emojis used along with their descriptions.
  🔴 is a red circle;
  🔵 is a blue circle;
@@ -229,8 +245,10 @@ Choose the sentence consistent with the structure 🔵 🔻 🔺 🔺 🔵 🔵 
   choice: There are at least two red pieces touching a blue square.
 
   choice: There are exactly two yellow pieces at the right of a yellow piece.""",
-"There are at least two triangles touching a blue circle."),
-("""In the SIT-plain world a structure is a sequence of six emojis.
+        "There are at least two triangles touching a blue circle.",
+    ),
+    (
+        """In the SIT-plain world a structure is a sequence of six emojis.
 Hereafter are reported the emojis used along with their descriptions.
  🔴 is a red circle;
  🔵 is a blue circle;
@@ -253,8 +271,10 @@ Choose the sentence consistent with the structure 🔻 🟡 🟦 🟨 🟡 🟨 
   choice: There are at least two blue circles touching a blue circle.
 
   choice: There are exactly two yellow circles at the left of a blue piece.""",
-"There are at most two triangles touching a blue square."),
-("""In the SIT-tricky world a structure is a sequence of six emojis.
+        "There are at most two triangles touching a blue square.",
+    ),
+    (
+        """In the SIT-tricky world a structure is a sequence of six emojis.
 Hereafter are reported the emojis used along with their descriptions.
  🔴 is a der elcric;
  🔵 is an eulb elcric;
@@ -277,7 +297,9 @@ Choose the sentence consistent with the structure 🔵 🔻 🟡 🔴 _ 🟦 and
   choice: There are at least two der elcrics.
 
   choice: There is at least one der eceip.""",
-"There is at least one eulb elcric.")]
+        "There is at least one eulb elcric.",
+    ),
+]
 
 
 def exact_match(labels, predictions):
@@ -287,7 +309,8 @@ def exact_match(labels, predictions):
         if label.lower() == predict.lower():
             correct += 1
         count += 1
-    return (1.0*correct)/count
+    return (1.0 * correct) / count
+
 
 def token_match(labels, predictions):
     correct = 0
@@ -296,12 +319,16 @@ def token_match(labels, predictions):
         if label.lower() in [p.lower() for p in predict]:
             correct += 1
         count += 1
-    return (1.0*correct)/count
+    return (1.0 * correct) / count
+
 
 def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=200, temperature=temperature, quote='---', n=1)
-        prompts = ["""In the SIT-adversarial world a structure is a sequence of six emojis.
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=200, temperature=temperature, quote="---", n=1
+        )
+        prompts = [
+            """In the SIT-adversarial world a structure is a sequence of six emojis.
 Hereafter are reported the emojis used along with their descriptions.
  🔺 is a red circle;
  🟦 is a blue circle;
@@ -572,13 +599,16 @@ A:
 There is at least one eulb elcric.
 ----
 %s
-""" % x for x in chunk]
+"""
+            % x
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
@@ -789,14 +819,25 @@ Now, we can see that the first sentence is consistent with the first structure a
 The best answer choice is "There are exactly two H Is and exactly one U I"
 ----
 """
-def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
+
+
+def auto_cot(
+    temperature=0.3,
+    model_name="text-davinci-002",
+    predict=True,
+    use_corrected=False,
+    self_consistency=False,
+):
     global auto_cot_cleaned_prompt
     global auto_cot_corrected_prompt
     auto_cot_prompt = ""
     for io_pair in io_pairs[:5]:
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=0.7, quote='---', n=1)
-        prompt = """%s\n"""% task_description + io_pair[0] + \
-            """\nThe final answer is one of the five choices.\nA: Let's think step-by-step.\n""" 
+        gpt3 = OpenAIModel(model=model_name, max_length=1000, temperature=0.7, quote="---", n=1)
+        prompt = (
+            """%s\n""" % task_description
+            + io_pair[0]
+            + """\nThe final answer is one of the five choices.\nA: Let's think step-by-step.\n"""
+        )
         auto_cot_prompt += prompt
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
@@ -805,9 +846,9 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         auto_cot_prompt = auto_cot_corrected_prompt
     else:
         auto_cot_prompt = auto_cot_cleaned_prompt
-    
+
     print(auto_cot_prompt)
-    f = open("auto_cot_demonstrations.txt","a+")
+    f = open("auto_cot_demonstrations.txt", "a+")
     f.write("Anachronisms\n\n")
     f.write(auto_cot_prompt)
 
@@ -815,21 +856,34 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         return
 
     def predict_self_consistency(description, chunk, n=5):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
-        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
-            """%s\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=n
+        )
+        prompts = [
+            auto_cot_prompt
+            + """%s\n""" % task_description
+            + """%s\nA: Let's think step-by-step.\n""" % (x)
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=temperature, quote='---', n=1)
-        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
-            """%s\nThe final answer is one of the five choices.\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=500, temperature=temperature, quote="---", n=1
+        )
+        prompts = [
+            auto_cot_prompt
+            + """%s\n""" % task_description
+            + """%s\nThe final answer is one of the five choices.\nA: Let's think step-by-step.\n"""
+            % (x)
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
@@ -843,14 +897,13 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
     print("Std. Dev", np.std(perf_array))
 
 
-
-few_shot_cot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use arithmetic and algebra functions in one or more of your substeps.
+few_shot_cot_prompt = """In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use arithmetic and algebra functions in one or more of your substeps.
 Description: Solve the following arithmetic problems on ratios and fractions, , writing out intermediate arithmetic calculations as needed.
 Input: Divide the number 49 into two parts, such that if the greater part is increased by 6 and the lesser part is decreased by 11, their ratio is 9 to 2. What is the greater number?
-    choice: 29 
-    choice: 30 
-    choice: 31 
-    choice: 32 
+    choice: 29
+    choice: 30
+    choice: 31
+    choice: 32
     choice: None
 Q1: [algebra] Let the greater part be x. What is the lesser part?
 #1: 49-x
@@ -875,7 +928,7 @@ Q1: [search] What is the first quarter of a year?
 #1: The traditional calendar quarters that make up the year are: Dates for Q1: January 1 – March 31. Dates for Q2: April 1 – June 3. Dates for Q3: July 1 – September 30. Dates for Q4: October 1 – December 31.
 Q2: [arithmetic] What is the last day of the first quarter?
 #2: March 31
-Q3: [arithmetic] What day is today?  
+Q3: [arithmetic] What day is today?
 #3: March 31, 2008
 Q4: [string reformat] March 31, 2008
 #4: 03/31/2008
@@ -941,15 +994,15 @@ Q5: [subquestion] What is the distance moved backward?
 Q6: [subquestion] What is the distance moved left?
 #6: 0 steps
 Q7: [arithmetic] What is total distance moved from starting point?
-#7: 7 steps vertically, 8 steps horizontally 
-Q8: [subquestion] Is the total distance moved, both vertically and horizontally, 0? 
+#7: 7 steps vertically, 8 steps horizontally
+Q8: [subquestion] Is the total distance moved, both vertically and horizontally, 0?
 #8: No
 Q9: [EOC]
 No
 ----
-Description: 
+Description:
 Input: If two trains depart from a station in opposite directions, and one train is traveling 60 miles an hour while the other is traveling half that distance per hour, how far apart are they from each other after 3 hours?
-Q1: [arithmetic] What is the speed of the second train? 
+Q1: [arithmetic] What is the speed of the second train?
 #1: 60/2=30 miles an hour
 Q2: [arithmetic] What is distance travelled by first train?
 #2: 60*3=180 miles
@@ -965,7 +1018,6 @@ Q6: [EOC]
 Desciption: %s
 Input: %s
 Q1: """
-
 
 
 def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
@@ -985,23 +1037,33 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1024, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description + """Clue: Translating the two subsequences will help.""", x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1024, temperature=temperature, quote="---", n=1
+        )
+        prompts = [
+            few_shot_cot_prompt
+            % (description + """Clue: Translating the two subsequences will help.""", x)
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
 
     def predict_complete(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         outputs = gpt3(prompts)
-        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        completed_outputs = [
+            interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)
+        ]
         return completed_outputs
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
@@ -1015,10 +1077,16 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
+
 few_shot_cot_prompt = few_shot_code_prompt
 
-def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
-    
+
+def nl_program(
+    temperature=0.3,
+    model_name="text-davinci-002",
+    strategy="fixed",
+    self_consistency=False,
+):
     global few_shot_cot_prompt
     task_name = "Symbol interpretation"
     task_description = "(Symbol interpretation) In different SIT worlds, a structure is a sequence of six emojis. You are given the emojis used and thier descriptions. You are given two structures and have to choose the sentence from five provided choices that is consistently describes one structure consistently but not another."
@@ -1037,68 +1105,86 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     interpreter = TopDownVisitorBeta(model_name=model_name)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     perf_array = []
     runs = 1
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         new_labels = ["Ans: " + label for label in labels]
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
             prompts, answer = predict(task_description, x)
-            new_answer  = interpreter.batch_visit(prompts, answer)
+            new_answer = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
         preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
-        positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
-        positive_rate = sum(positive_calls)/len(interpreter.execution_details)
+        positive_calls = [
+            int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details
+        ]
+        positive_rate = sum(positive_calls) / len(interpreter.execution_details)
     print("FS-CoT Performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
     print("Rate of affordance call", positive_rate)
 
+
 few_shot_human_prompt = """"""
-def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+
+
+def human_intervention(
+    temperature=0.3,
+    model_name="text-davinci-002",
+    strategy="fixed",
+    self_consistency=False,
+):
     global few_shot_cot_prompt
 
     few_shot_cot_prompt = few_shot_code_prompt
     interpreter = TopDownVisitorBeta(model_name=model_name)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     def predict_self_consistency(description, chunk, n=9):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=n
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     if self_consistency:
         perf_array = []
         runs = 2
         batch_size = 2
-        for run in range(runs): 
-            print("Run %d"%run)
-            answers = [] # List of counters
+        for run in range(runs):
+            print("Run %d" % run)
+            answers = []  # List of counters
             for x in tqdm(chunks(inputs, batch_size)):
                 x = [ex.replace("\nEdited:", "") for ex in x]
                 prompts, answer_set = predict_self_consistency(task_description, x)
                 result_counter = [Counter() for i in range(batch_size)]
                 for chunk_no, ans_chunk in enumerate(chunks(answer_set, 9)):
-                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
-                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    new_answer = interpreter.batch_visit(
+                        [prompts[chunk_no]] * len(ans_chunk), ans_chunk
+                    )
+                    processed_answers = [get_answer(ex) for ex in new_answer]
                     for pred in enumerate(processed_answers):
                         # Only add to the counter if there is a legitimate answer
                         if pred is not None:
                             result_counter[chunk_no].update([pred])
                 answers.extend(result_counter)
-            preds = [x.most_common(1)[0][0][1] for x in answers[:len(inputs)]]
+            preds = [x.most_common(1)[0][0][1] for x in answers[: len(inputs)]]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)
         print("FS-CoT Performance:")
@@ -1108,36 +1194,68 @@ def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy=
     else:
         perf_array = []
         runs = 5
-        for run in range(runs): 
-            print("Run %d"%run)
+        for run in range(runs):
+            print("Run %d" % run)
             answers = []
             for x in tqdm(chunks(inputs, 10)):
                 x = [ex.replace("\nA:", "") for ex in x]
                 prompts, answer = predict(task_description, x)
-                new_answer  = interpreter.batch_visit(prompts, answer)
+                new_answer = interpreter.batch_visit(prompts, answer)
                 answers.extend(new_answer)
                 pdb.set_trace()
             preds = [x.strip() for x in answers]
             perf_array.append(substring_match(labels, preds))
             # Report on interpreter performance
-            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
-            positive_rate = sum(positive_calls)/(len(interpreter.execution_details) + 1e-6)
+            positive_calls = [
+                int(len(stack_trace_list) >= 1)
+                for stack_trace_list in interpreter.execution_details
+            ]
+            positive_rate = sum(positive_calls) / (len(interpreter.execution_details) + 1e-6)
         print("FS-CoT Performance:")
         print("Mean", np.mean(perf_array))
         print("Std. Dev", np.std(perf_array))
         print("Rate of affordance call", positive_rate)
 
+
 human_intervention(0.3, "davinci-codex-002-msft")
 
 if __name__ == "__main__":
-    parser  = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001", "davinci-codex-002-msft"], default="text-davinci-002")
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--model_name",
+        type=str,
+        choices=[
+            "text-davinci-002",
+            "text-davinci-003",
+            "code-davinci-002",
+            "code-cushman-001",
+            "davinci-codex-002-msft",
+        ],
+        default="text-davinci-002",
+    )
     parser.add_argument("--temperature", type=float, default="0.3")
-    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument(
+        "--inference_strategy",
+        type=str,
+        choices=[
+            "dummy",
+            "few_shot",
+            "auto_cot",
+            "cot_rollout",
+            "few_shot_cot",
+            "nl_program",
+        ],
+        default="few_shot",
+    )
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
-    parser.add_argument("--self_consistency", default=False, action='store_true')
-    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
+    parser.add_argument("--self_consistency", default=False, action="store_true")
+    parser.add_argument(
+        "--selection_strategy",
+        type=str,
+        choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"],
+        default="fixed",
+    )
 
     args = parser.parse_args()
 
@@ -1146,16 +1264,27 @@ if __name__ == "__main__":
     print("Training examples:", len(train_inputs))
     print("Dev examples:", len(inputs))
 
-    inputs = inputs[:args.num_dev_examples]
-    labels = labels[:args.num_dev_examples]
+    inputs = inputs[: args.num_dev_examples]
+    labels = labels[: args.num_dev_examples]
 
     if args.inference_strategy == "few_shot":
         few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=args.num_train_examples)
-        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
+        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)["input_ids"]))
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
-        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
+        auto_cot(
+            args.temperature,
+            args.model_name,
+            predict=True,
+            use_corrected=False,
+            self_consistency=False,
+        )
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)
+        nl_program(
+            args.temperature,
+            args.model_name,
+            self_consistency=args.self_consistency,
+            strategy=args.selection_strategy,
+        )

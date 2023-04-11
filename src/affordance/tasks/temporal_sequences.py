@@ -1,47 +1,51 @@
 import argparse
-import ast
+from collections import Counter
 import json
 import pdb
 import re
-import time
-from re import L
-from turtle import pd
 
 import datasets
 import numpy as np
+from prompt_library import (
+    few_shot_arithmetic_prompt,
+    few_shot_free_prompt,
+    llm_similar_tasks,
+    random_tasks,
+    similar_auto_breakdowns,
+    similar_tasks,
+)
+from sequential_interpreter import TopDownVisitorBeta
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_autocot_answer,
-                   get_few_shot_prompt, get_subset, gpt3,
-                   propose_decomposition, propose_instruction, substring_match,
-                   substring_match_v2)
+from utils import (
+    OpenAIModel,
+    cache_dir,
+    chunks,
+    get_answer,
+    get_autocot_answer,
+    get_few_shot_prompt,
+    substring_match,
+    substring_match_v2,
+)
 
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-import urllib.request
-from collections import Counter
 
-tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-from prompt_library import (llm_similar_tasks, random_tasks,
-                            similar_auto_breakdowns, similar_tasks,
-                            few_shot_retrieval_prompt, few_shot_code_prompt, 
-                            few_shot_arithmetic_prompt, few_shot_string_prompt,
-                            few_shot_free_prompt)
-from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
-
-d = datasets.load_dataset('bigbench', 'temporal_sequences', cache_dir=cache_dir)
-inputs = d['validation']['inputs']
+d = datasets.load_dataset("bigbench", "temporal_sequences", cache_dir=cache_dir)
+inputs = d["validation"]["inputs"]
 # inputs = [x.split('\n')[0] for x in inputs]
-labels = d['validation']['targets']
+labels = d["validation"]["targets"]
 labels = [l[0] for l in labels]
 # print(len(inputs))
 
-train_inputs = d['train']['inputs']
-train_labels = d['train']['targets']
+train_inputs = d["train"]["inputs"]
+train_labels = d["train"]["targets"]
 
 task_description = """(Temporal sequences) Given the daily schedule of activities of a person and a final activity that they need to find time for, choose one of the four provided options when they could do the activity."""
 
-io_pairs = [("""Today, Elizabeth went to the construction site. Between what times could they have gone?
-We know that: 
+io_pairs = [
+    (
+        """Today, Elizabeth went to the construction site. Between what times could they have gone?
+We know that:
 Elizabeth woke up at 5am.
 Lisa saw Elizabeth buying a phone at the electronics store from 5am to 10am.
 Mary saw Elizabeth waiting at the train station from 10am to 11am.
@@ -54,9 +58,11 @@ Between what times could Elizabeth have gone to the construction site?
   choice: 10am to 11am
   choice: 3pm to 9pm
 Possible times:""",
-"11am to 1pm"),
-("""Today, Andrew went to the art show. Between what times could they have gone?
-We know that: 
+        "11am to 1pm",
+    ),
+    (
+        """Today, Andrew went to the art show. Between what times could they have gone?
+We know that:
 Andrew woke up at 6am.
 Kimberly saw Andrew waiting at the airport from 10am to 12pm.
 Anthony saw Andrew attending class at the school from 12pm to 7pm.
@@ -68,9 +74,11 @@ Between what times could Andrew have gone to the art show?
   choice: 10am to 12pm
   choice: 6am to 10am
 Possible times:""",
-"6am to 10am"),
-("""Today, Susan went to the orchestra hall. Between what times could they have gone?
-We know that: 
+        "6am to 10am",
+    ),
+    (
+        """Today, Susan went to the orchestra hall. Between what times could they have gone?
+We know that:
 Susan woke up at 5am.
 Thomas saw Susan buying cookies at a bakery from 5am to 9am.
 Ashley saw Susan buying a phone at the electronics store from 9am to 10am.
@@ -84,9 +92,11 @@ Between what times could Susan have gone to the orchestra hall?
   choice: 10am to 12pm
   choice: 3pm to 8pm
 Possible times:""",
-"12pm to 1pm"),
-("""Today, Jennifer went to the art show. Between what times could they have gone?
-We know that: 
+        "12pm to 1pm",
+    ),
+    (
+        """Today, Jennifer went to the art show. Between what times could they have gone?
+We know that:
 Jennifer woke up at 5am.
 Ashley saw Jennifer sitting on a rooftop from 7am to 3pm.
 David saw Jennifer buying a bike at the bike shop from 3pm to 5pm.
@@ -100,7 +110,10 @@ Between what times could Jennifer have gone to the art show?
   choice: 3pm to 5pm
   choice: 5pm to 6pm
 Possible times:""",
-"5am to 7am")]
+        "5am to 7am",
+    ),
+]
+
 
 def exact_match(labels, predictions):
     correct = 0
@@ -109,7 +122,8 @@ def exact_match(labels, predictions):
         if label.lower() == predict.lower():
             correct += 1
         count += 1
-    return (1.0*correct)/count
+    return (1.0 * correct) / count
+
 
 def token_match(labels, predictions):
     correct = 0
@@ -118,24 +132,29 @@ def token_match(labels, predictions):
         if label.lower() in [p.lower() for p in predict]:
             correct += 1
         count += 1
-    return (1.0*correct)/count
+    return (1.0 * correct) / count
+
 
 def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
-
     few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=N)
-    print(len(tokenizer(few_shot_prompt)['input_ids']))
+    print(len(tokenizer(few_shot_prompt)["input_ids"]))
 
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=200, temperature=temperature, quote='---', n=1)
-        prompts = ["""%s\
-%s""" % (few_shot_prompt, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=200, temperature=temperature, quote="---", n=1
+        )
+        prompts = [
+            """%s\
+%s"""
+            % (few_shot_prompt, x)
+            for x in chunk
+        ]
         return gpt3(prompts)
-
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
@@ -147,9 +166,9 @@ def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     print("Std. Dev", np.std(perf_array))
 
 
-# few_shot_cot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use a python code generation and execution function in one or more of your substeps, if required. Other functions like arithmetic and logical operations can also be used. 
-# Description: 
-# Input: 
+# few_shot_cot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use a python code generation and execution function in one or more of your substeps, if required. Other functions like arithmetic and logical operations can also be used.
+# Description:
+# Input:
 # ```
 # if x < 5:
 # 	pass
@@ -240,9 +259,9 @@ def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
 
 few_shot_cot_prompt = few_shot_arithmetic_prompt
 
-auto_cot_corrected_prompt = """TASK: 
+auto_cot_corrected_prompt = """TASK:
 Today, Elizabeth went to the construction site. Between what times could they have gone?
-We know that: 
+We know that:
 Elizabeth woke up at 5am.
 Lisa saw Elizabeth buying a phone at the electronics store from 5am to 10am.
 Mary saw Elizabeth waiting at the train station from 10am to 11am.
@@ -264,9 +283,9 @@ That means the only possible time Elizabeth could have gone to the construction 
 
 The best answer choice is 11am to 1pm.
 ----
-TASK: 
+TASK:
 Today, Andrew went to the art show. Between what times could they have gone?
-We know that: 
+We know that:
 Andrew woke up at 6am.
 Kimberly saw Andrew waiting at the airport from 10am to 12pm.
 Anthony saw Andrew attending class at the school from 12pm to 7pm.
@@ -282,14 +301,14 @@ A: Let's think step-by-step.
 
 The art show was closed after 8pm. So Andrew can only go to the art show before 8pm. Andrew woke up at 6am.
 Kimberly saw Andrew waiting at the airport from 10am to 12pm. Anthony saw Andrew attending class at the school from 12pm to 7pm. John saw Andrew working out at the gym from 7pm to 8pm.
-So, we know that Andrew was at the airport from 10am to 12pm, at school from 12pm to 7pm, and at the gym from 7pm to 8pm. 
+So, we know that Andrew was at the airport from 10am to 12pm, at school from 12pm to 7pm, and at the gym from 7pm to 8pm.
 That means that the only time he could have gone to the art show was between the time he woke up and 10am.
 
 The best answer choice is 6am to 10am.
 ----
-TASK: 
+TASK:
 Today, Susan went to the orchestra hall. Between what times could they have gone?
-We know that: 
+We know that:
 Susan woke up at 5am.
 Thomas saw Susan buying cookies at a bakery from 5am to 9am.
 Ashley saw Susan buying a phone at the electronics store from 9am to 10am.
@@ -313,9 +332,9 @@ Putting all of this together, we can see that the earliest Susan could have gone
 
 The best answer choice is 12pm to 1pm.
 ----
-TASK: 
+TASK:
 Today, Jennifer went to the art show. Between what times could they have gone?
-We know that: 
+We know that:
 Jennifer woke up at 5am.
 Ashley saw Jennifer sitting on a rooftop from 7am to 3pm.
 David saw Jennifer buying a bike at the bike shop from 3pm to 5pm.
@@ -340,9 +359,9 @@ The best answer choice is 5am to 7am.
 ----
 """
 
-auto_cot_cleaned_prompt = """TASK: 
+auto_cot_cleaned_prompt = """TASK:
 Today, Elizabeth went to the construction site. Between what times could they have gone?
-We know that: 
+We know that:
 Elizabeth woke up at 5am.
 Lisa saw Elizabeth buying a phone at the electronics store from 5am to 10am.
 Mary saw Elizabeth waiting at the train station from 10am to 11am.
@@ -364,9 +383,9 @@ Therefore, the possible times that Elizabeth could have gone to the construction
 
 The best answer choice is 5am to 10am.
 ----
-TASK: 
+TASK:
 Today, Andrew went to the art show. Between what times could they have gone?
-We know that: 
+We know that:
 Andrew woke up at 6am.
 Kimberly saw Andrew waiting at the airport from 10am to 12pm.
 Anthony saw Andrew attending class at the school from 12pm to 7pm.
@@ -386,9 +405,9 @@ That means that the only time that Andrew could have gone to the art show would 
 
 The best answer choice is 6am and 10am.
 ----
-TASK: 
+TASK:
 Today, Susan went to the orchestra hall. Between what times could they have gone?
-We know that: 
+We know that:
 Susan woke up at 5am.
 Thomas saw Susan buying cookies at a bakery from 5am to 9am.
 Ashley saw Susan buying a phone at the electronics store from 9am to 10am.
@@ -414,9 +433,9 @@ That means that the possible times Susan could have gone to the orchestra hall a
 
 The best answer choice is 5am to 9am.
 ----
-TASK: 
+TASK:
 Today, Jennifer went to the art show. Between what times could they have gone?
-We know that: 
+We know that:
 Jennifer woke up at 5am.
 Ashley saw Jennifer sitting on a rooftop from 7am to 3pm.
 David saw Jennifer buying a bike at the bike shop from 3pm to 5pm.
@@ -443,15 +462,22 @@ So, the possible times Jennifer could have gone to the art show are 5am to 3pm, 
 The best answer choice is 5pm to 6pm.
 ----
 """
-def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
+
+
+def auto_cot(
+    temperature=0.3,
+    model_name="text-davinci-002",
+    predict=True,
+    use_corrected=False,
+    self_consistency=False,
+):
     global auto_cot_corrected_prompt
     global auto_cot_cleaned_prompt
     auto_cot_prompt = ""
     description = "TASK: "
     for io_pair in io_pairs:
-        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=0.2, quote='---', n=1)
-        prompt = """%s\n"""%description + io_pair[0] + \
-            """\nA: Let's think step-by-step.\n"""
+        gpt3 = OpenAIModel(model=model_name, max_length=500, temperature=0.2, quote="---", n=1)
+        prompt = """%s\n""" % description + io_pair[0] + """\nA: Let's think step-by-step.\n"""
         auto_cot_prompt += prompt
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
@@ -460,9 +486,9 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         auto_cot_prompt = auto_cot_corrected_prompt
     else:
         auto_cot_prompt = auto_cot_cleaned_prompt
-    
+
     print(auto_cot_prompt)
-    f = open("auto_cot_demonstrations.txt","a+")
+    f = open("auto_cot_demonstrations.txt", "a+")
     f.write("Anachronisms\n\n")
     f.write(auto_cot_prompt)
 
@@ -470,22 +496,31 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         return
 
     def predict_self_consistency(description, chunk, n=5):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
-        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
-            """%s\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=n
+        )
+        prompts = [
+            auto_cot_prompt
+            + """%s\n""" % task_description
+            + """%s\nA: Let's think step-by-step.\n""" % (x)
+            for x in chunk
+        ]
         return gpt3(prompts)
-    
 
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=0.2, quote='---', n=1)
-        prompts=[auto_cot_prompt + """%s\n""" %description + \
-            """%s\nA: Let's think step-by-step.\n"""%x for x in chunk]
+        gpt3 = OpenAIModel(model=model_name, max_length=500, temperature=0.2, quote="---", n=1)
+        prompts = [
+            auto_cot_prompt
+            + """%s\n""" % description
+            + """%s\nA: Let's think step-by-step.\n""" % x
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nPossible times:", "") for ex in x]
@@ -499,11 +534,17 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
     print("Std. Dev", np.std(perf_array))
 
 
-
 def human_decomp(temperature=0.3):
     def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts = ["""Q: Today, Emily went to the museum. Between what times could they have gone?
+        gpt3 = OpenAIModel(
+            model="text-davinci-002",
+            max_length=1000,
+            temperature=temperature,
+            quote="---",
+            n=1,
+        )
+        prompts = [
+            """Q: Today, Emily went to the museum. Between what times could they have gone?
 We know that:
 Emily woke up at 1pm.
 Elizabeth saw Emily reading at the library from 2pm to 4pm.
@@ -577,13 +618,16 @@ The beach closure time: 4pm.
 The only time when Tiffany could have gone to the beach was 3pm to 4pm. So the answer is 3pm to 4pm.
 ----
 %s
-A: Let's think step by step.""" % x for x in chunk]
+A: Let's think step by step."""
+            % x
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nPossible times:", "") for ex in x]
@@ -595,38 +639,50 @@ A: Let's think step by step.""" % x for x in chunk]
     print("Std. Dev", np.std(perf_array))
 
 
-
 def affordance():
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=2048, temperature=0.4, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(model=model_name, max_length=2048, temperature=0.4, quote="---", n=1)
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return gpt3(prompts)
 
     def string_index(sequence, position):
         char_list = []
         for word in sequence:
-            character  = word[position]
+            character = word[position]
             char_list.append(character)
         return char_list
 
     def predict_with_affordance(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=2048, temperature=0.4, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(model=model_name, max_length=2048, temperature=0.4, quote="---", n=1)
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         new_answers = []
         for x in tqdm(chunks(inputs, 10)):
-            answers = predict("Take the letters at position 3 of the words in a list of words and concatenate them using a space.", x)
+            answers = predict(
+                "Take the letters at position 3 of the words in a list of words and concatenate them using a space.",
+                x,
+            )
             pdb.set_trace()
-            affordance_inputs = [json.loads(a.strip().split("\n")[1].replace("#1: ", "")) for a in answers]
+            affordance_inputs = [
+                json.loads(a.strip().split("\n")[1].replace("#1: ", "")) for a in answers
+            ]
             affordance_outputs = [string_index(inp, 2) for inp in affordance_inputs]
-            x = [ex + a[:re.search("#2: ", a).span(0)[1]] + json.dumps(o) for ex, a, o in zip(x, answers, affordance_outputs)]
-            new_answers.extend(predict_with_affordance("Take the letters at position 3 of the words in a list of words and concatenate them using a space.", x))
+            x = [
+                ex + a[: re.search("#2: ", a).span(0)[1]] + json.dumps(o)
+                for ex, a, o in zip(x, answers, affordance_outputs)
+            ]
+            new_answers.extend(
+                predict_with_affordance(
+                    "Take the letters at position 3 of the words in a list of words and concatenate them using a space.",
+                    x,
+                )
+            )
         preds = [[y.strip() for y in x.split("\n")] for x in new_answers]
         perf_array.append(token_match(labels, preds))
         print(perf_array)
@@ -636,7 +692,6 @@ def affordance():
 
 
 def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
-
     if strategy == "random":
         few_shot_cot_prompt = random_tasks(N=6)
     elif strategy == "similar":
@@ -647,14 +702,16 @@ def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
         few_shot_cot_prompt = llm_similar_tasks(task_description, io_pairs, N=6)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=2048, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=2048, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             # x = [ex.replace("\nA:", "") for ex in x]
@@ -667,7 +724,7 @@ def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
     print("Std. Dev", np.std(perf_array))
 
 
-few_shot_pot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can generate python code to solve arithmetic and algebra equations in using functions from sympy.
+few_shot_pot_prompt = """In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can generate python code to solve arithmetic and algebra equations in using functions from sympy.
 from sympy import Symbol
 from sympy import simplify
 import math
@@ -689,7 +746,7 @@ print(ans)
 Q2: [code execute] Execute the python code in #1 and get the value of "ans"
 #2:
 1.0
-Q3: [compare] Which of the options among A)1 hour B)2 hours C)3 hours D)4 hours E)5 hours is most similar to the answer? 
+Q3: [compare] Which of the options among A)1 hour B)2 hours C)3 hours D)4 hours E)5 hours is most similar to the answer?
 #3: A
 Q3: [EOQ]
 Ans: A
@@ -706,7 +763,7 @@ ans=simplify(cost_after_dropout - cost_before_dropout)
 print(ans)
 Q2: [code execute] Execute the python code in #1 and get the value of "ans"
 #2: 3*D/(M*(M - 3))
-Q3: [compare] Which of the options among A)D/(M-3) B)MD/3 C)M/(D-3) D)3D/(M**2-3M) E)None of these is most similar to the answer? 
+Q3: [compare] Which of the options among A)D/(M-3) B)MD/3 C)M/(D-3) D)3D/(M**2-3M) E)None of these is most similar to the answer?
 #3: D
 Q4: [EOQ]
 Ans: D
@@ -744,7 +801,7 @@ Q3: [EOQ]
 Ans: 20
 ----
 Description: Solve the following middle-school arithmetic problems, writing out intermediate arithmetic calculations as python code. Store your result as a variable named 'ans'.
-Input: Joseph and Getty went to buy ice creams, they together bought 36 ice creams. On the way back, Joseph ate 12 of the ice creasm, and he has 2 ice creams left now. 
+Input: Joseph and Getty went to buy ice creams, they together bought 36 ice creams. On the way back, Joseph ate 12 of the ice creasm, and he has 2 ice creams left now.
 Q1: [generate python code] write down the arithmetic or algebra equations as python code
 #1:
 num_ice_creams_bought_by_joseph = 2 + 12
@@ -776,6 +833,8 @@ Input: %s
 Q1:"""
 
 few_shot_cot_prompt = few_shot_arithmetic_prompt
+
+
 # few_shot_cot_prompt = few_shot_free_prompt
 def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed"):
     global few_shot_cot_prompt
@@ -795,27 +854,36 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=2048, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_pot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=2048, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_pot_prompt % (description, x) for x in chunk]
         return gpt3(prompts)
 
     interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
 
     def predict_complete(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         outputs = gpt3(prompts)
-        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        completed_outputs = [
+            interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)
+        ]
         return completed_outputs
 
     perf_array = []
     runs = 5
     task_description = "Temporal sequences: Given the daily schedule of activities of a person and a final activity that they need to find time for, choose one of the four provided options when they could do the activity. Write out intermediate calculations as python code and store result as a variable named 'ans'."
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
-        label_dict = {0:"(A)", 1:"(B)", 2:"(C)", 3:"(D)"}
-        choices = [[ans.strip() for ans in inp.replace("\nPossible times:", "").split("choice: ")][1:] for inp in inputs]
+        label_dict = {0: "(A)", 1: "(B)", 2: "(C)", 3: "(D)"}
+        choices = [
+            [ans.strip() for ans in inp.replace("\nPossible times:", "").split("choice: ")][1:]
+            for inp in inputs
+        ]
         new_labels = [label_dict[choice.index(label)] for label, choice in zip(labels, choices)]
         joint_labels = [[label, new_label] for label, new_label in zip(labels, new_labels)]
         for x in tqdm(chunks(inputs, 10)):
@@ -831,17 +899,19 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     print("Std. Dev", np.std(perf_array))
 
 
-def affordance(temperature=0.3, model_name = "text-davinci-002"):
+def affordance(temperature=0.3, model_name="text-davinci-002"):
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=2048, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_pot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=2048, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_pot_prompt % (description, x) for x in chunk]
         return gpt3(prompts)
 
     perf_array = []
     runs = 5
     task_description = "Select the option that best replaces '()' in each text input given the chocies presented, by solving the arithmetic word problem in the text input. Solving the problem will require reasoning about units of measurement. Write out intermediate calculations as python code and store result as a variable named 'ans'."
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
@@ -849,7 +919,7 @@ def affordance(temperature=0.3, model_name = "text-davinci-002"):
             new_answers = []
             for ans in answers:
                 try:
-                    parsed_program  = parse_program("Input: dummy\nQ1:" + ans)
+                    parsed_program = parse_program("Input: dummy\nQ1:" + ans)
                     code_snippet = parsed_program.node_list[0].command_output
                     result = safe_execute(code_snippet)
                 except:
@@ -857,7 +927,9 @@ def affordance(temperature=0.3, model_name = "text-davinci-002"):
                 if result:
                     new_answers.append(result)
                 else:
-                    new_answers.append(ans[re.search('Ans:', ans).span(0)[0]:] if "Ans:" in ans else ans)
+                    new_answers.append(
+                        ans[re.search("Ans:", ans).span(0)[0] :] if "Ans:" in ans else ans
+                    )
         # preds = [[y.strip() for y in x.split("\n")] for x in answers]
         preds = [x.strip() for x in answers]
         perf_array.append(substring_match(labels, preds))
@@ -866,13 +938,14 @@ def affordance(temperature=0.3, model_name = "text-davinci-002"):
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-few_shot_cot_prompt="""In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use arithmetic and algebra functions in one or more of your substeps.
+
+few_shot_cot_prompt = """In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use arithmetic and algebra functions in one or more of your substeps.
 Description: Solve the following arithmetic problems on ratios and fractions, , writing out intermediate arithmetic calculations as needed.
 Input: Divide the number 49 into two parts, such that if the greater part is increased by 6 and the lesser part is decreased by 11, their ratio is 9 to 2. What is the greater number?
-    choice: 29 
-    choice: 30 
-    choice: 31 
-    choice: 32 
+    choice: 29
+    choice: 30
+    choice: 31
+    choice: 32
     choice: None
 Q1: [algebra] Let the greater part be x. What is the lesser part?
 #1: 49-x
@@ -897,7 +970,7 @@ Q1: [search] What is the first quarter of a year?
 #1: The traditional calendar quarters that make up the year are: Dates for Q1: January 1 – March 31. Dates for Q2: April 1 – June 3. Dates for Q3: July 1 – September 30. Dates for Q4: October 1 – December 31.
 Q2: [arithmetic] What is the last day of the first quarter?
 #2: March 31
-Q3: [arithmetic] What day is today?  
+Q3: [arithmetic] What day is today?
 #3: March 31, 2008
 Q4: [string reformat] March 31, 2008
 #4: 03/31/2008
@@ -963,15 +1036,15 @@ Q5: [subquestion] What is the distance moved backward?
 Q6: [subquestion] What is the distance moved left?
 #6: 0 steps
 Q7: [arithmetic] What is total distance moved from starting point?
-#7: 7 steps vertically, 8 steps horizontally 
-Q8: [subquestion] Is the total distance moved, both vertically and horizontally, 0? 
+#7: 7 steps vertically, 8 steps horizontally
+Q8: [subquestion] Is the total distance moved, both vertically and horizontally, 0?
 #8: No
 Q9: [EOQ]
 No
 ----
-Description: 
+Description:
 Input: If two trains depart from a station in opposite directions, and one train is traveling 60 miles an hour while the other is traveling half that distance per hour, how far apart are they from each other after 3 hours?
-Q1: [arithmetic] What is the speed of the second train? 
+Q1: [arithmetic] What is the speed of the second train?
 #1: 60/2=30 miles an hour
 Q2: [arithmetic] What is distance travelled by first train?
 #2: 60*3=180 miles
@@ -989,7 +1062,14 @@ Input: %s
 Q1: """
 
 few_shot_cot_prompt = few_shot_free_prompt
-def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+
+
+def nl_program(
+    temperature=0.3,
+    model_name="text-davinci-002",
+    strategy="fixed",
+    self_consistency=False,
+):
     global few_shot_pot_prompt
     global few_shot_cot_prompt
     task_name = "(Temporal sequences)"
@@ -1009,24 +1089,28 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[generate python code]"])
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         # new_labels = ["Ans: " + label for label in labels]
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nPossible times:", "") for ex in x]
             prompts, answer = predict(task_description, x)
-            new_answer  = interpreter.batch_visit(prompts, answer)
+            new_answer = interpreter.batch_visit(prompts, answer)
             answers.extend(new_answer)
             pdb.set_trace()
-        positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
-        positive_rate = sum(positive_calls)/(len(interpreter.execution_details)+1e-6)
+        positive_calls = [
+            int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details
+        ]
+        positive_rate = sum(positive_calls) / (len(interpreter.execution_details) + 1e-6)
         preds = [get_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
@@ -1038,7 +1122,7 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
 
 few_shot_human_prompt = """Description: (Temporal sequences) Given the daily schedule of activities of a person and a final activity that they need to find time for, choose one of the four provided options when they could do the activity.
 Input: Today, Tiffany went to the swimming pool. Between what times could they have gone?
-We know that: 
+We know that:
 Tiffany woke up at 6am.
 Jessica saw Tiffany waiting at the airport from 6am to 10am.
 William saw Tiffany attending class at the school from 12pm to 5pm.
@@ -1067,7 +1151,7 @@ Ans: 10am to 12pm
 ----
 Description: (Temporal sequences) Given the daily schedule of activities of a person and a final activity that they need to find time for, choose one of the four provided options when they could do the activity.
 Input: Today, David went to the art studio. Between what times could they have gone?
-We know that: 
+We know that:
 David woke up at 8am.
 Leslie saw David working at the office from 8am to 9am.
 David saw David fixing their computer at the electronic store from 9am to 10am.
@@ -1097,7 +1181,7 @@ Ans: 12pm to 4pm
 ----
 Description: (Temporal sequences) Given the daily schedule of activities of a person and a final activity that they need to find time for, choose one of the four provided options when they could do the activity.
 Input: Today, William went to the soccer field. Between what times could they have gone?
-We know that: 
+We know that:
 William woke up at 5am.
 Mark saw William walking towards the Statue of Liberty from 5am to 6am.
 Jason saw William working at the office from 6am to 9am.
@@ -1125,7 +1209,7 @@ Ans: 9am to 3pm
 ----
 Description: (Temporal sequences) Given the daily schedule of activities of a person and a final activity that they need to find time for, choose one of the four provided options when they could do the activity.
 Input: Today, Linda went to the market. Between what times could they have gone?
-We know that: 
+We know that:
 Linda woke up at 5am.
 William saw Linda watching a movie at the theater from 5am to 7am.
 Richard saw Linda walking towards the Statue of Liberty from 7am to 8am.
@@ -1154,7 +1238,7 @@ Ans: 1pm to 4pm
 ----
 Description: (Temporal sequences) Given the daily schedule of activities of a person and a final activity that they need to find time for, choose one of the four provided options when they could do the activity.
 Input: Today, Richard went to the physics classroom. Between what times could they have gone?
-We know that: 
+We know that:
 Richard woke up at 7am.
 David saw Richard reading at the library from 10am to 11am.
 Samantha saw Richard sitting on a rooftop from 11am to 2pm.
@@ -1184,29 +1268,40 @@ Ans: 7am to 10am
 Description: %s
 Input: %s
 Q1:"""
-def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+
+
+def human_intervention(
+    temperature=0.3,
+    model_name="text-davinci-002",
+    strategy="fixed",
+    self_consistency=False,
+):
     global few_shot_cot_prompt
 
     few_shot_cot_prompt = few_shot_human_prompt
     interpreter = TopDownVisitorBeta(model_name=model_name, exclude_list=["[generate python code]"])
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     def predict_self_consistency(description, chunk, n=9):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=n
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     if self_consistency:
         perf_array = []
         runs = 2
         batch_size = 2
-        for run in range(runs): 
-            print("Run %d"%run)
-            answers = [] # List of counters
+        for run in range(runs):
+            print("Run %d" % run)
+            answers = []  # List of counters
             for x in tqdm(chunks(inputs, batch_size)):
                 x = [ex.replace("repeat with logic:\n\n", "") for ex in x]
                 x = [ex.replace("\nA:", "") for ex in x]
@@ -1214,14 +1309,16 @@ def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy=
                 prompts, answer_set = predict_self_consistency(task_description, x)
                 result_counter = [Counter() for i in range(batch_size)]
                 for chunk_no, ans_chunk in enumerate(chunks(answer_set, 9)):
-                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*len(ans_chunk), ans_chunk)
-                    processed_answers = [get_answer(ex) for ex in new_answer] 
+                    new_answer = interpreter.batch_visit(
+                        [prompts[chunk_no]] * len(ans_chunk), ans_chunk
+                    )
+                    processed_answers = [get_answer(ex) for ex in new_answer]
                     for pred in enumerate(processed_answers):
                         # Only add to the counter if there is a legitimate answer
                         if pred is not None:
                             result_counter[chunk_no].update([pred])
                 answers.extend(result_counter)
-            preds = [x.most_common(1)[0][0][1] for x in answers[:len(inputs)]]
+            preds = [x.most_common(1)[0][0][1] for x in answers[: len(inputs)]]
             perf_array.append(substring_match(labels, preds))
             print(perf_array)
         print("FS-CoT Performance:")
@@ -1231,36 +1328,69 @@ def human_intervention(temperature=0.3, model_name="text-davinci-002", strategy=
     else:
         perf_array = []
         runs = 5
-        for run in range(runs): 
-            print("Run %d"%run)
+        for run in range(runs):
+            print("Run %d" % run)
             answers = []
             for x in tqdm(chunks(inputs, 10)):
                 x = [ex.replace("""\nPossible times:""", "") for ex in x]
                 prompts, answer = predict(task_description, x)
-                new_answer  = interpreter.batch_visit(prompts, answer)
+                new_answer = interpreter.batch_visit(prompts, answer)
                 answers.extend(new_answer)
             preds = [get_answer(x) for x in answers]
             perf_array.append(substring_match(labels, preds))
             # Report on interpreter performance
-            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
-            positive_rate = sum(positive_calls)/(len(interpreter.execution_details) + 1e-6)
+            positive_calls = [
+                int(len(stack_trace_list) >= 1)
+                for stack_trace_list in interpreter.execution_details
+            ]
+            positive_rate = sum(positive_calls) / (len(interpreter.execution_details) + 1e-6)
         print("FS-CoT Performance:")
         print("Mean", np.mean(perf_array))
         print("Std. Dev", np.std(perf_array))
         print("Rate of affordance call", positive_rate)
 
+
 # human_intervention(0.3, "text-davinci-002")
 # human_decomp()
 
 if __name__ == "__main__":
-    parser  = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001", "davinci-codex-002-msft"], default="text-davinci-002")
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--model_name",
+        type=str,
+        choices=[
+            "text-davinci-002",
+            "text-davinci-003",
+            "code-davinci-002",
+            "code-cushman-001",
+            "davinci-codex-002-msft",
+        ],
+        default="text-davinci-002",
+    )
     parser.add_argument("--temperature", type=float, default="0.3")
-    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "auto_cot_corrected", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument(
+        "--inference_strategy",
+        type=str,
+        choices=[
+            "dummy",
+            "few_shot",
+            "auto_cot",
+            "auto_cot_corrected",
+            "cot_rollout",
+            "few_shot_cot",
+            "nl_program",
+        ],
+        default="few_shot",
+    )
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
-    parser.add_argument("--self_consistency", default=False, action='store_true')
-    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
+    parser.add_argument("--self_consistency", default=False, action="store_true")
+    parser.add_argument(
+        "--selection_strategy",
+        type=str,
+        choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"],
+        default="fixed",
+    )
 
     args = parser.parse_args()
 
@@ -1269,18 +1399,35 @@ if __name__ == "__main__":
     print("Training examples:", len(train_inputs))
     print("Dev examples:", len(inputs))
 
-    inputs = inputs[:args.num_dev_examples]
-    labels = labels[:args.num_dev_examples]
+    inputs = inputs[: args.num_dev_examples]
+    labels = labels[: args.num_dev_examples]
 
     if args.inference_strategy == "few_shot":
         few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=args.num_train_examples)
-        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
+        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)["input_ids"]))
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
-        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
+        auto_cot(
+            args.temperature,
+            args.model_name,
+            predict=True,
+            use_corrected=False,
+            self_consistency=False,
+        )
     elif args.inference_strategy == "auto_cot_corrected":
-        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
+        auto_cot(
+            args.temperature,
+            args.model_name,
+            predict=True,
+            use_corrected=True,
+            self_consistency=False,
+        )
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)
+        nl_program(
+            args.temperature,
+            args.model_name,
+            self_consistency=args.self_consistency,
+            strategy=args.selection_strategy,
+        )

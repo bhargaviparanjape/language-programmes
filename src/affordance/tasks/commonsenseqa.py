@@ -1,18 +1,18 @@
-from re import L
-from turtle import pd
-from utils import gpt3, propose_decomposition, propose_instruction, chunks, get_subset, OpenAIModel, cache_dir
-
 import datasets
 import numpy as np
 from tqdm import tqdm
-import json, pdb
-import re
+from utils import OpenAIModel, cache_dir, chunks
 
-
-data = datasets.load_dataset('commonsense_qa', cache_dir=cache_dir)['validation']
-inputs = [d['question']+ " " + " ".join([k + ") " + v for k, v in zip(d['choices']['label'], d['choices']['text'])]) for d in data][:500]
-labels = [d['answerKey'] for d in data][:500]
+data = datasets.load_dataset("commonsense_qa", cache_dir=cache_dir)["validation"]
+inputs = [
+    d["question"]
+    + " "
+    + " ".join([k + ") " + v for k, v in zip(d["choices"]["label"], d["choices"]["text"])])
+    for d in data
+][:500]
+labels = [d["answerKey"] for d in data][:500]
 print(len(inputs))
+
 
 def exact_match(labels, predictions):
     correct = 0
@@ -21,7 +21,8 @@ def exact_match(labels, predictions):
         if label.lower() == predict.lower():
             correct += 1
         count += 1
-    return (1.0*correct)/count
+    return (1.0 * correct) / count
+
 
 def token_match(labels, predictions):
     correct = 0
@@ -30,12 +31,14 @@ def token_match(labels, predictions):
         if label.lower() in [p.lower() for p in predict]:
             correct += 1
         count += 1
-    return (1.0*correct)/count
+    return (1.0 * correct) / count
+
 
 def commonsenseqa():
     def predict(chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=200, quote='---', n=1)
-        prompts = ["""How can you get the attention of a person across the room? A) board ship B) shout at C) smile at D) cross street E) feel happy
+        gpt3 = OpenAIModel(model="text-davinci-002", max_length=200, quote="---", n=1)
+        prompts = [
+            """How can you get the attention of a person across the room? A) board ship B) shout at C) smile at D) cross street E) feel happy
 B
 ----
 Where would you find a metal rod in most people's preferred method of transportation? A) airplane B) construction site C) shops D) engine E) broken bone
@@ -65,13 +68,16 @@ C
 What do soldiers do when their opponents get the upper hand? A) follow orders B) use weapons C) call reinforcements D) coming home E) die in battle
 E
 ----
-%s""" % x for x in chunk]
+%s"""
+            % x
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     perf_array = []
     runs = 2
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 20)):
             answers.extend(predict(x))

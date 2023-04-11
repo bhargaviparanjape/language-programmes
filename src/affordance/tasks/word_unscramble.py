@@ -1,53 +1,50 @@
 import argparse
-import ast
+from collections import Counter
 import json
 import pdb
 import re
 import time
-from enum import auto
-from re import L
-from turtle import pd
 
 import datasets
 import numpy as np
-import time
+from prompt_library import llm_similar_tasks, random_tasks, similar_auto_breakdowns, similar_tasks
+from sequential_interpreter import TopDownVisitorBeta
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import (OpenAIModel, cache_dir, chunks, get_answer, get_few_shot_prompt, get_autocot_answer,
-                   get_subset, gpt3, propose_decomposition,
-                   propose_instruction, substring_match)
+from utils import (
+    OpenAIModel,
+    cache_dir,
+    chunks,
+    get_answer,
+    get_autocot_answer,
+    get_few_shot_prompt,
+    substring_match,
+)
 
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-import urllib.request
-from collections import Counter
 
-from prompt_library import (llm_similar_tasks, random_tasks,
-                            similar_auto_breakdowns, similar_tasks,
-                            few_shot_retrieval_prompt, few_shot_code_prompt, 
-                            few_shot_arithmetic_prompt, few_shot_string_prompt)
-from sequential_interpreter import TopDownVisitor, TopDownVisitorBeta
-
-io_pairs = [("Q: The word untamqu is a scrambled version of the English word", 
-"A: quantum"),
-("Q: The word mnoeg is a scrambled version of the English word", 
-"A: gnome"),
-("Q: The word agknkbo is a scrambled version of the English word", 
-"A: bangkok"),
-("Q: The word mgiaein is a scrambled version of the English word", 
-"A: imagine"),
-("Q: The word eacperlfi is a scrambled version of the English word", 
-"A: fireplace")]
+io_pairs = [
+    ("Q: The word untamqu is a scrambled version of the English word", "A: quantum"),
+    ("Q: The word mnoeg is a scrambled version of the English word", "A: gnome"),
+    ("Q: The word agknkbo is a scrambled version of the English word", "A: bangkok"),
+    ("Q: The word mgiaein is a scrambled version of the English word", "A: imagine"),
+    (
+        "Q: The word eacperlfi is a scrambled version of the English word",
+        "A: fireplace",
+    ),
+]
 
 task_description = "Unscramble the given word into a word in English."
 
 
-d = datasets.load_dataset('bigbench', 'word_unscrambling', cache_dir=cache_dir)
-inputs =  d['validation']['inputs'][:500]
+d = datasets.load_dataset("bigbench", "word_unscrambling", cache_dir=cache_dir)
+inputs = d["validation"]["inputs"][:500]
 # inputs = [x.split('\n')[0] for x in inputs]
-labels =  d['validation']['targets'][:500]
+labels = d["validation"]["targets"][:500]
 labels = [l[0] for l in labels]
-train_inputs = d['train']['inputs']
-train_labels = d['train']['targets']
+train_inputs = d["train"]["inputs"]
+train_labels = d["train"]["targets"]
+
 
 def exact_match(labels, predictions):
     correct = 0
@@ -56,7 +53,8 @@ def exact_match(labels, predictions):
         if label.lower() == predict.lower():
             correct += 1
         count += 1
-    return (1.0*correct)/count
+    return (1.0 * correct) / count
+
 
 def token_match(labels, predictions):
     correct = 0
@@ -65,39 +63,46 @@ def token_match(labels, predictions):
         if label.lower() in [p.lower() for p in predict]:
             correct += 1
         count += 1
-    return (1.0*correct)/count
+    return (1.0 * correct) / count
+
 
 def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name, temperature=temperature, max_length=200, quote='---', n=1)
-        prompts = ["""Q: The word untamqu is a scrambled version of the English word 
+        gpt3 = OpenAIModel(
+            model=model_name, temperature=temperature, max_length=200, quote="---", n=1
+        )
+        prompts = [
+            """Q: The word untamqu is a scrambled version of the English word
 A:
 quantum
 ----
-Q: The word mnoeg is a scrambled version of the English word 
+Q: The word mnoeg is a scrambled version of the English word
 A:
 gnome
 ----
-Q: The word agknkbo is a scrambled version of the English word 
+Q: The word agknkbo is a scrambled version of the English word
 A:
 bangkok
 ----
-Q: The word mgiaein is a scrambled version of the English word 
+Q: The word mgiaein is a scrambled version of the English word
 A:
 imagine
 ----
-Q: The word eacperlfi is a scrambled version of the English word 
+Q: The word eacperlfi is a scrambled version of the English word
 A:
 fireplace
 ----
 %s
-"""% x for x in chunk]
+"""
+            % x
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
@@ -109,21 +114,27 @@ fireplace
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
 
+def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=N)
-    print(len(tokenizer(few_shot_prompt)['input_ids']))
+    print(len(tokenizer(few_shot_prompt)["input_ids"]))
 
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=200, temperature=temperature, quote='---', n=1)
-        prompts = ["""%s\
-%s""" % (few_shot_prompt, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=200, temperature=temperature, quote="---", n=1
+        )
+        prompts = [
+            """%s\
+%s"""
+            % (few_shot_prompt, x)
+            for x in chunk
+        ]
         return gpt3(prompts)
-    
+
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             answers.extend(predict(x))
@@ -133,12 +144,13 @@ def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
+
 few_shot_cot_prompt = """In these examples, you are given a task description and an input. Break the input down into subtasks in order to solve the task. You can use string operations like splitting, reformatting, editing or merging. You can also use other operations like arithmetic and logic.
 Description: Find the required date in MM/DD/YYYY using information about related events and dates in the input. Clue: First find what day is today.
 Input: Today is the first day of 2007. What is the date one week from today in MM/DD/YYYY?
-Q1: [string reformat] first day of 2007 in MM/DD/YYYY 
+Q1: [string reformat] first day of 2007 in MM/DD/YYYY
 #1: 01/01/2007
-Q2: [arithmetic] What date is one week from 01/01/2007? 
+Q2: [arithmetic] What date is one week from 01/01/2007?
 #2: 01/08/2007
 Q3: [EOQ]
 Ans: 01/08/2007
@@ -193,7 +205,7 @@ Q1: [string reformat] Jun 1, 2021 in MM/DD/YYYY
 #1: 06/01/2021
 Q2: [arithmetic] 06/01/2021 is 2 days away from now. What date is today?
 #2: Today is 04/01/2021
-Q3: [arithmetic] What date is 24 hours later than today?  
+Q3: [arithmetic] What date is 24 hours later than today?
 #3: 05/01/2021
 Q4: [EOQ]
 Ans: 05/31/2021
@@ -220,23 +232,33 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=2048, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt % (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model="text-davinci-002",
+            max_length=2048,
+            temperature=temperature,
+            quote="---",
+            n=1,
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return gpt3(prompts)
 
     interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
 
     def predict_complete(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         outputs = gpt3(prompts)
-        completed_outputs = [interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)]
+        completed_outputs = [
+            interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)
+        ]
         return completed_outputs
 
     perf_array = []
     runs = 2
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
@@ -289,7 +311,7 @@ A: Let's think step-by-step.
 4) The fourth letter is 'n', so the word might be 'gan', 'nag' in it.
 5) The fifth letter is another 'k', maybe it has 'kang'.
 6) The sixth letter is 'b', so the word might have 'bang'.
-7) The seventh letter is 'o', so the word might contain 'ok' or 'kok'. 
+7) The seventh letter is 'o', so the word might contain 'ok' or 'kok'.
 Combining 'bang' and 'kok' gives us 'bangkok'.
 
 The final answer is 'bangkok'
@@ -377,14 +399,25 @@ A: Let's think step-by-step.
 The final answer is 'fireplace'
 ----
 """
-def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_corrected=False, self_consistency=False):
+
+
+def auto_cot(
+    temperature=0.3,
+    model_name="text-davinci-002",
+    predict=True,
+    use_corrected=False,
+    self_consistency=False,
+):
     global auto_cot_corrected_prompt
     global auto_cot_cleaned_prompt
     auto_cot_prompt = ""
     for io_pair in io_pairs:
-        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=0.2, quote='---', n=1)
-        prompt = """%s\n"""%task_description + io_pair[0] + \
-            """\nThe final answer is the unscrambled English word.\nA: Let's think step-by-step.\n"""
+        gpt3 = OpenAIModel(model=model_name, max_length=500, temperature=0.2, quote="---", n=1)
+        prompt = (
+            """%s\n""" % task_description
+            + io_pair[0]
+            + """\nThe final answer is the unscrambled English word.\nA: Let's think step-by-step.\n"""
+        )
         auto_cot_prompt += prompt
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
@@ -393,9 +426,9 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         auto_cot_prompt = auto_cot_corrected_prompt
     else:
         auto_cot_prompt = auto_cot_cleaned_prompt
-    
+
     print(auto_cot_prompt)
-    f = open("auto_cot_demonstrations.txt","a+")
+    f = open("auto_cot_demonstrations.txt", "a+")
     f.write("Word unscrambling\n\n")
     f.write(auto_cot_prompt)
 
@@ -403,24 +436,36 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
         return
 
     def predict_self_consistency(description, chunk, n=5):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
-        prompts=[auto_cot_prompt + """%s\n"""%task_description + \
-            """%s\nThe final answer is the unscrambled English word.\nA: Let's think step-by-step.\n"""% (x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=n
+        )
+        prompts = [
+            auto_cot_prompt
+            + """%s\n""" % task_description
+            + """%s\nThe final answer is the unscrambled English word.\nA: Let's think step-by-step.\n"""
+            % (x)
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     def predict(chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=500, temperature=0.2, quote='---', n=1)
-        prompts=[auto_cot_prompt + """%s\n""" %task_description + \
-            """%s\nThe final answer is the unscrambled English word.\nA: Let's think step-by-step.\n"""%x for x in chunk]
+        gpt3 = OpenAIModel(model=model_name, max_length=500, temperature=0.2, quote="---", n=1)
+        prompts = [
+            auto_cot_prompt
+            + """%s\n""" % task_description
+            + """%s\nThe final answer is the unscrambled English word.\nA: Let's think step-by-step.\n"""
+            % x
+            for x in chunk
+        ]
         return gpt3(prompts)
 
     if self_consistency:
         perf_array = []
         runs = 1
         batch_size = 2
-        for run in range(runs): 
-            print("Run %d"%run)
-            answers = [] # List of counters
+        for run in range(runs):
+            print("Run %d" % run)
+            answers = []  # List of counters
             for x in tqdm(chunks(inputs, batch_size)):
                 x = [ex.replace("\nA:", "") for ex in x]
                 answer_set = predict_self_consistency(task_description, x)
@@ -429,13 +474,15 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
                     preds = []
                     for x in ans_chunk:
                         if re.search("""The final answer is """, x):
-                            preds.append(x[re.search("""The final answer is """, x).span(0)[-1]:])
+                            preds.append(x[re.search("""The final answer is """, x).span(0)[-1] :])
                         else:
                             preds.append(x.strip())
                     for enum, pred in enumerate(ans_chunk):
                         # Only add to the counter if there is a legitimate answer
                         if re.search("""The final answer is """, pred):
-                            result_counter[chunk_no].update([pred[re.search("""The final answer is """, x).span(0)[-1]:]])
+                            result_counter[chunk_no].update(
+                                [pred[re.search("""The final answer is """, x).span(0)[-1] :]]
+                            )
                 time.sleep(60)
                 answers.extend(result_counter)
             preds = [x.most_common(1)[0][0] for x in answers]
@@ -446,8 +493,8 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
     else:
         perf_array = []
         runs = 5
-        for run in range(runs): 
-            print("Run %d"%run)
+        for run in range(runs):
+            print("Run %d" % run)
             answers = []
             for x in tqdm(chunks(inputs, 10)):
                 x = [ex.replace("\nA:", "") for ex in x]
@@ -462,43 +509,51 @@ def auto_cot(temperature=0.3, model_name="text-davinci-002", predict=True, use_c
 
 
 def affordance():
-
-    best_decomp="""Q1: [string split] What are the letters in "%s"?
+    best_decomp = """Q1: [string split] What are the letters in "%s"?
 #1: %s
 Q2: [string permutation] What are the possible permutations of the letters in #1?
 #2:"""
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=0.4, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model="text-davinci-002", max_length=1000, temperature=0.4, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return gpt3(prompts)
 
     def string_permutation(sequence):
-        import itertools      
+        import itertools
+
         permutations = list(itertools.permutations(sequence))
-        return [''.join(p) for p in permutations]
+        return ["".join(p) for p in permutations]
 
     def predict_with_affordance(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=1000, temperature=0.4, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model="text-davinci-002", max_length=1000, temperature=0.4, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
-        answers = []
+    for run in range(runs):
+        print("Run %d" % run)
         new_answers = []
         for x in tqdm(chunks(inputs, 10)):
             words = [ex.split()[3] for ex in x]
             letters = [json.dumps([l for l in w]) for w in words]
-            x = [ex.replace("\nA:", "\n") + best_decomp %(w, l) for w, l, ex in zip(words, letters, x)]
-            answers = predict("Unscramble the given word into a word in English.", x)
+            x = [
+                ex.replace("\nA:", "\n") + best_decomp % (w, l)
+                for w, l, ex in zip(words, letters, x)
+            ]
+            predict("Unscramble the given word into a word in English.", x)
             # affordance_inputs = [json.loads(a.strip().split("\n")[1].replace("#1: ", "")) for a in answers]
             affordance_outputs = [string_permutation(json.loads(l)) for l in letters]
             x = [ex + json.dumps(o) + "\nQ3:" for ex, o in zip(x, affordance_outputs)]
             pdb.set_trace()
-            new_answers.extend(predict_with_affordance("Unscramble the given word into a word in English.", x))
+            new_answers.extend(
+                predict_with_affordance("Unscramble the given word into a word in English.", x)
+            )
         preds = [[y.strip() for y in x.split("\n")] for x in new_answers]
         perf_array.append(token_match(labels, preds))
         print(perf_array)
@@ -506,11 +561,12 @@ Q2: [string permutation] What are the possible permutations of the letters in #1
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
+
 # affordance()
 # auto_cot()
 
-def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
 
+def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
     if strategy == "random":
         few_shot_cot_prompt = random_tasks(N=6)
     elif strategy == "similar":
@@ -519,14 +575,20 @@ def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
         few_shot_cot_prompt = llm_similar_tasks(task_description, io_pairs, N=6)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model="text-davinci-002",  max_length=2048, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model="text-davinci-002",
+            max_length=2048,
+            temperature=temperature,
+            quote="---",
+            n=1,
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
@@ -537,6 +599,7 @@ def dynamic_few_shot_cot(temperature=0.3, strategy="random"):
     print("Few-shot COT performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
+
 
 few_shot_notebook_prompt = """In [1]:
 import os
@@ -564,7 +627,7 @@ get_sentence(input_text)
 Out [1]:
 "Ibrahim Francois Pei Shu Ngo"
 
-In [2]: 
+In [2]:
 input_text = "Ibrahim Francois Pei Shu Ngo"
 def get_tokens(text):
     tokens = text.split()
@@ -584,7 +647,7 @@ get_nth_char_in_list(input_tokens, 3)
 Out [3]:
 ["r", "a", "i", "o", "u"]
 
-In [4]: 
+In [4]:
 char_list = ["r", "a", "i", "o", "u"]
 def merge_chars(char_list):
     return " ".join(char_list)
@@ -611,7 +674,7 @@ get_sentence(input_text)
 Out [1]:
 "Savita Saeed Ramos Sato Yadav"
 
-In [2]: 
+In [2]:
 input_text = "Savita Saeed Ramos Sato Yadav"
 def get_tokens(text):
     tokens = text.split()
@@ -631,7 +694,7 @@ get_nth_char_in_list(input_tokens, 3)
 Out [3]:
 ["v", "e", "m", "t", "d"]
 
-In [4]: 
+In [4]:
 char_list = ["v", "e", "m", "t", "d"]
 def merge_chars(char_list):
     return " ".join(char_list)
@@ -670,7 +733,7 @@ get_tokens(input_text)
 Out [2]:
 ["Sami", "made", "his", "way", "across", "the", "bar", "and", "hugged", "Layla"]
 
-In [3]:                                  
+In [3]:
 input_tokens = ["Sami", "made", "his", "way", "across", "the", "bar", "and", "hugged", "Layla"]
 def get_pig_latin(token_list):
     vowels = ["a", "e", "i", "o", "u", "y"]
@@ -750,16 +813,23 @@ In [1]:
 input_text = "%s"
 """
 
+
 def notebook(temperature=0.3, model_name="text-davinci-002"):
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=2048, temperature=temperature, quote='In [1]:', n=1)
-        prompts=[few_shot_notebook_prompt% (x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name,
+            max_length=2048,
+            temperature=temperature,
+            quote="In [1]:",
+            n=1,
+        )
+        prompts = [few_shot_notebook_prompt % (x) for x in chunk]
         return gpt3(prompts)
 
     perf_array = []
     runs = 5
-    for run in range(runs): 
-        print("Run %d"%run)
+    for run in range(runs):
+        print("Run %d" % run)
         answers = []
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
@@ -773,7 +843,13 @@ def notebook(temperature=0.3, model_name="text-davinci-002"):
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
 
-def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed", self_consistency=False):
+
+def nl_program(
+    temperature=0.3,
+    model_name="text-davinci-002",
+    strategy="fixed",
+    self_consistency=False,
+):
     global few_shot_cot_prompt
     task_name = "Word Unscrambling"
     task_description = "(Word Unscrambling) Unscramble the given word into a word in English."
@@ -792,28 +868,32 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     interpreter = TopDownVisitorBeta(model_name=model_name)
 
     def predict(description, chunk):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=1)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=1
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     def predict_self_consistency(description, chunk, n=5):
-        gpt3 = OpenAIModel(model=model_name,  max_length=1000, temperature=temperature, quote='---', n=n)
-        prompts=[few_shot_cot_prompt% (description, x) for x in chunk]
+        gpt3 = OpenAIModel(
+            model=model_name, max_length=1000, temperature=temperature, quote="---", n=n
+        )
+        prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         return prompts, gpt3(prompts)
 
     if self_consistency:
         perf_array = []
         runs = 1
         batch_size = 2
-        for run in range(runs): 
-            print("Run %d"%run)
-            answers = [] # List of counters
+        for run in range(runs):
+            print("Run %d" % run)
+            answers = []  # List of counters
             for x in tqdm(chunks(inputs, batch_size)):
                 x = [ex.replace("\nA:", "") for ex in x]
                 prompts, answer_set = predict_self_consistency(task_description, x)
                 result_counter = [Counter() for i in range(batch_size)]
                 for chunk_no, ans_chunk in enumerate(chunks(answer_set, 5)):
-                    new_answer = interpreter.batch_visit([prompts[chunk_no]]*5, ans_chunk)
+                    new_answer = interpreter.batch_visit([prompts[chunk_no]] * 5, ans_chunk)
                     new_answer = [get_answer(program) for program in new_answer]
                     for enum, pred in enumerate(new_answer):
                         if pred is not None:
@@ -829,13 +909,13 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
     else:
         perf_array = []
         runs = 1
-        for run in range(runs): 
-            print("Run %d"%run)
+        for run in range(runs):
+            print("Run %d" % run)
             answers = []
             for x in tqdm(chunks(inputs, 10)):
                 x = [ex.replace("\nA:", "") for ex in x]
                 prompts, answer = predict(task_description, x)
-                new_answer  = interpreter.batch_visit(prompts, answer)
+                new_answer = interpreter.batch_visit(prompts, answer)
                 answers.extend(new_answer)
                 # time.sleep(10)
                 pdb.set_trace()
@@ -843,23 +923,55 @@ def nl_program(temperature=0.3, model_name="text-davinci-002", strategy="fixed",
             perf_array.append(substring_match(labels, preds))
 
             # Report on interpreter performance
-            positive_calls = [int(len(stack_trace_list) >= 1) for stack_trace_list in interpreter.execution_details]
-            positive_rate = sum(positive_calls)/len(interpreter.execution_details)
-            
+            positive_calls = [
+                int(len(stack_trace_list) >= 1)
+                for stack_trace_list in interpreter.execution_details
+            ]
+            positive_rate = sum(positive_calls) / len(interpreter.execution_details)
+
         print("FS-CoT Performance:")
         print("Mean", np.mean(perf_array))
         print("Std. Dev", np.std(perf_array))
         print("Rate of affordance call", positive_rate)
 
+
 if __name__ == "__main__":
-    parser  = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, choices=["text-davinci-002", "text-davinci-003", "code-davinci-002", "code-cushman-001"], default="text-davinci-002")
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--model_name",
+        type=str,
+        choices=[
+            "text-davinci-002",
+            "text-davinci-003",
+            "code-davinci-002",
+            "code-cushman-001",
+        ],
+        default="text-davinci-002",
+    )
     parser.add_argument("--temperature", type=float, default="0.3")
-    parser.add_argument("--inference_strategy", type=str, choices=["dummy", "few_shot", "auto_cot", "auto_cot_corrected", "cot_rollout", "few_shot_cot", "nl_program"], default="few_shot")
+    parser.add_argument(
+        "--inference_strategy",
+        type=str,
+        choices=[
+            "dummy",
+            "few_shot",
+            "auto_cot",
+            "auto_cot_corrected",
+            "cot_rollout",
+            "few_shot_cot",
+            "nl_program",
+        ],
+        default="few_shot",
+    )
     parser.add_argument("--num_train_examples", type=int, default=10)
     parser.add_argument("--num_dev_examples", type=int, default=len(inputs))
-    parser.add_argument("--self_consistency", default=False, action='store_true')
-    parser.add_argument("--selection_strategy", type=str, choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"], default="fixed")
+    parser.add_argument("--self_consistency", default=False, action="store_true")
+    parser.add_argument(
+        "--selection_strategy",
+        type=str,
+        choices=["fixed", "random", "similar", "similar_auto_decomp", "llm_similar"],
+        default="fixed",
+    )
 
     args = parser.parse_args()
 
@@ -868,18 +980,35 @@ if __name__ == "__main__":
     print("Training examples:", len(train_inputs))
     print("Dev examples:", len(inputs))
 
-    inputs = inputs[:args.num_dev_examples]
-    labels = labels[:args.num_dev_examples]
+    inputs = inputs[: args.num_dev_examples]
+    labels = labels[: args.num_dev_examples]
 
     if args.inference_strategy == "few_shot":
         few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=args.num_train_examples)
-        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)['input_ids']))
+        print("Length of few-shot prompt", len(tokenizer(few_shot_prompt)["input_ids"]))
         few_shot(args.num_train_examples, args.temperature, args.model_name)
     elif args.inference_strategy == "auto_cot":
-        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=False, self_consistency=False)
+        auto_cot(
+            args.temperature,
+            args.model_name,
+            predict=True,
+            use_corrected=False,
+            self_consistency=False,
+        )
     elif args.inference_strategy == "auto_cot_corrected":
-        auto_cot(args.temperature, args.model_name, predict=True, use_corrected=True, self_consistency=False)
+        auto_cot(
+            args.temperature,
+            args.model_name,
+            predict=True,
+            use_corrected=True,
+            self_consistency=False,
+        )
     elif args.inference_strategy == "few_shot_cot":
         few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
-        nl_program(args.temperature, args.model_name, self_consistency=args.self_consistency, strategy=args.selection_strategy)
+        nl_program(
+            args.temperature,
+            args.model_name,
+            self_consistency=args.self_consistency,
+            strategy=args.selection_strategy,
+        )

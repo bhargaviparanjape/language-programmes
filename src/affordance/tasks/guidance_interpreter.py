@@ -1,35 +1,25 @@
-from enum import auto
-from re import L
-from turtle import pd
-from utils import gpt3, propose_decomposition, propose_instruction, chunks, get_subset, OpenAIModel, cache_dir, substring_match
-import datasets
-import numpy as np
-from tqdm import tqdm
-import json, pdb
-import re
-import time
-import openai
-import sys
-import subprocess
-from prompt_library import random_tasks, similar_tasks, llm_similar_tasks, similar_auto_breakdowns
 import parsimonious
 
 
 def search_engine(query):
     pass
 
+
 def code_generate(instruction, input):
     pass
+
 
 def code_execute(code_snippet):
     pass
 
+
 def arithmetic(equation):
-        pass
+    pass
+
 
 # Scott's grammars
 grammar = parsimonious.grammar.Grammar(
-r"""
+    r"""
 template = template_chunk*
 template_chunk = command / command_block / content
 command = command_start command_content command_end
@@ -58,7 +48,8 @@ answer_content = ~"[^{]*"
 query_content = ~"[^{]*"
 separator = "[\n]"
 literal = ~'"[^\"]*"' / ~"'[^\']*'"
-""")
+"""
+)
 
 test_prompt = """
 {{tag}} What are the entities in this sentence?
@@ -102,14 +93,14 @@ Yes
 print(grammar.parse(test_prompt))
 
 
-class Interpreter():
+class Interpreter:
     def __init__():
         pass
 
 
 class PromptCompletion:
-    ''' Represents the result of an executed prompt.
-    '''
+    """Represents the result of an executed prompt."""
+
     def __init__(self, variables, completed_text, prompt):
         self.variables = variables
         self.completed_text = completed_text
@@ -121,13 +112,12 @@ class PromptCompletion:
     def __repr__(self):
         return self.completed_text
 
+
 class Prompt:
-    ''' A prompt template that can be compiled and executed to generate a PromptCompletion result.
-    '''
+    """A prompt template that can be compiled and executed to generate a PromptCompletion result."""
 
     def __init__(self, prompt, generator=None):
-        """ Create a new Prompt object from a prompt string.
-        """
+        """Create a new Prompt object from a prompt string."""
         self.prompt_string = prompt
         self.generator = generator
         self.tree = grammar.parse(self.prompt_string)
@@ -136,7 +126,7 @@ class Prompt:
         built_ins = {
             "search": search_engine,
             "code generate ": code_generate,
-            "code execute" : code_execute
+            "code execute": code_execute,
         }
         variables = {}
         variables.update(built_ins)
@@ -159,7 +149,7 @@ class TopDownVisitor(Interpreter):
     def visit(self, node):
         # Parse a fixed NL Program.
         pass
-    
+
     def visit_update(self, node):
         # Parse a dynamically changing NL Program.
         pass

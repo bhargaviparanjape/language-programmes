@@ -1,0 +1,18 @@
+name: code formatting
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: check Black formatting
+      uses: lgeiger/black-action@v1.0.1
+      with:
+        args: --line-length 100 . --check

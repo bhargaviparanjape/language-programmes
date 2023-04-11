@@ -1,39 +1,37 @@
-import datasets
-import os
-import openai
-import numpy as np
-
-import adatest
-import pdb
-import re
 import json
-import jsonlines
-import seqio
 import os
-#os.environ['CURL_CA_BUNDLE'] = "/etc/ssl/certs/ca-bundle.crt"
-#from bigbench.bbseqio import tasks
-#vocabulary=seqio.SentencePieceVocabulary("/gscratch/zlab/bparan/projects/cascades/models/t5-spiece.model")
-from sklearn.metrics import accuracy_score
-from typing import List
-import tqdm
-import requests
-subscription_key = '28dc412935f24fb9974d80c30915483a'
-search_url = "https://api.bing.microsoft.com/v7.0/search"
-headers = {"Ocp-Apim-Subscription-Key": subscription_key}
-from IPython.display import HTML
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
-
-with open(os.path.expanduser('~/.openai_api_key'), 'r') as file:
-    openai.api_key = file.read().replace('\n', '')
-print(openai.api_key)
-# cache_dir = '/gscratch/zlab/bparan/projects/cascades/data'
-cache_dir = '/home/bparanjape/language-programmes/data'
+import re
 import subprocess
 import sys
 
+import adatest
+import numpy as np
+import openai
+import requests
+from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+
+subscription_key = "28dc412935f24fb9974d80c30915483a"
+search_url = "https://api.bing.microsoft.com/v7.0/search"
+headers = {"Ocp-Apim-Subscription-Key": subscription_key}
+
+with open(os.path.expanduser("~/.openai_api_key"), "r") as file:
+    openai.api_key = file.read().replace("\n", "")
+print(openai.api_key)
+
+cache_dir = "/home/bparanjape/language-programmes/data"
+
 
 class HuggingFaceModel(adatest.Model):
-    def __init__(self, model="google/flan-t5-small", quote="\"", temperature=0.7, top_p=1, max_length=30, n=1, logprobs=None):
+    def __init__(
+        self,
+        model="google/flan-t5-small",
+        quote='"',
+        temperature=0.7,
+        top_p=1,
+        max_length=30,
+        n=1,
+        logprobs=None,
+    ):
         self.model = AutoModelForSeq2SeqLM.from_pretrained(model)
         self.tokenizer = AutoTokenizer.from_pretrained(model)
         self.quote = quote
@@ -44,16 +42,23 @@ class HuggingFaceModel(adatest.Model):
         self.logprobs = logprobs
 
     def __call__(self, strings):
-        pdb.set_trace()
         inputs = self.tokenizer(strings, return_tensors="pt", padding=True)
         outputs = self.model.generate(**inputs)
         resp = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
         return resp
-        
+
 
 class OpenAIModel(adatest.Model):
-    def __init__(self, model="text-davinci-002", quote="\"", temperature=0.7, top_p=1, max_length=30, n=1, logprobs=None):
-
+    def __init__(
+        self,
+        model="text-davinci-002",
+        quote='"',
+        temperature=0.7,
+        top_p=1,
+        max_length=30,
+        n=1,
+        logprobs=None,
+    ):
         self.model_name = model
         if "google" in model:
             self.model = HuggingFaceModel(model, quote, temperature, top_p, max_length, n, logprobs)
@@ -66,8 +71,8 @@ class OpenAIModel(adatest.Model):
         self.max_length = max_length
         self.n = n
         self.logprobs = logprobs
+
     def __call__(self, strings):
-        
         if "google" in self.model_name:
             resp = self.model(strings)
         else:
@@ -79,12 +84,22 @@ class OpenAIModel(adatest.Model):
                 top_p=self.top_p,
                 n=self.n,
                 stop=self.quote,
-                logprobs = self.logprobs
+                logprobs=self.logprobs,
             )
-        return [x["text"] for x in resp['choices']]
+        return [x["text"] for x in resp["choices"]]
+
 
 class OpenAIModelLogProb(adatest.Model):
-    def __init__(self, model="text-davinci-002", quote="\"", temperature=0.7, top_p=1, max_length=30, n=1, logprobs=None):
+    def __init__(
+        self,
+        model="text-davinci-002",
+        quote='"',
+        temperature=0.7,
+        top_p=1,
+        max_length=30,
+        n=1,
+        logprobs=None,
+    ):
         self.model = model
         self.api_key = openai.api_key
         self.quote = quote
@@ -93,6 +108,7 @@ class OpenAIModelLogProb(adatest.Model):
         self.max_length = max_length
         self.n = n
         self.logprobs = logprobs
+
     def __call__(self, strings):
         resp = openai.Completion.create(
             model=self.model,
@@ -102,44 +118,54 @@ class OpenAIModelLogProb(adatest.Model):
             top_p=self.top_p,
             n=self.n,
             stop=self.quote,
-            logprobs = self.logprobs
+            logprobs=self.logprobs,
         )
         return resp
 
-gpt3 = OpenAIModel(model="text-davinci-002",  max_length=200, quote='', n=1)
+
+gpt3 = OpenAIModel(model="text-davinci-002", max_length=200, quote="", n=1)
+
 
 def propose_decomposition(decomp_prompt, io_pairs, n=20):
     # Default of 0.7 is being used.
-    gpt3 = OpenAIModel(model="text-davinci-002",  max_length=500, quote='---', n=n)
-    prompt = '''%s. Here are examples of input-output pairs for the task I'm trying to break down.
+    gpt3 = OpenAIModel(model="text-davinci-002", max_length=500, quote="---", n=n)
+    prompt = """%s. Here are examples of input-output pairs for the task I'm trying to break down.
 ----
 %s
 ----
 Steps:
-1.'''%(decomp_prompt, io_pairs)
+1.""" % (
+        decomp_prompt,
+        io_pairs,
+    )
     return gpt3(prompt)
 
+
 def propose_instruction(instruct_prompt, io_pairs, n=20):
-    gpt3 = OpenAIModel(model="text-davinci-002",  max_length=400, quote='---', n=n)
-    prompt = '''%s. Here are examples of input-output pairs for this task.
+    gpt3 = OpenAIModel(model="text-davinci-002", max_length=400, quote="---", n=n)
+    prompt = """%s. Here are examples of input-output pairs for this task.
 ----
 %s
 ----
-I can do this task by'''%(instruct_prompt, io_pairs)
+I can do this task by""" % (
+        instruct_prompt,
+        io_pairs,
+    )
     return gpt3(prompt)
 
 
 def chunks(l, n):
     """Yield successive n-sized chunks from l."""
     for i in range(0, len(l), n):
-        yield l[i:i + n]
+        yield l[i : i + n]
+
 
 def get_subset(inputs, labels, n=100):
     idxs = np.random.choice(len(inputs), n, replace=False)
     labs = np.array([labels[i] for i in idxs])
     subset = [inputs[i] for i in idxs]
     return labs, subset
-    
+
 
 def substring_match(labels, predictions):
     correct = 0
@@ -148,7 +174,7 @@ def substring_match(labels, predictions):
         if label.lower() in predict.lower():
             correct += 1
         count += 1
-    return (1.0*correct)/count
+    return (1.0 * correct) / count
 
 
 def substring_match_v2(labels, predictions):
@@ -160,7 +186,7 @@ def substring_match_v2(labels, predictions):
                 correct += 1
                 break
         count += 1
-    return (1.0*correct)/count
+    return (1.0 * correct) / count
 
 
 class Command:
@@ -190,27 +216,51 @@ class Command:
         output_sep = "\n" if "\n" in command.command_output else " "
         if not input_only:
             if rank == 1:
-                return " {1}{2}{3}\n#{4}:{5}{6}".format(rank, command.command_name, input_sep, command.command_input, rank, output_sep, command.command_output)    
-            return "Q{0}: {1}{2}{3}\n#{4}:{5}{6}".format(rank, command.command_name, input_sep, command.command_input, rank, output_sep, command.command_output)
+                return " {1}{2}{3}\n#{4}:{5}{6}".format(
+                    rank,
+                    command.command_name,
+                    input_sep,
+                    command.command_input,
+                    rank,
+                    output_sep,
+                    command.command_output,
+                )
+            return "Q{0}: {1}{2}{3}\n#{4}:{5}{6}".format(
+                rank,
+                command.command_name,
+                input_sep,
+                command.command_input,
+                rank,
+                output_sep,
+                command.command_output,
+            )
         else:
             if rank == 1:
-                return " {1}{2}{3}".format(rank, command.command_name, input_sep, command.command_input)    
-            return "Q{0}: {1}{2}{3}".format(rank, command.command_name, input_sep, command.command_input)
+                return " {1}{2}{3}".format(
+                    rank, command.command_name, input_sep, command.command_input
+                )
+            return "Q{0}: {1}{2}{3}".format(
+                rank, command.command_name, input_sep, command.command_input
+            )
 
-class StacktraceItem():
-    def __init__(self,
-                 command, 
-                 affordance, 
-                 affordance_output, 
-                 affordance_details, 
-                 rerun_program, 
-                 rerun_program_parse):
+
+class StacktraceItem:
+    def __init__(
+        self,
+        command,
+        affordance,
+        affordance_output,
+        affordance_details,
+        rerun_program,
+        rerun_program_parse,
+    ):
         self.command = command
         self.affordance = affordance
         self.affordance_output = affordance_output
         self.affordance_details = affordance_details
         self.rerun_program = rerun_program
         self.rerun_program_parse = rerun_program_parse
+
 
 class Program:
     def __init__(self, input_node, command_node_list, answer_node):
@@ -254,9 +304,8 @@ class Node:
 def parse_incomplete_program(program=None):
     import parsimonious
 
-
     incomplete_grammar = parsimonious.grammar.Grammar(
-r"""
+        r"""
 program = program_start*node*partial_node
 program_start = input_start~r"( |\n)"text~r"\n"
 input_start = ~r"Input:"
@@ -272,7 +321,8 @@ partial_node = partial_command_answer / partial_command
 partial_command = command_start~r"( |\n)"~r"(?<=\]( |\n))(.|\n|\t)*?$"
 partial_command_answer = command_node~r"\n"partial_answer
 partial_answer = begin_answer~r"( |\n)"~r"(?<=\#[0-9]+:( |\n))(.|\n|\t)*?$"
-""")
+"""
+    )
     incomplete_parsed_program = incomplete_grammar.parse(program)
     return incomplete_parsed_program
 
@@ -287,25 +337,25 @@ def parse_program(program=None):
             node_list.append(Node(node.expr_name, node.text))
             return
 
-#     grammar = parsimonious.grammar.Grammar(
-# r"""
-# program = program_start*node*partial_command*final_answer
-# program_start = input_start~r" "text~r"\n"
-# input_start = ~r"Input:"
-# text = ~r"(?<=Input: )[^\#]+?(?=\nQ[0-9]+:)"
-# node = command_node~r"\n"output_node~r"\n"
-# command_node = command_start~r" "command_instruction
-# output_node = begin_answer~r" "output
-# command_instruction = ~r"(?<=\] )[^\#]+?(?=\n\#[0-9]+)"
-# command_start = ~r"Q[0-9]+: \[[A-Za-z_ ]+\]"
-# begin_answer = ~r"\#[0-9]+:"
-# output = ~r"(?<=\#[0-9]+: )[^\#]+?(?=\nQ[0-9]+:)"
-# partial_command = command_start~r"\n"
-# final_answer = ~r"Ans: (.|\n)*$"
-# """)
+    #     grammar = parsimonious.grammar.Grammar(
+    # r"""
+    # program = program_start*node*partial_command*final_answer
+    # program_start = input_start~r" "text~r"\n"
+    # input_start = ~r"Input:"
+    # text = ~r"(?<=Input: )[^\#]+?(?=\nQ[0-9]+:)"
+    # node = command_node~r"\n"output_node~r"\n"
+    # command_node = command_start~r" "command_instruction
+    # output_node = begin_answer~r" "output
+    # command_instruction = ~r"(?<=\] )[^\#]+?(?=\n\#[0-9]+)"
+    # command_start = ~r"Q[0-9]+: \[[A-Za-z_ ]+\]"
+    # begin_answer = ~r"\#[0-9]+:"
+    # output = ~r"(?<=\#[0-9]+: )[^\#]+?(?=\nQ[0-9]+:)"
+    # partial_command = command_start~r"\n"
+    # final_answer = ~r"Ans: (.|\n)*$"
+    # """)
 
     grammar = parsimonious.grammar.Grammar(
-r"""
+        r"""
 program = program_start*node*partial_command*final_answer
 program_start = input_start~r"( |\n)"text~r"\n"
 input_start = ~r"Input:"
@@ -319,8 +369,8 @@ begin_answer = ~r"\#[0-9]+:"
 output = ~r"(?<=\#[0-9]+:( |\n))(.|\n|\t)*?(?=\nQ[0-9]+:)"
 partial_command = command_start~r"\n"
 final_answer = ~r"Ans:( |\n)(.|\n)*$"
-""")
-
+"""
+    )
 
     parsed_program = grammar.parse(program)
 
@@ -335,7 +385,11 @@ final_answer = ~r"Ans:( |\n)(.|\n)*$"
     for node in command_nodes.children:
         # Access all children and focus on getting "command_start", "command_instruction", "begin_answer" and "output"
         child_node_list = []
-        recursive_node_visit(node, ["command_start", "command_instruction", "begin_answer", "output"], child_node_list)
+        recursive_node_visit(
+            node,
+            ["command_start", "command_instruction", "begin_answer", "output"],
+            child_node_list,
+        )
         command_node_list.append(child_node_list)
     # Access text of answer node that starts with Ans:
 
@@ -349,18 +403,23 @@ final_answer = ~r"Ans:( |\n)(.|\n)*$"
     nl_program = Program(input_text, command_node_list, answer)
     return nl_program
 
+
 def fix_program(program):
-    # Given various incomplete program parses, figure out a few common mistakes GPT-3 makes and fix them. 
+    # Given various incomplete program parses, figure out a few common mistakes GPT-3 makes and fix them.
     # This is a more all-encompassing version of complete_program
     pass
 
+
 import re
+
 # as per recommendation from @freylis, compile once only
-CLEANR = re.compile('<.*?>')
+CLEANR = re.compile("<.*?>")
+
 
 def cleanhtml(raw_html):
-  cleantext = re.sub(CLEANR, '', raw_html)
-  return cleantext
+    cleantext = re.sub(CLEANR, "", raw_html)
+    return cleantext
+
 
 def search(query, top_k=1):
     params = {"q": query, "textDecorations": True, "textFormat": "HTML"}
@@ -368,11 +427,13 @@ def search(query, top_k=1):
     response.raise_for_status()
     search_results = response.json()
     if "webPages" in search_results:
-        snippets = [cleanhtml(v['name'] + " " + v['snippet']) for v in search_results['webPages']["value"]][:top_k]
+        snippets = [
+            cleanhtml(v["name"] + " " + v["snippet"]) for v in search_results["webPages"]["value"]
+        ][:top_k]
     else:
         return ""
     return "\n".join(snippets)
-    
+
 
 def execute_code(code_snippet):
     # scope of variables to be defined here?
@@ -380,17 +441,18 @@ def execute_code(code_snippet):
     result = subprocess.run([sys.executable, "-c", code_snippet], capture_output=True, text=True)
     return result
 
+
 def generate_code(instruction, code_input):
     # Call Codex 002
     response = openai.Edit.create(
-    model="code-davinci-edit-001",
-    input="x = " + code_input,
-    instruction="Python code for " + instruction,
-    temperature=0,
-    top_p=1
+        model="code-davinci-edit-001",
+        input="x = " + code_input,
+        instruction="Python code for " + instruction,
+        temperature=0,
+        top_p=1,
     )
     return response
-    
+
 
 def get_few_shot_prompt(inputs, labels, n=150):
     idx = np.random.randint(0, len(inputs), n)
@@ -400,38 +462,41 @@ def get_few_shot_prompt(inputs, labels, n=150):
             continue
         prompt_string += inp + "\n"
         prompt_string += label[0] + "\n"
-        prompt_string += '----\n'
+        prompt_string += "----\n"
     return prompt_string
+
 
 def edit_code(instructions, current_code):
     # Call Codex 001 (Edit) Model
     # Call Codex 002
     response = openai.Edit.create(
-    model="code-davinci-edit-001",
-    input="x = " + current_code,
-    instruction="Python code for " + instructions,
-    temperature=0,
-    top_p=1
+        model="code-davinci-edit-001",
+        input="x = " + current_code,
+        instruction="Python code for " + instructions,
+        temperature=0,
+        top_p=1,
     )
     return response
+
 
 def get_answer(x, return_original=False):
     search_result = re.search("Ans: ", x)
     if search_result:
-        return x[search_result.span(0)[1]:].strip()
+        return x[search_result.span(0)[1] :].strip()
     else:
         # Program did not complete
         matches = [match for match in re.finditer("\#[0-9]+:", x)]
-        # If any match is made, return the last match output 
+        # If any match is made, return the last match output
         if len(matches):
-            return x[matches[-1].start():].strip()
+            return x[matches[-1].start() :].strip()
         if return_original:
             return x.strip()
         return ""
 
+
 def get_autocot_answer(x, answer_prompt="The final answer is ", return_original=False):
     if re.search(answer_prompt, x):
-        return x[re.search(answer_prompt, x).span(0)[-1]:].strip()
+        return x[re.search(answer_prompt, x).span(0)[-1] :].strip()
     else:
         if return_original:
             return x.strip()
@@ -485,7 +550,7 @@ except:
 Q5: [compare]
 Which of the generated code snippets are most like the original one?"""
 
-#5: prints sum of two input numbers only if they are integers otherwise raises error"""
+# 5: prints sum of two input numbers only if they are integers otherwise raises error"""
 
 """
 Q6: [EOC]
