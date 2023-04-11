@@ -17,7 +17,7 @@ with open("openai.key", "r") as file:
     openai.api_key = file.read().strip()
 print("OpenAI API key read successfully")
 
-cache_dir = "/home/bparanjape/language-programmes/data"
+cache_dir = "./data"
 
 
 class HuggingFaceModel(adatest.Model):
