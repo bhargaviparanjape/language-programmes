@@ -6,6 +6,7 @@ import sys
 import adatest
 import numpy as np
 import openai
+import parsimonious
 import requests
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
@@ -301,8 +302,6 @@ class Node:
 
 
 def parse_incomplete_program(program=None):
-    import parsimonious
-
     incomplete_grammar = parsimonious.grammar.Grammar(
         r"""
 program = program_start*node*partial_node
@@ -327,8 +326,6 @@ partial_answer = begin_answer~r"( |\n)"~r"(?<=\#[0-9]+:( |\n))(.|\n|\t)*?$"
 
 
 def parse_program(program=None):
-    import parsimonious
-
     def recursive_node_visit(node, selection_criterion, node_list):
         for child in node.children:
             recursive_node_visit(child, selection_criterion, node_list)
