@@ -801,13 +801,14 @@ if __name__ == "__main__":
         "--model_name",
         type=str,
         choices=[
+            "gpt-3.5-turbo",
             "text-davinci-002",
             "text-davinci-003",
             "code-davinci-002",
             "code-cushman-001",
             "davinci-codex-002-msft",
         ],
-        default="text-davinci-002",
+        default="gpt-3.5-turbo",
     )
     parser.add_argument("--temperature", type=float, default="0.3")
     parser.add_argument(

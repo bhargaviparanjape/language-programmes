@@ -10,7 +10,7 @@
             "justMyCode": true,
             "args": [
                 "--model_name",
-                "text-davinci-002",
+                "gpt-3.5-turbo",
                 "--inference_strategy",
                 "nl_program",
                 "--num_dev_examples",

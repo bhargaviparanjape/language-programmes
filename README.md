@@ -19,7 +19,7 @@ Run Few-shot (Direct) prompting:
 
 ```sh
 python src/affordance/tasks/${task_name}.py \
---model_name text-davinci-002 \
+--model_name gpt-3.5-turbo \
 --inference_strategy few_shot
 ```
 
@@ -27,7 +27,7 @@ Run Auto-CoT prompting:
 
 ```sh
 python src/affordance/tasks/${task_name}.py \
---model_name text-davinci-002 \
+--model_name gpt-3.5-turbo \
 --inference_strategy auto_cot
 ```
 
@@ -35,7 +35,7 @@ Run ART prompting:
 
 ```sh
 python src/affordance/tasks/${task_name}.py \
---model_name text-davinci-002 \
+--model_name gpt-3.5-turbo \
 --inference_strategy nl_program
 ```
 
@@ -44,5 +44,5 @@ Model names can be changed to `code-davinci-002`. Use `--num_dev_examples 100` t
 So, to run a simple test, you can run:
 
 ```sh
-python physics_questions.py --model_name text-davinci-002 --inference_strategy nl_program --num-dev-examples 1
+python src/affordance/tasks/physics_questions.py --model_name gpt-3.5-turbo --inference_strategy nl_program --num_dev_examples 1
 ```

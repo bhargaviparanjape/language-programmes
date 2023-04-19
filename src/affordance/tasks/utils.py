@@ -72,10 +72,39 @@ class OpenAIModel(adatest.Model):
         self.n = n
         self.logprobs = logprobs
 
+        if "turbo" in self.model_name and logprobs is not None:
+            raise ValueError("chat models cannot return logprobs")
+
     def __call__(self, strings):
+        if "turbo" in self.model_name:  # chat models
+            out = []
+            for string in strings:
+                resp = openai.ChatCompletion.create(
+                    model=self.model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are a helpful, tool-augmented assistant.",
+                        },
+                        {"role": "user", "content": string},
+                    ],
+                    max_tokens=self.max_length,
+                    temperature=self.temperature,
+                    top_p=self.top_p,
+                    n=self.n,
+                    stop=self.quote,
+                )
+
+                finish_reason = resp["choices"][0]["finish_reason"]
+                if finish_reason != "stop":
+                    print(f"WARNING: incomplete model response: finish reason '{finish_reason}'")
+
+                out.append(resp["choices"][0]["message"]["content"])
+            return out
+
         if "google" in self.model_name:
             resp = self.model(strings)
-        else:
+        else:  # text completion models
             resp = openai.Completion.create(
                 model=self.model,
                 prompt=strings,
