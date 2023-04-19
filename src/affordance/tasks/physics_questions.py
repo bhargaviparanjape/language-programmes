@@ -1,7 +1,6 @@
 import argparse
 from collections import Counter
 import json
-import pdb
 import re
 
 import datasets
@@ -646,7 +645,6 @@ def auto_cot(
         for x in tqdm(chunks(inputs, 10)):
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
-            # time.sleep(10)
         preds = [get_autocot_answer(x) for x in answers]
         perf_array.append(substring_match(labels, preds))
         print(perf_array)
@@ -684,7 +682,6 @@ def affordance():
             answers = predict(
                 "Answer these high-school-level physics multiple-choice questions.", x
             )
-            pdb.set_trace()
             affordance_inputs = [
                 json.loads(a.strip().split("\n")[1].replace("#1: ", "")) for a in answers
             ]
@@ -787,7 +784,6 @@ def nl_program(
             preds = [get_answer(x) for x in answers]
             perf_array.append(substring_match(new_labels, preds))
             print(perf_array)
-            pdb.set_trace()
             positive_calls = [
                 int(len(stack_trace_list) >= 1)
                 for stack_trace_list in interpreter.execution_details
