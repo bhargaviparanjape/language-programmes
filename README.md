@@ -40,3 +40,9 @@ python src/affordance/tasks/${task_name}.py \
 ```
 
 Model names can be changed to `code-davinci-002`. Use `--num_dev_examples 100` to quickly evaluate on fewer instances.
+
+So, to run a simple test, you can run:
+
+```sh
+python physics_questions.py --model_name text-davinci-002 --inference_strategy nl_program --num-dev-examples 1
+```

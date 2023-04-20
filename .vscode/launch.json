@@ -1,0 +1,21 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "physics questions test",
+            "type": "python",
+            "request": "launch",
+            "program": "src/affordance/tasks/physics_questions.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--model_name",
+                "text-davinci-002",
+                "--inference_strategy",
+                "nl_program",
+                "--num_dev_examples",
+                "1"
+            ]
+        }
+    ]
+}
