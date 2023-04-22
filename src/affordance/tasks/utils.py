@@ -2,6 +2,7 @@ import json
 import re
 import subprocess
 import sys
+from typing import List
 
 import adatest
 import numpy as np
@@ -184,7 +185,12 @@ I can do this task by""" % (
 
 
 def chunks(l, n):
-    """Yield successive n-sized chunks from l."""
+    """Yield successive n-sized chunks from l.
+
+    Ex:
+    >>> list(chunks(list(range(8)), 3))
+    [[0, 1, 2], [3, 4, 5], [6, 7]]
+    """
     for i in range(0, len(l), n):
         yield l[i : i + n]
 
@@ -196,14 +202,14 @@ def get_subset(inputs, labels, n=100):
     return labs, subset
 
 
-def substring_match(labels, predictions):
+def substring_match(labels: List[str], predictions: List[str]) -> float:
+    """Return the rate at which the label appears as a substring of the prediction."""
     correct = 0
-    count = 0
     for label, predict in zip(labels, predictions):
         if label.lower() in predict.lower():
             correct += 1
-        count += 1
-    return (1.0 * correct) / count
+
+    return correct / min(len(labels), len(predictions))
 
 
 def substring_match_v2(labels, predictions):
@@ -215,7 +221,7 @@ def substring_match_v2(labels, predictions):
                 correct += 1
                 break
         count += 1
-    return (1.0 * correct) / count
+    return correct / count
 
 
 class Command:
@@ -362,37 +368,49 @@ def parse_program(program=None):
             node_list.append(Node(node.expr_name, node.text))
             return
 
-    #     grammar = parsimonious.grammar.Grammar(
-    # r"""
-    # program = program_start*node*partial_command*final_answer
-    # program_start = input_start~r" "text~r"\n"
-    # input_start = ~r"Input:"
-    # text = ~r"(?<=Input: )[^\#]+?(?=\nQ[0-9]+:)"
-    # node = command_node~r"\n"output_node~r"\n"
-    # command_node = command_start~r" "command_instruction
-    # output_node = begin_answer~r" "output
-    # command_instruction = ~r"(?<=\] )[^\#]+?(?=\n\#[0-9]+)"
-    # command_start = ~r"Q[0-9]+: \[[A-Za-z_ ]+\]"
-    # begin_answer = ~r"\#[0-9]+:"
-    # output = ~r"(?<=\#[0-9]+: )[^\#]+?(?=\nQ[0-9]+:)"
-    # partial_command = command_start~r"\n"
-    # final_answer = ~r"Ans: (.|\n)*$"
-    # """)
-
     grammar = parsimonious.grammar.Grammar(
         r"""
-program = program_start*node*partial_command*final_answer
-program_start = input_start~r"( |\n)"text~r"\n"
+# A program consists of a program start, nodes, partial commands, and a final answer.
+program = program_start* node* partial_command* final_answer
+
+# A program start consists of an input start, whitespace or newline, and text followed by a newline.
+program_start = input_start ~r"( |\n)" text ~r"\n"
+
+# An input start is defined by the string "Input:".
 input_start = ~r"Input:"
+
+# Text is any sequence of characters between "Input:" and a newline followed by a command (e.g.
+# "Q2:").
 text = ~r"(?<=Input:( |\n))(.|\n|\t)*?(?=\nQ[0-9]+:)"
-node = command_node~r"\n"output_node~r"\n"
-command_node = command_start~r"( |\n)"command_instruction
-output_node = begin_answer~r"( |\n)"output
-command_instruction = ~r"(?<=\]( |\n))(.|\n|\t)*?(?=\n\#[0-9]+)"
+
+# A node consists of a command node followed by a newline and an output node followed by a newline.
+node = command_node ~r"\n" output_node ~r"\n"
+
+# A command node consists of a command start, whitespace or newline, and a command instruction.
+command_node = command_start ~r"( |\n)" command_instruction
+
+# A command start is a question number followed by a command description in square brackets.
 command_start = ~r"Q[0-9]+: \[[A-Za-z_ ]+\]"
+
+# A command instruction is any sequence of characters between "] " and a newline followed by an
+# output start (e.g. "#2:").
+command_instruction = ~r"(?<=\]( |\n))(.|\n|\t)*?(?=\n\#[0-9]+)"
+
+# An output node consists of a begin answer, whitespace or newline, and output.
+output_node = begin_answer ~r"( |\n)" output
+
+# A begin answer is defined by a number sign and a number followed by a colon.
 begin_answer = ~r"\#[0-9]+:"
+
+# Output is any sequence of characters between a begin_answer and a newline followed by a command
+# start.
 output = ~r"(?<=\#[0-9]+:( |\n))(.|\n|\t)*?(?=\nQ[0-9]+:)"
-partial_command = command_start~r"\n"
+
+# A partial command is a command node missing an instruction.
+partial_command = command_start ~r"\n"
+
+# A final answer is defined by the string "Ans:", whitespace or newline, and any sequence of
+# characters until the end of the string.
 final_answer = ~r"Ans:( |\n)(.|\n)*$"
 """
     )
