@@ -449,7 +449,7 @@ class TopDownVisitorBeta(Interpreter):
             "[string edit]": code_generate_then_execute,
             "[string index]": code_generate_then_execute,
             "[string permutation]": code_generate_then_lookup,
-            # "[arithmetic]" : arithmetic,
+            "[arithmetic]": arithmetic,
             "[generate python code]": code_generate,
         }
         if len(exclude_list):
@@ -465,11 +465,11 @@ class TopDownVisitorBeta(Interpreter):
         self.execution_details = []
         self.rerun = rerun
         self.program_completer = OpenAIModel(
-            model=model_name, temperature=temperature, max_length=500, quote="---", n=1
+            model_name, quote="---", temperature=temperature, max_length=500, n=1
         )
 
-    def syntax_check(self, program):
-        # Look for programs with EOC ending and final answer in syntax.
+    def program_ends(self, program: str) -> bool:
+        """Return true if the program contains [EOQ] and a final answer."""
         return "[EOQ]\nAns:" in program
 
     def batch_visit(self, prefixes, programs):
@@ -503,7 +503,7 @@ class TopDownVisitorBeta(Interpreter):
         continuation = program
         runs = 5
         prefix = self.shorten_prefix(prefix, 1)
-        while not self.syntax_check(continuation) and runs > 0:
+        while not self.program_ends(continuation) and runs > 0:
             # TODO: Explicitly, check if the program ends in answers or questions and accordingly change the separator.
             separator = "\nQ"
             continuation += separator
@@ -542,18 +542,19 @@ class TopDownVisitorBeta(Interpreter):
         return continuation
 
     def visit(self, prefix, program):
-        program_ends = self.syntax_check(program)
+        program_ends = self.program_ends(program)
         program = prefix.rsplit("----\n", 1)[1].split("\n", 1)[1] + program
         # If program does not end correctly, rerun GPT-3 further to end it.
         if program_ends:
             try:
                 parsed_program = parse_program(program)
-            except:
+            except Exception as e:
+                print(e)
                 # If the initial program is not parsed even if it has an ending, return as is
                 return program
         else:
             new_program = self.complete_program(prefix, program)
-            program_ends = self.syntax_check(new_program)
+            program_ends = self.program_ends(new_program)
             if not program_ends:
                 # After one attempt at completing program, give up checking for affordance
                 return program
