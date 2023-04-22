@@ -13,6 +13,8 @@
                 "gpt-3.5-turbo",
                 "--inference_strategy",
                 "nl_program",
+                "--num_train_examples",
+                "1",
                 "--num_dev_examples",
                 "1"
             ]
