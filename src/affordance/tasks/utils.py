@@ -1,8 +1,8 @@
-import json
+from dataclasses import dataclass
 import re
 import subprocess
 import sys
-from typing import List
+from typing import List, Union
 
 import adatest
 import numpy as np
@@ -58,26 +58,23 @@ class OpenAIModel(adatest.Model):
         top_p=1,
         max_length=30,
         n=1,
-        logprobs=None,
     ):
         self.model_name = model
         if "google" in model:
-            self.model = HuggingFaceModel(model, quote, temperature, top_p, max_length, n, logprobs)
+            self.model = HuggingFaceModel(model, quote, temperature, top_p, max_length, n)
         else:
             self.model = model
-        self.api_key = openai.api_key
         self.quote = quote
         self.temperature = temperature
         self.top_p = top_p
         self.max_length = max_length
         self.n = n
-        self.logprobs = logprobs
 
-        if "turbo" in self.model_name and logprobs is not None:
-            raise ValueError("chat models cannot return logprobs")
-
-    def __call__(self, strings):
+    def __call__(self, strings: Union[str, List[str]]) -> List[str]:
         if "turbo" in self.model_name:  # chat models
+            if isinstance(strings, str):
+                strings = [strings]
+
             out = []
             for string in strings:
                 resp = openai.ChatCompletion.create(
@@ -114,7 +111,6 @@ class OpenAIModel(adatest.Model):
                 top_p=self.top_p,
                 n=self.n,
                 stop=self.quote,
-                logprobs=self.logprobs,
             )
         return [x["text"] for x in resp["choices"]]
 
@@ -151,9 +147,6 @@ class OpenAIModelLogProb(adatest.Model):
             logprobs=self.logprobs,
         )
         return resp
-
-
-gpt3 = OpenAIModel(model="text-davinci-002", max_length=200, quote="", n=1)
 
 
 def propose_decomposition(decomp_prompt, io_pairs, n=20):
@@ -214,161 +207,111 @@ def substring_match(labels: List[str], predictions: List[str]) -> float:
 
 def substring_match_v2(labels, predictions):
     correct = 0
-    count = 0
     for label, predict in zip(labels, predictions):
         for l in label:
             if l.lower() in predict.lower():
                 correct += 1
                 break
-        count += 1
-    return correct / count
+    return correct / min(len(labels), len(predictions))
 
 
+def _sanitize_multiline(s: Union[str, None]) -> str:
+    """Sanitize a str (possible None) with an arrow for printing if it's a multi-line string."""
+    out = str(s)
+
+    if "\n" in out:
+        out = "↓\n" + out
+
+    return out
+
+
+@dataclass
 class Command:
-    def __init__(self, command_name, command_input=None, command_output=None):
-        self.command_name = command_name
-        self.command_input = command_input
-        self.command_output = command_output
+    """This class represents a command with optional input and output. The command forms a part of
+    a program. See the docstring for Program."""
+
+    name: str
+    input: Union[str, None] = None
+    output: Union[str, None] = None
 
     def __str__(self):
-        command = ""
-        command += self.command_name + "\n---\n"
-        if (self.command_input) and (self.command_output):
-            command += self.command_input + "\n---\n"
-            command += self.command_output
-        return command
+        return f"""{self.name}
+-  input: {_sanitize_multiline(self.input)}
+- output: {_sanitize_multiline(self.output)}"""
 
-    @classmethod
-    def convert_to_nlprogram(cls, rank, command, input_only=False):
-        # TODO: Add feature for multiline (not all multiline inputs and outputs are in new lines in the retrieval)
+    def to_program_chunk(self, rank: int, input_only=False) -> str:
+        """Convert the program back to a string containing the query and output, e.g.:
 
-        if not command.command_input:
+        Q2: [search] Albert Einstein
+        #2: Albert Einstein was born ...
+        """
+        # TODO: Add feature for multiline (not all multiline inputs and outputs are in new lines in
+        # the retrieval)
+
+        if not self.input:
             # The program parse identified a command name but no command input or command output.
-            # Based on strict grammer parsing rules, this command node is [EOQ]
-            return "Q{0}: {1}".format(rank, command.command_name)
+            # Based on strict grammer parsing rules, we know this command node is [EOQ].
+            return f"Q{rank}: {self.name}"
 
-        input_sep = "\n" if "\n" in command.command_input else " "
-        output_sep = "\n" if "\n" in command.command_output else " "
+        input_sep = "\n" if "\n" in self.input else " "
+        output_sep = "\n" if "\n" in self.output else " "
+
+        out = " {}{}{}".format(self.name, input_sep, self.input)
+        if rank != 1:
+            out = f"Q{rank}:" + out
+
         if not input_only:
-            if rank == 1:
-                return " {1}{2}{3}\n#{4}:{5}{6}".format(
-                    rank,
-                    command.command_name,
-                    input_sep,
-                    command.command_input,
-                    rank,
-                    output_sep,
-                    command.command_output,
-                )
-            return "Q{0}: {1}{2}{3}\n#{4}:{5}{6}".format(
-                rank,
-                command.command_name,
-                input_sep,
-                command.command_input,
-                rank,
-                output_sep,
-                command.command_output,
-            )
-        else:
-            if rank == 1:
-                return " {1}{2}{3}".format(
-                    rank, command.command_name, input_sep, command.command_input
-                )
-            return "Q{0}: {1}{2}{3}".format(
-                rank, command.command_name, input_sep, command.command_input
-            )
+            out += "\n#{}:{}{}".format(rank, output_sep, self.output)
+
+        return out
 
 
-class StacktraceItem:
-    def __init__(
-        self,
-        command,
-        affordance,
-        affordance_output,
-        affordance_details,
-        rerun_program,
-        rerun_program_parse,
-    ):
-        self.command = command
-        self.affordance = affordance
-        self.affordance_output = affordance_output
-        self.affordance_details = affordance_details
-        self.rerun_program = rerun_program
-        self.rerun_program_parse = rerun_program_parse
-
-
+@dataclass
 class Program:
-    def __init__(self, input_node, command_node_list, answer_node):
-        self.node_list = []
+    """This class stores a program, which involves an input text, a series of Commands, and an
+    answer text.
 
-        for node in command_node_list:
-            command_name = node[0].text.split(" ", 1)[1]
-            if len(node) > 1:
-                command_input = node[1].text
-                command_output = node[3].text
-                self.node_list.append(Command(command_name, command_input, command_output))
-            else:
-                self.node_list.append(Command(command_name))
+    Each command is represented as a query string (starting with e.g. "Q#:"), which has a command
+    name and input, and an output string (starting with e.g. "#1:").
 
-        self.input_node = input_node
-        self.answer_node = answer_node
+    If any text is multi-line (i.e. contains "\\n"), it goes on a separate line from the previous
+    text.
 
-    def __str__(self):
-        program = ""
-        program += "Program\n======\n"
-        program += "Input\n------\n"
-        program += self.input_node.__str__()
-        program += "\nBreakdown\n------"
-        for node in self.node_list:
-            program += node.__str__()
-            program += "\n------\n"
-        program += "\nAnswer\n------\n"
-        program += self.answer_node.__str__()
-        return program
+    Here's an example:
+        Input: Q: Dominic is the star discus thrower on South's varsity track and field team. In
+        last year's regional competition, Dominic whirled the 1.8 kg discus in a circle with a
+        radius of 1.2 m, ultimately reaching a speed of 45 m/s before launch. Determine the net
+        force acting upon the discus in the moments before launch.
+        Q1: [generate python code] write down the arithmetic or algebra equations as python code,
+        storing the answer as 'ans'
+        #1:
+        F = mv**2/r
+        ans = F
+        print(ans)
+        Q2: [code execute] Execute the python code in #1 and get the value of "ans"
+        #2:
+        2160
+        Q3: [EOQ]
+        Ans: 2160
+    """
 
-
-class Node:
-    def __init__(self, expr_name, text):
-        self.expr_name = expr_name
-        self.text = text
+    input: str
+    commands: List[Command]
+    answer: str
 
     def __str__(self):
-        return json.dumps({"expr_name": self.expr_name, "text": self.text}, indent=2)
+        command_str = "\n---\n".join(str(c) for c in self.commands)
 
+        return f"""Program
+======
+Input: {_sanitize_multiline(self.input)}
+------
+Commands:
+{command_str}
+------
+Answer: {_sanitize_multiline(self.answer)}"""
 
-def parse_incomplete_program(program=None):
-    incomplete_grammar = parsimonious.grammar.Grammar(
-        r"""
-program = program_start*node*partial_node
-program_start = input_start~r"( |\n)"text~r"\n"
-input_start = ~r"Input:"
-text = ~r"(?<=Input:( |\n))(.|\n|\t)*?(?=\nQ[0-9]+:)"
-node = command_node~r"\n"output_node~r"\n"
-command_node = command_start~r"( |\n)"command_instruction
-output_node = begin_answer~r"( |\n)"output
-command_instruction = ~r"(?<=\]( |\n))(.|\n|\t)*?(?=\n\#[0-9]+)"
-command_start = ~r"Q[0-9]+: \[[A-Za-z_ ]+\]"
-begin_answer = ~r"\#[0-9]+:"
-output = ~r"(?<=\#[0-9]+:( |\n))(.|\n|\t)*?(?=\nQ[0-9]+:)"
-partial_node = partial_command_answer / partial_command
-partial_command = command_start~r"( |\n)"~r"(?<=\]( |\n))(.|\n|\t)*?$"
-partial_command_answer = command_node~r"\n"partial_answer
-partial_answer = begin_answer~r"( |\n)"~r"(?<=\#[0-9]+:( |\n))(.|\n|\t)*?$"
-"""
-    )
-    incomplete_parsed_program = incomplete_grammar.parse(program)
-    return incomplete_parsed_program
-
-
-def parse_program(program=None):
-    def recursive_node_visit(node, selection_criterion, node_list):
-        for child in node.children:
-            recursive_node_visit(child, selection_criterion, node_list)
-        if node.expr_name in selection_criterion:
-            node_list.append(Node(node.expr_name, node.text))
-            return
-
-    grammar = parsimonious.grammar.Grammar(
+    _grammar = parsimonious.grammar.Grammar(
         r"""
 # A program consists of a program start, nodes, partial commands, and a final answer.
 program = program_start* node* partial_command* final_answer
@@ -415,47 +358,56 @@ final_answer = ~r"Ans:( |\n)(.|\n)*$"
 """
     )
 
-    parsed_program = grammar.parse(program)
+    @classmethod
+    def from_str(cls, s: str) -> "Program":
+        """Parses the program components from the text completion."""
+        parsed = cls._grammar.parse(s)
 
-    # A full program has 4 children.: Input, full commans, final partial command (EOC) and answer
-    # Access all children to get "input_start" and "text"
-    input_node = parsed_program.children[0]
-    input_node_list = []
-    recursive_node_visit(input_node, ["input_start", "text"], input_node_list)
-    input_text = input_node_list[1]
-    command_nodes = parsed_program.children[1]
-    command_node_list = []
-    for node in command_nodes.children:
-        # Access all children and focus on getting "command_start", "command_instruction", "begin_answer" and "output"
-        child_node_list = []
-        recursive_node_visit(
-            node,
-            ["command_start", "command_instruction", "begin_answer", "output"],
-            child_node_list,
-        )
-        command_node_list.append(child_node_list)
-    # Access text of answer node that starts with Ans:
+        def match_children(node, matches: List[str], node_list: List[str]):
+            """Depth-first search on the node to find all nodes whose expr_name is in matches. These
+            nodes are appended to node_list."""
+            for child in node.children:
+                match_children(child, matches, node_list)
+            if node.expr_name in matches:
+                node_list.append(node.text)
 
-    partial_command = []
-    recursive_node_visit(parsed_program.children[2], ["command_start"], partial_command)
-    command_node_list.append(partial_command)
+        # A full program has 4 children: input, full command, final partial command (EOQ), and
+        # answer.
+        input_node = parsed.children[0]
+        command_node = parsed.children[1]
+        final_partial_command_node = parsed.children[2]
+        answer_node = parsed.children[3]
 
-    answer_node = parsed_program.children[3]
-    answer = Node(answer_node.expr_name, answer_node.text)
+        # get the input text
+        input_elements = []
+        match_children(input_node, ["input_start", "text"], input_elements)
+        input_text = input_elements[1]
 
-    nl_program = Program(input_text, command_node_list, answer)
-    return nl_program
+        # get the commands
+        commands = []
+        for node in command_node.children + [final_partial_command_node]:
+            elements = []
+            match_children(
+                node,
+                ["command_start", "command_instruction", "begin_answer", "output"],
+                elements,
+            )
+
+            # build the command
+            name = elements[0].split(" ", 1)[1]
+            if len(elements) > 1:
+                c = Command(name, elements[1], elements[3])
+            else:
+                c = Command(name)
+
+            commands.append(c)
+
+        # get the answer
+        answer_text = answer_node.text[len("Ans: ") :]
+
+        return cls(input_text, commands, answer_text)
 
 
-def fix_program(program):
-    # Given various incomplete program parses, figure out a few common mistakes GPT-3 makes and fix them.
-    # This is a more all-encompassing version of complete_program
-    pass
-
-
-import re
-
-# as per recommendation from @freylis, compile once only
 CLEANR = re.compile("<.*?>")
 
 
@@ -522,19 +474,26 @@ def edit_code(instructions, current_code):
     return response
 
 
-def get_answer(x, return_original=False):
-    search_result = re.search("Ans: ", x)
-    if search_result:
-        return x[search_result.span(0)[1] :].strip()
-    else:
-        # Program did not complete
-        matches = [match for match in re.finditer("\#[0-9]+:", x)]
-        # If any match is made, return the last match output
-        if len(matches):
-            return x[matches[-1].start() :].strip()
-        if return_original:
-            return x.strip()
-        return ""
+_answer_regex = re.compile(r"Ans: (.+)", flags=re.DOTALL)
+_output_regex = re.compile(r"\#\d:( |\n)(.*?)(?=Q\d|$)", flags=re.DOTALL)
+
+
+def get_answer(x: str) -> Union[str, None]:
+    """Extract the answer from the end of a natural language program.
+
+    None is returned if no answer could be parsed from the text.
+    """
+    result = _answer_regex.search(x)
+    if result:
+        return result.group(1).strip()
+
+    # program did not complete; use the last program output
+    matches = _output_regex.findall(x)
+    # if any match is made, return the last match output
+    if len(matches) > 0:
+        return matches[-1][1].strip()
+
+    return None
 
 
 def get_autocot_answer(x, answer_prompt="The final answer is ", return_original=False):
@@ -544,61 +503,3 @@ def get_autocot_answer(x, answer_prompt="The final answer is ", return_original=
         if return_original:
             return x.strip()
         return ""
-
-
-program = """Input:
-Python code:
-try:
-    n = int(input())
-    m = int(input())
-    integer_sum = int(n) + int(m)
-    print(integer_sum)
-except:
-    print('error')
-
-  choice: prints number between 5 and 6
-  choice: try input and except error
-  choice: inputs the string 'try'
-  choice: prints sum of two input numbers only if they are integers otherwise raises error
-Q1: [code generate] prints number between 5 and 6
-#1:
-import random
-
-print(random.uniform(5,6))
-Q2: [code generate] try input and except error
-#2:
-try:
-    #open file
-    file = open(file_name, "r")
-    #read file
-    data = file.read()
-    #close file
-    file.close()
-    #split data
-    data = data.split("\n")
-    #remove empty string
-Q3: [code generate] inputs the string 'try'
-#3: print('try')
-Q4: [code generate] prints sum of two input numbers only if they are integers otherwise raises error
-#4:
-#!/usr/bin/python
-
-a=raw_input("enter first number: ")
-b=raw_input("enter second number: ")
-try:
-    sum=int(a)+int(b)
-    print "sum is: ",sum
-except:
-    print "enter integer values only"
-Q5: [compare]
-Which of the generated code snippets are most like the original one?"""
-
-# 5: prints sum of two input numbers only if they are integers otherwise raises error"""
-
-"""
-Q6: [EOC]
-Ans:
-prints sum of two input numbers only if they are integers otherwise raises error
-"""
-
-# print(parse_incomplete_program(program))

@@ -1,36 +1,27 @@
 import ast
-import pdb
+from dataclasses import dataclass
 import re
 import subprocess
 import sys
+import textwrap
 import time
+from typing import Callable, List, Tuple, Union
 
 import enchant
 import openai
+import parsimonious
 from pot_tools import safe_execute, simplify_ans
 import requests
+from serpapi import GoogleSearch
 from tqdm import tqdm
-from utils import Command, OpenAIModel, StacktraceItem, gpt3, parse_program
+from utils import Command, OpenAIModel, Program, cleanhtml
 
 subscription_key = "28dc412935f24fb9974d80c30915483a"
 search_url = "https://api.bing.microsoft.com/v7.0/search"
 headers = {"Ocp-Apim-Subscription-Key": subscription_key}
-import time
 
-from serpapi import GoogleSearch
 
 serp_api_key = "5599fad2263e4b1c6d4efb62fa15f83f5ad2d1bb727b8721d616d719399a7f7b"
-
-
-import re
-
-# as per recommendation from @freylis, compile once only
-CLEANR = re.compile("<.*?>")
-
-
-def cleanhtml(raw_html):
-    cleantext = re.sub(CLEANR, "", raw_html)
-    return cleantext
 
 
 def search(query, top_k=1):
@@ -263,8 +254,6 @@ def code_generate_then_lookup(instruction, code_input):
 
 
 def lookup(word_list):
-    import enchant
-
     d = enchant.Dict("en_US")
     valid_list = []
     for word in word_list:
@@ -281,164 +270,35 @@ def arithmetic(equations, previous_input):
     return result, None
 
 
+_gpt3 = OpenAIModel(model="text-davinci-002", max_length=200, quote="", n=1)
+
+
 def generate(prompt, previous_input):
-    return gpt3(prompt)[0], None
+    return _gpt3(prompt)[0], None
 
 
-class Interpreter:
-    def __init__():
-        pass
+def trim_demonstrations(s: str) -> str:
+    """Trim the few-shot demonstrations from prompt text."""
+    return s.rsplit("----\n", 1)[1].split("\n", 1)[1]
 
 
-class TopDownVisitor(Interpreter):
-    def __init__(self, model_name="text-davinci-002"):
-        self.built_ins = {
-            "[generate]": generate,
-            "[search]": search,
-            "[code generate]": code_generate,
-            "[code execute]": code_execute,
-            "[string edit]": code_generate_then_execute,
-            # "[arithmetic]" : arithmetic,
-            "[generate python code]": code_generate,
-        }
-
-        self.program_completer = OpenAIModel(model=model_name, max_length=500, quote="", n=1)
-
-    def syntax_check(self, program):
-        # Look for programs with EOC ending and final answer in syntax.
-        return "[EOQ]\nAns:" in program
-
-    def batch_visit(self, prefixes, programs):
-        answers = []
-        for prefix, program in tqdm(zip(prefixes, programs)):
-            answers.append(self.visit(prefix, program))
-        return answers
-
-    def check_builtin(self, command):
-        # Some multiple commands are mapped to the same built-in affordances.
-        processed_command = command
-        if command in self.built_ins:
-            return self.built_ins[processed_command]
-        # What to do when no built-infunction is triggered.
-
-    def complete_program(self, prefix, program):
-        # Check for out-of-window errors and shift window to reduce the number of programs shown.
-        continuation = program
-        runs = 5
-        while not self.syntax_check(continuation) and runs > 0:
-            continuation = self.program_completer(prefix + program)[0]
-            runs -= 1
-        return program + continuation
-
-    def rerun_program(self, prefix, prev_command_list, current_command_output):
-        # Check for out-of-window errors and shift window to reduce the number of programs shown.
-        program_prefix = prefix + "\n".join(
-            [
-                Command.convert_to_nlprogram(i + 1, command)
-                for i, command in enumerate(prev_command_list[:-1])
-            ]
-        )
-        # TODO: Add feature for multiline
-        program_prefix += (
-            "\n"
-            + Command.convert_to_nlprogram(
-                len(prev_command_list), prev_command_list[-1], input_only=True
-            )
-            + "\n#{0}: {1}".format(len(prev_command_list), current_command_output)
-        )
-        # Replace last line with corrected input, if necessary.
-        continuation = self.program_completer(program_prefix)[0]
-        return program_prefix, continuation
-
-    def visit(self, prefix, program):
-        program_ends = self.syntax_check(program)
-        program = prefix.rsplit("----\n", 1)[1].split("\n", 1)[1] + program
-        # If program does not end correctly, rerun GPT-3 further to end it.
-        if program_ends:
-            parsed_program = parse_program(program)
-        else:
-            program = self.complete_program(prefix, program)
-            program_ends = self.syntax_check(program)
-            if not program_ends:
-                # After one attempt at completing program, give up checking for affordance
-                return program
-            parsed_program = parse_program(program)
-
-        previous_input = None
-        i = 0
-        parsed_program.input_node
-        command_node_list = parsed_program.node_list
-        parsed_program.answer_node
-        stack_trace = []
-        while command_node_list[i].command_name != "[EOQ]":
-            node = command_node_list[i]
-            command_name = node.command_name
-            command_input = node.command_input
-            command_output = node.command_output
-            # Check affordance list to run.
-            affordance = self.check_builtin(command=command_name)
-
-            if (
-                affordance and previous_input
-            ):  # previous_input so code generate is hard, But search and code_execute is not, overrride.
-                affordance_output, affordance_details = affordance(command_input, previous_input)
-                if affordance_output:
-                    # affordance_output and command_output (i.e. GPT-3) need to be interpolated appropriately.
-                    # For code executions
-                    command_output = affordance_output
-                    # For Search (concatenate the GPT_3 output with retrieval output)
-
-                # Run GPT-3 again.
-                program_prefix, rerun_program = self.rerun_program(
-                    prefix, command_node_list[: i + 1], command_output
-                )
-
-                # Replace nodes i+1 though N (again complication is that this should be done EOC i.e. till the program is fully generated.)
-                new_program = program_prefix + rerun_program
-                new_program = new_program.rsplit("----\n", 1)[1].split("\n", 1)[1]
-                try:
-                    parsed_rerun_program = parse_program(new_program)
-                except:
-                    pdb.set_trace()
-
-                parsed_program = parsed_rerun_program
-                program = new_program
-
-                # for j in range(i+1, len(command_node_list)):
-                #     command_node_list[j] = parsed_rerun_program.node_list[j]
-                command_node_list = (
-                    command_node_list[: i + 1] + parsed_rerun_program.node_list[i + 1 :]
-                )
-
-                parsed_rerun_program.answer_node
-
-                stack_trace.append(
-                    StacktraceItem(
-                        node,
-                        affordance,
-                        affordance_output,
-                        affordance_details,
-                        new_program,
-                        parsed_rerun_program,
-                    )
-                )
-
-            # Output of the current command becomes the input for the next round.
-            previous_input = command_output
-            i += 1
-
-        # Since run is complete, The final answer in parsed_rerun_program is returned
-        # Selectively, we can also return the entire program
-        return program
+@dataclass
+class StacktraceItem:
+    command: Command
+    tool: str
+    tool_output: str
+    tool_details: str
+    rerun_program: str
+    rerun_program_parsed: Program
 
 
-class TopDownVisitorBeta(Interpreter):
+class TopDownVisitor:
     def __init__(
         self,
-        model_name="text-davinci-002",
-        temperature=0.3,
-        rerun=True,
-        exclude_list=[],
+        model_name: str = "text-davinci-002",
+        temperature: float = 0.3,
+        rerun: bool = True,
+        exclude_list: List[str] = [],
     ):
         self.built_ins = {
             "[generate]": generate,
@@ -452,9 +312,8 @@ class TopDownVisitorBeta(Interpreter):
             "[arithmetic]": arithmetic,
             "[generate python code]": code_generate,
         }
-        if len(exclude_list):
-            for key in exclude_list:
-                del self.built_ins[key]
+        for key in exclude_list:
+            del self.built_ins[key]
         self.keyword_map = {
             "[permutation]": "[string permutation]",
             "[permute]": "[string permutation]",
@@ -462,228 +321,193 @@ class TopDownVisitorBeta(Interpreter):
             "[execute]": "[code execute]",
         }
 
-        self.execution_details = []
+        self.execution_details: List[StacktraceItem] = []
         self.rerun = rerun
         self.program_completer = OpenAIModel(
             model_name, quote="---", temperature=temperature, max_length=500, n=1
         )
 
-    def program_ends(self, program: str) -> bool:
+    @staticmethod
+    def program_ends(program: str) -> bool:
         """Return true if the program contains [EOQ] and a final answer."""
         return "[EOQ]\nAns:" in program
 
-    def batch_visit(self, prefixes, programs):
+    def batch_visit(self, prefixes: List[str], programs: List[str]) -> List[str]:
         answers = []
         for prefix, program in tqdm(zip(prefixes, programs)):
             answers.append(self.visit(prefix, program))
         return answers
 
-    def check_builtin(self, command):
-        # Some multiple commands are mapped to the same built-in affordances.
-        processed_command = command
-        if command in self.built_ins:
-            return self.built_ins[processed_command]
-        elif command in self.keyword_map:
-            return self.built_ins[self.keyword_map[processed_command]]
-        # What to do when no built-infunction is triggered.
+    def get_builtin(self, command: str) -> Union[Callable[[str, str], Tuple[str, str]], None]:
+        """Get the tool function from its name (or an alias in self.keyword_map).
 
-    def shorten_prefix(self, prefix, to_remove=1):
-        # Program prefix contains other demonstrations, along with Q1:
+        Returns None if not found."""
+        if command in self.built_ins:
+            return self.built_ins[command]
+        if command in self.keyword_map:
+            return self.built_ins[self.keyword_map[command]]
+
+        return None
+
+    def shorten_prefix(self, prefix: str, to_remove: int) -> str:
+        """Remove few-shot examples from the prefix, starting with the latter ones.
+
+        We start with the latter ones in case they're organized by task relevance.
+        """
+        # split along demonstrations
         individual_programs = prefix.split("\n----\n")
 
-        # to Remove: Number of programs to remove
-        # If they are organized by task relevance probably best to get rif of the latter ones.
         shifted_programs = individual_programs[: -(to_remove + 1)] + [individual_programs[-1]]
-        new_prefix = "\n----\n".join(shifted_programs)
 
-        return new_prefix
+        return "\n----\n".join(shifted_programs)
 
-    def complete_program(self, prefix, program):
-        # Check for out-of-window errors and shift window to reduce the number of programs shown.
-        continuation = program
-        runs = 5
-        prefix = self.shorten_prefix(prefix, 1)
-        while not self.program_ends(continuation) and runs > 0:
-            # TODO: Explicitly, check if the program ends in answers or questions and accordingly change the separator.
-            separator = "\nQ"
-            continuation += separator
-            continuation = self.program_completer(prefix + continuation)[0]
-            continuation = program + separator + continuation
-            runs -= 1
+    def complete_program(self, prefix: str, program: str, runs: int = 5):
+        separator = "\nQ"
+
+        for _ in range(runs):
+            if self.program_ends(program):
+                break
+
+            # shift window on few-shot demonstrations
             prefix = self.shorten_prefix(prefix, 1)
-        return continuation
 
-    def rerun_program(self, prefix, prev_command_list, current_command_output):
-        # Check for out-of-window errors and shift window to reduce the number of programs shown.
-        program_prefix = prefix + "\n".join(
-            [
-                Command.convert_to_nlprogram(i + 1, command)
-                for i, command in enumerate(prev_command_list[:-1])
-            ]
-        )
-        # TODO: Add feature for multiline
-        output_sep = "\n" if "\n" in current_command_output else " "
-        program_sep = "" if len(prev_command_list) == 1 else "\n"
-        program_prefix += (
-            program_sep
-            + Command.convert_to_nlprogram(
-                len(prev_command_list), prev_command_list[-1], input_only=True
-            )
-            + "\n#{0}:{1}{2}\nQ".format(
-                len(prev_command_list), output_sep, current_command_output.strip()
-            )
-        )
-        # Replace last line with corrected input, if necessary.
-        continuation = self.program_completer(program_prefix)[0]
-        return program_prefix, continuation
+            # TODO: explicitly check if the program ends in answers or questions and accordingly
+            # change the separator
 
-    def rerun_answer(self, prefix):
+            program += separator + self.program_completer(prefix + program + separator)[0]
+
+        return program
+
+    def rerun_program(
+        self, prefix: str, prev_commands: List[Command], current_output: str
+    ) -> Tuple[str, str]:
+        # recreate the program string up to the current command
+        prefix += "\n".join(c.to_program_chunk(i + 1) for i, c in enumerate(prev_commands[:-1]))
+        if prefix:
+            prefix += "\n"
+
+        # recreate the input text of the current command
+        prefix += prev_commands[-1].to_program_chunk(len(prev_commands), input_only=True)
+        output_sep = "\n" if "\n" in current_output else " "
+        prefix += f"\n#{len(prev_commands)}:{output_sep}{current_output.strip()}\nQ"
+
+        # get corrected output
         continuation = self.program_completer(prefix)[0]
-        return continuation
 
-    def visit(self, prefix, program):
+        return prefix, continuation
+
+    def rerun_answer(self, prefix: str) -> str:
+        return self.program_completer(prefix)[0]
+
+    def visit(self, prefix: str, program: str) -> str:
+        # check if the program ends with an answer
         program_ends = self.program_ends(program)
-        program = prefix.rsplit("----\n", 1)[1].split("\n", 1)[1] + program
-        # If program does not end correctly, rerun GPT-3 further to end it.
-        if program_ends:
-            try:
-                parsed_program = parse_program(program)
-            except Exception as e:
-                print(e)
-                # If the initial program is not parsed even if it has an ending, return as is
-                return program
-        else:
-            new_program = self.complete_program(prefix, program)
-            program_ends = self.program_ends(new_program)
-            if not program_ends:
-                # After one attempt at completing program, give up checking for affordance
-                return program
-            try:
-                parsed_program = parse_program(new_program)
-            except:
-                return program
 
-        previous_input = None
-        i = 0
-        input_node = parsed_program.input_node
-        command_node_list = parsed_program.node_list
-        parsed_program.answer_node
-        stack_trace = []
+        # The prompt contains the beginning of the program, so we'll prepend it to the program.
+        program = trim_demonstrations(prefix) + program
 
+        # print for debugging purposes
+        print("visiting program:")
+        print(textwrap.indent(program, "  "))
+        print("program_ends:", program_ends)
+
+        # If the program does not end completely, run further to end it.
         if not program_ends:
-            # After one attempt at completing program, give up checking for affordance
+            new_program = self.complete_program(prefix, program)
+            if not self.program_ends(new_program):
+                # after one attempt at completing program, give up
+                print("WARNING: unable to complete program:")
+                print(textwrap.indent(program, "  "))
+
+                return program
+            program = new_program
+
+        # parse the program
+        try:
+            p = Program.from_str(program)
+        except parsimonious.ParseError as e:
+            print("WARNING: error parsing program:")
+            print(textwrap.indent(program, "  "))
+            print(str(e))
+
             return program
 
-        previous_input = input_node.text
+        previous_input = p.input
 
-        while i < len(command_node_list) and command_node_list[i].command_name != "[EOQ]":
-            node = command_node_list[i]
-            command_name = node.command_name
-            command_input = node.command_input
-            command_output = node.command_output
+        stack_trace = []
 
-            # Check affordance list to run.
-            affordance = self.check_builtin(command=command_name)
+        # p gets updated as we run tools, so we have to iterate over the commands manually.
+        i = 0
+        while i < len(p.commands):
+            command = p.commands[i]
 
-            # if affordance and previous_input:
-            if affordance:
-                affordance_output, affordance_details = affordance(command_input, previous_input)
+            if command.name == "[EOQ]":
+                break
 
-                if affordance_output:
-                    # affordance_output and command_output (i.e. GPT-3) need to be interpolated appropriately.
-                    # For Search (concatenate the GPT_3 output with retrieval output)
-                    if command_name == "[search]":
-                        command_output += " " + affordance_output
-                    else:
-                        command_output = affordance_output
+            # get the tool function
+            tool_func = self.get_builtin(command.name)
 
-                if self.rerun:
-                    # Run GPT-3 again (technically only if the execution is different)
-                    program_prefix, rerun_program = self.rerun_program(
-                        prefix, command_node_list[: i + 1], command_output
-                    )
+            if tool_func is None:
+                print(f"tool '{command.name}' not found")
+                previous_input = command.output
+                i += 1
+                continue
 
-                    # Replace nodes i+1 though N (again complication is that this should be done EOC i.e. till the program is fully generated.)
-                    new_program = program_prefix + rerun_program
-                    new_program = new_program.rsplit("----\n", 1)[1].split("\n", 1)[1]
-                    new_program = self.complete_program(prefix, new_program)
+            tool_output, tool_details = tool_func(command.input, previous_input)
 
-                    try:
-                        parsed_rerun_program = parse_program(new_program)
-                    except:
-                        # Everytime the rerun fails to generate a legitimate program, its unsafe to assume that it could replace the rest of the original program.
-                        # Best course of action is to exit with the best new_program
-                        program = new_program
-                        break
-
-                    parsed_program = parsed_rerun_program
-                    program = new_program
-                    command_node_list = (
-                        command_node_list[: i + 1] + parsed_rerun_program.node_list[i + 1 :]
-                    )
-                    parsed_rerun_program.answer_node
-                    stack_trace.append(
-                        StacktraceItem(
-                            node,
-                            affordance,
-                            affordance_output,
-                            affordance_details,
-                            new_program,
-                            parsed_rerun_program,
-                        )
-                    )
+            if tool_output:
+                # For search, concatenate the GPT-3 output with retrieval output. For everything
+                # else, replace.
+                if command.name == "[search]":
+                    command.output += " " + tool_output
                 else:
-                    # Run GPT-3 again (technically only if the execution is different)
-                    # program_prefix, rerun_program = self.rerun_program(prefix, command_node_list[:i+1], command_output)
-                    prev_command_list = command_node_list[: i + 1]
-                    program_prefix = prefix + "\n".join(
-                        [
-                            Command.convert_to_nlprogram(j + 1, command)
-                            for j, command in enumerate(prev_command_list[:-1])
-                        ]
-                    )
-                    # TODO: Add feature for multiline
-                    output_sep = "\n" if "\n" in command_output else " "
-                    program_sep = "" if len(prev_command_list) == 1 else "\n"
-                    program_prefix += (
-                        program_sep
-                        + Command.convert_to_nlprogram(
-                            len(prev_command_list),
-                            prev_command_list[-1],
-                            input_only=True,
-                        )
-                        + "\n#{0}:{1}{2}\n".format(
-                            len(prev_command_list), output_sep, command_output.strip()
-                        )
-                    )
-                    program_prefix += "\n".join(
-                        [
-                            Command.convert_to_nlprogram(j + len(prev_command_list) + 1, command)
-                            for j, command in enumerate(command_node_list[i + 1 :])
-                        ]
-                    )
-                    new_program = program_prefix
-                    # parsed program does not change since the future nodes are not updated.
-                    # However, final answer can change due to selective replacement of the intermediate steps.
-                    continuation = self.rerun_answer(program_prefix)
-                    new_program += continuation
-                    new_program = new_program.rsplit("----\n", 1)[1].split("\n", 1)[1]
-                    stack_trace.append(
-                        StacktraceItem(
-                            node,
-                            affordance,
-                            affordance_output,
-                            affordance_details,
-                            new_program,
-                            parsed_program,
-                        )
-                    )
+                    command.output = tool_output
 
-            # Output of the current command becomes the input for the next round.
-            previous_input = command_output
+            if self.rerun:
+                # run model again with modified command output
+                new_prefix, new_output = self.rerun_program(
+                    prefix, p.commands[: i + 1], command.output
+                )
+
+                # replace later commands (i+1 though N), then have the model re-complete the rest of
+                # the program
+                program = trim_demonstrations(new_prefix + new_output)
+                program = self.complete_program(prefix, program)
+
+                try:
+                    p = Program.from_str(program)
+                except parsimonious.ParseError as e:
+                    print("WARNING: error parsing program:")
+                    print(textwrap.indent(program, "  "))
+                    print(str(e))
+
+                    # If the rerun fails to generate a legitimate program, its unsafe to assume that
+                    # it could replace the rest of the original program. The best course of action
+                    # is to exit with the best new program.
+                    break
+
+                stack_trace.append(
+                    StacktraceItem(command, tool_func, tool_output, tool_details, program, p)
+                )
+            else:
+                new_program = prefix + "\n".join(
+                    c.to_program_chunk(j) for j, c in enumerate(p.commands)
+                )
+
+                # The parsed program does not change since the future commands are not updated.
+                # However, the final answer could change due to the new tool output.
+                continuation = self.rerun_answer(new_program)
+                new_program += continuation
+                new_program = trim_demonstrations(new_program)
+                stack_trace.append(
+                    StacktraceItem(command, tool_func, tool_output, tool_details, new_program, p)
+                )
+
+                # TODO: why do we not update `program` here?
+
+            previous_input = command.output
             i += 1
-        # Since run is complete, The final answer in parsed_rerun_program is returned
-        # Selectively, we can also return the entire program
+
         self.execution_details.append(stack_trace)
 
         return program

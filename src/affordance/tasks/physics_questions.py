@@ -6,7 +6,7 @@ import re
 import datasets
 import numpy as np
 from prompt_library import llm_similar_tasks, random_tasks, similar_auto_breakdowns, similar_tasks
-from sequential_interpreter import TopDownVisitorBeta
+from sequential_interpreter import TopDownVisitor
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
 from utils import (
@@ -198,7 +198,7 @@ Ans: 22
 ----
 Description: {}
 Input: {}
-Q1:"""
+Q1: """
 
 
 def get_few_shot_cot_prompt(task_name: str, description: str, strategy: str) -> str:
@@ -227,7 +227,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         prompts = [prompt.format(description, x) for x in chunk]
         return gpt3(prompts)
 
-    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+    interpreter = TopDownVisitor(model_name=model_name, temperature=temperature)
 
     def predict_complete(description, chunk):
         gpt3 = OpenAIModel(
@@ -441,8 +441,8 @@ def affordance():
 
 
 def nl_program(
-    temperature=0.3,
     model_name="davinci-codex-002-msft",
+    temperature=0.3,
     strategy="fixed",
     self_consistency=False,
 ):
@@ -451,7 +451,7 @@ def nl_program(
 
     prompt = get_few_shot_cot_prompt(task_name, task_description, strategy)
 
-    interpreter = TopDownVisitorBeta(model_name, exclude_list=["[generate python code]"])
+    interpreter = TopDownVisitor(model_name)
 
     if self_consistency:
         n = 15
@@ -573,8 +573,8 @@ if __name__ == "__main__":
         few_shot_cot(args.temperature, args.model_name, strategy=args.selection_strategy)
     elif args.inference_strategy == "nl_program":
         nl_program(
-            args.temperature,
             args.model_name,
+            args.temperature,
             self_consistency=args.self_consistency,
             strategy=args.selection_strategy,
         )

@@ -13,7 +13,7 @@ from prompt_library import (
     similar_auto_breakdowns,
     similar_tasks,
 )
-from sequential_interpreter import TopDownVisitorBeta
+from sequential_interpreter import TopDownVisitor
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
 from utils import (
@@ -180,7 +180,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     elif strategy == "llm_similar":
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
-    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+    interpreter = TopDownVisitor(model_name=model_name, temperature=temperature)
 
     def predict(description, chunk):
         gpt3 = OpenAIModel(
@@ -561,7 +561,7 @@ def nl_program(
     elif strategy == "llm_similar":
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
-    interpreter = TopDownVisitorBeta()
+    interpreter = TopDownVisitor()
 
     def predict(description, chunk):
         gpt3 = OpenAIModel(

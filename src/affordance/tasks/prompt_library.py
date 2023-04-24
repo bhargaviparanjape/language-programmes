@@ -1,7 +1,7 @@
 import numpy as np
 from sentence_transformers import SentenceTransformer, util
 from transformers import GPT2Tokenizer
-from utils import OpenAIModel, OpenAIModelLogProb, parse_program
+from utils import OpenAIModel, OpenAIModelLogProb, Program
 
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 
@@ -1513,7 +1513,7 @@ def llm_similar_tasks(task_name, task_description, io_pairs, N=5):
     selection_scores = []
     for key, task in TASKS.items():
         selected_tasks.append(key)
-        parsed_program = parse_program(task["instances"][0])
+        parsed_program = Program.from_str(task["instances"][0])
         doc = (
             "["
             + task["name"]
@@ -1604,7 +1604,7 @@ def task_selection_accuracy(reference_tasks, task_name, task_description, io_pai
     all_reasons = []
     selection_reasons = []
     for key, task in TASKS.items():
-        parsed_program = parse_program(task["instances"][0])
+        parsed_program = Program.from_str(task["instances"][0])
         doc = (
             "["
             + task["name"]
