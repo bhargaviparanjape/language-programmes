@@ -10,7 +10,7 @@ from prompt_library import (
     similar_auto_breakdowns,
     similar_tasks,
 )
-from sequential_interpreter import TopDownVisitorBeta
+from sequential_interpreter import TopDownVisitor
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
 from utils import (
@@ -164,7 +164,7 @@ def nl_program(
     elif strategy == "llm_similar":
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
-    interpreter = TopDownVisitorBeta(model_name=model_name)
+    interpreter = TopDownVisitor(model_name=model_name)
 
     def predict(description, chunk):
         gpt3 = OpenAIModel(

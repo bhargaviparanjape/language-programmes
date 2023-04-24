@@ -12,7 +12,7 @@ from prompt_library import (
     similar_auto_breakdowns,
     similar_tasks,
 )
-from sequential_interpreter import TopDownVisitorBeta
+from sequential_interpreter import TopDownVisitor
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
 from utils import (
@@ -22,7 +22,6 @@ from utils import (
     get_answer,
     get_autocot_answer,
     get_few_shot_prompt,
-    gpt3,
     substring_match,
 )
 
@@ -628,7 +627,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     elif strategy == "llm_similar":
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
-    interpreter = TopDownVisitorBeta(model_name=model_name, temperature=temperature)
+    interpreter = TopDownVisitor(model_name=model_name, temperature=temperature)
 
     def predict(description, chunk):
         gpt3 = OpenAIModel(
@@ -672,6 +671,9 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     print("FS-CoT performance:")
     print("Mean", np.mean(perf_array))
     print("Std. Dev", np.std(perf_array))
+
+
+_gpt3 = OpenAIModel(model="text-davinci-002", max_length=200, quote="", n=1)
 
 
 def PoT(temperature=0.3, model_name="text-davinci-002"):
@@ -827,7 +829,7 @@ Closest Option: """
                 code_output = simplify_ans(execute_output)
                 code_outputs.append(code_output)
                 if code_output is not None:
-                    ans.append(gpt3(compare_prompt % (x[0], x[1], code_output))[0])
+                    ans.append(_gpt3(compare_prompt % (x[0], x[1], code_output))[0])
                 else:
                     ans.append("A")
             answers.extend(ans)
@@ -971,7 +973,7 @@ def nl_program(
     elif strategy == "llm_similar":
         few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
-    interpreter = TopDownVisitorBeta(model_name=model_name)
+    interpreter = TopDownVisitor(model_name=model_name)
 
     def predict(description, chunk):
         gpt3 = OpenAIModel(
