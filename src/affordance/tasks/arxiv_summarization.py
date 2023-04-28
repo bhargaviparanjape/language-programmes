@@ -27,11 +27,11 @@ rouge = evaluate.load("rouge")
 # TODO Only using 10 examples for now
 train_dataset = datasets.load_dataset("ccdv/arxiv-summarization", split="train[:10]")
 train_inputs = train_dataset["article"]
-train_inputs = [t.split('\n') for t in train_inputs] # TODO: concatenate 5 paragraphs
+train_inputs = [t.split("\n") for t in train_inputs]  # TODO: concatenate 5 paragraphs
 train_labels = train_dataset["abstract"]
 dev_dataset = datasets.load_dataset("ccdv/arxiv-summarization", split="validation[:10]")
 dev_inputs = dev_dataset["article"]
-dev_inputs = [t.split('\n') for t in dev_inputs] # TODO: concatenate 5 paragraphs
+dev_inputs = [t.split("\n") for t in dev_inputs]  # TODO: concatenate 5 paragraphs
 dev_labels = dev_dataset["abstract"]
 
 io_pairs = [
@@ -51,6 +51,8 @@ Article: <Article 1>
 Summary:  <Summary 1>
 S1: [read] this is one of the most important parts of the article [write].
 """
+
+
 def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     few_shot_prompt = get_few_shot_prompt(train_inputs, train_labels, n=N)
     print(len(tokenizer(few_shot_prompt)["input_ids"]))
@@ -76,6 +78,7 @@ def few_shot(N=10, temperature=0.3, model_name="text-davinci-002"):
     print("Rouge performance")
     print(rouge.compute(predictions=predictions_list, references=labels_list))
 
+
 def get_few_shot_cot_prompt(task_name: str, description: str, strategy: str) -> str:
     if strategy == "fixed":
         return few_shot_cot_prompt
@@ -94,7 +97,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
     global few_shot_pot_prompt
     task_name = "Summarize the given articles"
     task_description = "In these examples, you are given an Article. Break the input down into subtasks in order to solve the task. You can read and write to an external file memory to help summarize using functions from alexAndKylesAwesomeLibrary."
-    
+
     prompt = get_few_shot_cot_prompt(task_name, task_description, strategy)
 
     interpreter = TopDownVisitor(model_name=model_name, temperature=temperature)
@@ -106,8 +109,7 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         prompts = [few_shot_cot_prompt % (description, x) for x in chunk]
         outputs = gpt3(prompts)
         completed_outputs = [
-            interpreter.complete_program(prefix, output)
-            for prefix, output in zip(prompts, outputs)
+            interpreter.complete_program(prefix, output) for prefix, output in zip(prompts, outputs)
         ]
         return completed_outputs
 
@@ -118,7 +120,9 @@ def few_shot_cot(temperature=0.3, model_name="text-davinci-002", strategy="fixed
         print("Run %d" % run)
         answers = []
         new_labels = [label.split(" ")[0] for label in labels]
-        for x in tqdm(chunks(inputs, 10)): # should we replace the chunks function by inputs.split('\n') to use paragraphs ? or use the chunks function with longer chunks?
+        for x in tqdm(
+            chunks(inputs, 10)
+        ):  # should we replace the chunks function by inputs.split('\n') to use paragraphs ? or use the chunks function with longer chunks?
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict_complete(task_description, x))
             # time.sleep(10)
@@ -171,16 +175,12 @@ def auto_cot(
     global auto_cot_cleaned_prompt
     global auto_cot_corrected_prompt
     auto_cot_prompt = ""
-    description = "(Physics Questions) Answer these high-school-level physics multiple-choice questions."
+    description = (
+        "(Physics Questions) Answer these high-school-level physics multiple-choice questions."
+    )
     for io_pair in io_pairs:
-        gpt3 = OpenAIModel(
-            model=model_name, max_length=500, temperature=0.7, quote="---", n=1
-        )
-        prompt = (
-            """%s\n""" % description
-            + io_pair[0]
-            + """\nA: Let's think step-by-step.\n"""
-        )
+        gpt3 = OpenAIModel(model=model_name, max_length=500, temperature=0.7, quote="---", n=1)
+        prompt = """%s\n""" % description + io_pair[0] + """\nA: Let's think step-by-step.\n"""
         auto_cot_prompt += prompt
         cot = gpt3(prompt)
         auto_cot_prompt += cot[0] + "\n----\n"
@@ -211,7 +211,9 @@ def auto_cot(
     for run in range(runs):
         print("Run %d" % run)
         answers = []
-        for x in tqdm(chunks(inputs, 10)): # should we replace the chunks function by inputs.split('\n') to use paragraphs ? or use the chunks function with longer chunks?
+        for x in tqdm(
+            chunks(inputs, 10)
+        ):  # should we replace the chunks function by inputs.split('\n') to use paragraphs ? or use the chunks function with longer chunks?
             x = [ex.replace("\nA:", "") for ex in x]
             answers.extend(predict(x))
             # time.sleep(10)
@@ -241,13 +243,9 @@ def nl_program(
     elif strategy == "similar_auto_decomp":
         few_shot_cot_prompt = similar_auto_breakdowns(task_description, io_pairs, N=6)
     elif strategy == "llm_similar":
-        few_shot_cot_prompt = llm_similar_tasks(
-            task_name, task_description, io_pairs, N=6
-        )
+        few_shot_cot_prompt = llm_similar_tasks(task_name, task_description, io_pairs, N=6)
 
-    interpreter = TopDownVisitor(
-        model_name=model_name, exclude_list=["[generate python code]"]
-    )
+    interpreter = TopDownVisitor(model_name=model_name, exclude_list=["[generate python code]"])
 
     def predict(description, chunk):
         gpt3 = OpenAIModel(
@@ -272,7 +270,7 @@ def nl_program(
             print("Run %d" % run)
             answers = []  # List of counters
             new_labels = [label.split(" ")[0] for label in labels]
-            for x in tqdm(chunks(inputs, batch_size)): 
+            for x in tqdm(chunks(inputs, batch_size)):
                 x = [ex.replace("\nA:", "") for ex in x]
                 prompts, answer_set = predict_self_consistency(task_description, x)
                 result_counter = [Counter() for i in range(batch_size)]
@@ -297,7 +295,9 @@ def nl_program(
             print("Run %d" % run)
             answers = []
             new_labels = [label.split(" ")[0] for label in labels]
-            for x in tqdm(chunks(inputs, 10)): # should we replace the chunks function by inputs.split('\n') to use paragraphs ? or use the chunks function with longer chunks?
+            for x in tqdm(
+                chunks(inputs, 10)
+            ):  # should we replace the chunks function by inputs.split('\n') to use paragraphs ? or use the chunks function with longer chunks?
                 x = [ex.replace("\nA:", "") for ex in x]
                 prompts, answer = predict(task_description, x)
                 new_answer = interpreter.batch_visit(prompts, answer)
