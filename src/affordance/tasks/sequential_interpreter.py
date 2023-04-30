@@ -21,6 +21,7 @@ class StacktraceItem:
     tool_details: str
     rerun_program: str
     rerun_program_parsed: Program
+    run_title: str
 
 
 class TopDownVisitor:
@@ -43,10 +44,12 @@ class TopDownVisitor:
         """Return true if the program contains [EOQ] and a final answer."""
         return "[EOQ]\nAns:" in program
 
-    def batch_visit(self, prefixes: List[str], programs: List[str]) -> List[str]:
+    def batch_visit(
+        self, prefixes: List[str], programs: List[str], run_titles: List[str]
+    ) -> List[str]:
         answers = []
-        for prefix, program in tqdm(zip(prefixes, programs)):
-            answers.append(self.visit(prefix, program))
+        for prefix, program, run_title in tqdm(zip(prefixes, programs, run_titles)):
+            answers.append(self.visit(prefix, program, run_title))
         return answers
 
     def shorten_prefix(self, prefix: str, to_remove: int) -> str:
@@ -99,7 +102,7 @@ class TopDownVisitor:
     def rerun_answer(self, prefix: str) -> str:
         return self.program_completer(prefix)[0]
 
-    def visit(self, prefix: str, program: str) -> str:
+    def visit(self, prefix: str, program: str, run_title="") -> str:
         # check if the program ends with an answer
         program_ends = self.program_ends(program)
 
@@ -153,7 +156,7 @@ class TopDownVisitor:
                 i += 1
                 continue
 
-            tool_output, tool_details = tool_func(command.input, previous_input)
+            tool_output, tool_details = tool_func(command.input, previous_input, run_title)
 
             if tool_output:
                 # For search, concatenate the GPT-3 output with retrieval output. For everything
@@ -187,7 +190,9 @@ class TopDownVisitor:
                     break
 
                 stack_trace.append(
-                    StacktraceItem(command, tool_func, tool_output, tool_details, program, p)
+                    StacktraceItem(
+                        command, tool_func, tool_output, tool_details, program, p, run_title
+                    )
                 )
             else:
                 new_program = prefix + "\n".join(
@@ -200,7 +205,9 @@ class TopDownVisitor:
                 new_program += continuation
                 new_program = trim_demonstrations(new_program)
                 stack_trace.append(
-                    StacktraceItem(command, tool_func, tool_output, tool_details, new_program, p)
+                    StacktraceItem(
+                        command, tool_func, tool_output, tool_details, new_program, p, run_title
+                    )
                 )
 
                 # TODO: why do we not update `program` here?
