@@ -126,7 +126,7 @@ def visit(model: OpenAIModel, text: str, run_id: str, q: int = 1, max_runs: int 
 
     for _ in range(max_runs):
         print(" AWAITING COMPLETION...", end="", flush=True)
-        #print('\ntext length', len(text))
+        # print('\ntext length', len(text))
         completion = model(text)[0].strip()
         print(f"\rQ{q}: " + completion + " " * (len("AWAITING COMPLETION...") - len(completion)))
         if completion.startswith("[EOQ]") or completion.startswith("[ans]"):
