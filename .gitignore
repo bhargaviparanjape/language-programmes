@@ -1,4 +1,5 @@
 openai.key
 data/
+kvstore/
 
 __pycache__/

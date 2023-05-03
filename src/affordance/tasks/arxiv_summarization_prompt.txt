@@ -1,0 +1,49 @@
+You are tasked with summarizing a long document that does not fit in the context window. We will show you chunks of the text to summarize one at a time, resetting your context window each time. Fortunately, you have access to three tools: [read], [write], and [list-keys], which you can use to read and write information to an external location that is accessible as you process later chunks. Here are a few examples of how you might use these tools when dealing with a chunk:
+
+----BEGIN EXAMPLE----
+Input: (1/4) first , the curve is significantly smoother as a function of @xmath0 for larger @xmath44 . even more relevant is the fact that the single trajectory data ( @xmath45 ) may show current reversals that do not exist in the large @xmath44 data <SHORTENED FOR BREVITY> ( , ) for example .   notice also that in fig .   (  ) , at @xmath55 and @xmath56 , the deviations between the different ensembles is particularly pronounced .
+Q1: [write] (regular-chaotic-motions) The behavior of a system with regular and chaotic motions is a function of the number of trajectories and the location of the initial ensemble. The curves are smoother for larger numbers of trajectories, and single-trajectory data may show current reversals that do not exist in the large data set. The net drift of an ensemble can be closer to the behavior of an individual trajectory, and there is a dependence of the current on the location of the initial ensemble. The width of the ensemble also affects the details of the current and can cause illusory current reversals.
+#1:
+Q2: [EOQ]
+----END EXAMPLE----
+
+In the example above, you write a short summary of the chunk to memory using [write]. This information will be accessible later, as you can see when we process the next chunk below:
+
+----BEGIN EXAMPLE----
+Input: (2/4) these points are close to bifurcation points where some sort of symmetry breaking is clearly occuring , which underlines our emphasis on the relevance of specifying ensemble characteristics in the neighborhood of unstable behavior . <SHORTENED FOR BREVITY> however , there is only one instance of current - reversal , at @xmath65 .   note , however , that the current is not without structure  it changes fairly dramatically as a function of parameter .
+Q1: [read] regular-chaotic-motions
+#1: The behavior of a system with regular and chaotic motions is a function of the number of trajectories and the location of the initial ensemble. The curves are smoother for larger numbers of trajectories, and single-trajectory data may show current reversals that do not exist in the large data set. The net drift of an ensemble can be closer to the behavior of an individual trajectory, and there is a dependence of the current on the location of the initial ensemble. The width of the ensemble also affects the details of the current and can cause illusory current reversals.
+Q2: [write] (ensemble-effects) In the classical phase space for Hamiltonian or underdamped motion, dynamics depend on the initial conditions. However, when damping is introduced, the phase space consists of attractors, and the current is less likely to depend significantly on initial conditions. In the chaotic regime of a non-Hamiltonian system, the initial ensemble needs to be larger than a certain threshold for convergence, while in the regular regime, a single trajectory suffices as long as transients are discarded. We propose a modified definition of current that includes an empirically obtained cut-off to ensure convergence. We compare bifurcation diagrams with the current in a series of figures, noting that there is a single current reversal in the examined parameter range despite several bifurcations. The current changes dramatically as a function of the parameter, but only one instance of current reversal occurs.
+#2:
+Q3: [EOQ]
+----END EXAMPLE----
+
+See how in the example above you read an existing summary, and used that information to help summarize the current chunk. You don't always have to read from storage; maybe you're summarizing the first chunk (1/n), or you don't need contextual info to summarize this chunk well. Now I’m going to show you how to use the `list-keys` tool:
+
+----BEGIN EXAMPLE----
+Input: (3/4) the ensemble results on the other hand , even when converged , show statistical roughness .   ( b ) the ensemble results are consistent with barbi and salerno in general , although disagreeing in several details . <SHORTENED FOR BREVITY> note in particular in this figure that eyeball tests can be misleading .
+Q1: [list-keys]
+#1: regular-chaotic-motions, ensemble-effects
+Q2: [read] ensemble-effects
+#2: In the classical phase space for Hamiltonian <SHORTENED FOR BREVITY> current reversal occurs.
+Q3: [write] (bifurcations-and-reversals) The passage describes a study on the relationship between bifurcations and current reversals in a system. The authors used ensembles of particles to examine how their results converged as a function of various parameters. They found that not all bifurcations led to current reversals, but did not rule out the possibility that all current reversals are associated with bifurcations, which is Mateos' conjecture. The study differed from a previous one by Barbi and Salerno, who used single-trajectory results instead of ensembles of particles. The article concludes that the ensemble current provides significant information that cannot be obtained from a single-trajectory current.
+Q3: [EOQ]
+----END EXAMPLE----
+
+In this final example, we show how you will output the final summary using [ans]:
+
+Input: (4/4) we see reversals without bifurcations in ( a ) whereas the zoomed version ( c ) shows that there are windows of periodic and chaotic regimes . <SHORTENED FOR BREVITY> each of the transitions from periodic behavior to chaos and back provides opportunities for the current to spike .
+Q1: [list-keys]
+#1: regular-chaotic-motions, ensemble-effects, bifurcations-and-reversals
+Q2: [read] regular-chaotic-motions
+#2: The behavior of a system <SHORTENED FOR BREVITY> current reversals.
+Q3: [read] ensemble-effects
+#3: In the classical phase space for Hamiltonian <SHORTENED FOR BREVITY> current reversal occurs.
+Q4: [read] bifurcations-and-reversals
+#4: The passage describes a study on the relationship between bifurcations <SHORTENED FOR BREVITY> from a single-trajectory current.
+Q5: [ans] This work delves into the relationship between bifurcations and current reversals in a driven, damped, and chaotic system, emphasizing the significance of considering ensembles of trajectories and their convergence properties when examining the current's behavior. It is discovered that not all bifurcations result in current reversals, and not all current reversals are linked to bifurcations. Nonetheless, a generalization of Mateos' conjecture is proposed, which suggests that bifurcations correspond to sudden current changes (spikes or jumps). This improved understanding aids in characterizing changes in the current's behavior as a function of parameter and is useful in identifying "hidden" bifurcations, providing a more comprehensive perspective on the system's dynamics.
+----END EXAMPLE----
+Remember, you are summarizing a long document that does not fit in the context window, and we will only show you one chunk of the text now. {instructions} Here you go:
+
+Input: ({i}/{n}) {text}
+Q1:

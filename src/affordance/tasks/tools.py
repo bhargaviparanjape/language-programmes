@@ -1,11 +1,13 @@
 """This file contains all the tools that can be used by the models."""
 
 import ast
+import os
+import pickle
 import re
 import subprocess
 import sys
 import time
-from typing import Callable, Dict, Sequence, Union
+from typing import Callable, Dict, Sequence, Tuple, Union
 
 import enchant
 import openai
@@ -13,10 +15,8 @@ from pot_tools import safe_execute, simplify_ans
 import requests
 from serpapi import GoogleSearch
 from utils import OpenAIModel, cleanhtml
-import pickle
-from os import path
 
-Tool = Callable[[str, str, str], tuple(str, str)]
+Tool = Callable[[str, str, str], Tuple[str, str]]
 """Tools are functions with two inputs:
 
 - (str) the command input
@@ -33,33 +33,46 @@ OUTPUT_DIRECTORY = "./kvstore"
 
 def get_run_dict(run_title, output_directory=OUTPUT_DIRECTORY):
     try:
-        with open(path.join(output_directory, run_title + ".pickle"), "rb") as handle:
-            run_dict = pickle.load(handle)
+        with open(os.path.join(output_directory, run_title + ".pickle"), "rb") as handle:
+            return pickle.load(handle)
     except FileNotFoundError:
-        run_dict = {}
         print("creating a new dict for run: ", run_title)
-        return run_dict
+        return {}
 
 
 def save_run_dict(run_dict, run_title, output_directory=OUTPUT_DIRECTORY):
-    with open(path.join(output_directory, run_title + ".pickle"), "wb") as handle:
+    os.makedirs(output_directory, exist_ok=True)
+
+    with open(os.path.join(output_directory, run_title + ".pickle"), "wb") as handle:
         pickle.dump(run_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    return
 
 
-def read(key, _, run_title) -> tuple(str, str):
+def read(keys, _, run_title) -> Tuple[str, str]:
     read_write_dict = get_run_dict(run_title)
-    if key in read_write_dict:
-        return read_write_dict[key], None
-    # TODO finalize key not found behaviour
-    # else:
-    #     return ', '.join(read_write_dict.keys()), None
-    return f"<key '{key}' did not exist>", None  # TODO: return a useful log message
+
+    keys = [key.strip() for key in keys.split(",")]
+
+    out = []
+    missing_keys = []
+    for key in keys:
+        if key in read_write_dict:
+            out.append(read_write_dict[key])
+        else:
+            out.append(f"<key '{key}' did not exist>")
+            missing_keys.append(key)
+
+    if len(missing_keys) == 0:
+        details = None
+    else:
+        details = "missing keys: " + ", ".join(missing_keys)
+
+    return "\n".join(out), details
 
 
 def list_keys(_, __, run_title):
     read_write_dict = get_run_dict(run_title)
-    return ", ".join(read_write_dict.keys())
+
+    return ", ".join(read_write_dict.keys()), None
 
 
 def parse_instruction(instruction):
@@ -70,7 +83,7 @@ def parse_instruction(instruction):
     return key, text
 
 
-def write(instruction, _, run_title="") -> tuple(str, str):
+def write(instruction, _, run_title) -> Tuple[str, str]:
     """
     key = first day creation
     text = God created the earth, light, and dark.
@@ -84,7 +97,7 @@ def write(instruction, _, run_title="") -> tuple(str, str):
     return "", None  # TODO: return a useful log message
 
 
-def arithmetic(equations: str, _, __) -> tuple(str, str):
+def arithmetic(equations: str, _, __) -> Tuple[str, str]:
     # collect all outputs of arithmetic and run python to execute them
     # TODO this makes no sense
     result = subprocess.run(
@@ -93,7 +106,7 @@ def arithmetic(equations: str, _, __) -> tuple(str, str):
     return result, None
 
 
-def code_edit(instruction: str, code_input: str, _) -> tuple(str, str):
+def code_edit(instruction: str, code_input: str, _) -> Tuple[str, str]:
     """Edit some code according to the instruction."""
     comment = "# " + instruction + "\n"
     response = openai.Completion.create(
@@ -112,7 +125,7 @@ def code_edit(instruction: str, code_input: str, _) -> tuple(str, str):
     return comment + code_snippet, comment
 
 
-def code_execute(code_snippet: str, code_input: str = None, _="") -> tuple(str, str):
+def code_execute(code_snippet: str, code_input: str = None, _="") -> Tuple[str, str]:
     if code_input:
         try:
             # Run arithmetic python code generate
@@ -182,7 +195,7 @@ def code_execute(code_snippet: str, code_input: str = None, _="") -> tuple(str, 
     return None, code_snippet
 
 
-def code_generate(instruction: str, code_input: str, _) -> tuple(str, str):
+def code_generate(instruction: str, code_input: str, _) -> Tuple[str, str]:
     # response = openai.Edit.create(
     # model="code-davinci-edit-001",
     # input="x = " + code_input,
@@ -231,7 +244,7 @@ def code_generate(instruction: str, code_input: str, _) -> tuple(str, str):
 _gpt3 = OpenAIModel(model="text-davinci-002", max_length=200, quote="", n=1)
 
 
-def generate(prompt: str, _, __) -> tuple(str, str):
+def generate(prompt: str, _, __) -> Tuple[str, str]:
     """Generate a completion using 'text-davinci-002'."""
     return _gpt3(prompt)[0], None
 
@@ -240,7 +253,7 @@ _search_bing_url = "https://api.bing.microsoft.com/v7.0/search"
 _search_bing_headers = {"Ocp-Apim-Subscription-Key": "28dc412935f24fb9974d80c30915483a"}
 
 
-def search_bing(query: str, _, __, top_k=1) -> tuple(str, str):
+def search_bing(query: str, _, __, top_k=1) -> Tuple[str, str]:
     # get results
     params = {"q": query, "textDecorations": True, "textFormat": "HTML"}
     response = requests.get(_search_bing_url, headers=_search_bing_headers, params=params)
@@ -261,7 +274,7 @@ def search_bing(query: str, _, __, top_k=1) -> tuple(str, str):
 _serp_api_key = "5599fad2263e4b1c6d4efb62fa15f83f5ad2d1bb727b8721d616d719399a7f7b"
 
 
-def search_google(query: str, _, __) -> tuple(str, str):
+def search_google(query: str, _, __) -> Tuple[str, str]:
     params = {
         "q": query,
         "hl": "en",
@@ -291,7 +304,7 @@ def search_google(query: str, _, __) -> tuple(str, str):
     return toret, None
 
 
-def code_generate_then_execute(instruction: str, code_input: str, _) -> tuple(str, str):
+def code_generate_then_execute(instruction: str, code_input: str, _) -> Tuple[str, str]:
     # output = openai.Edit.create(
     # model="code-davinci-edit-001",
     # input="x = " + code_input,
@@ -310,7 +323,7 @@ def code_generate_then_execute(instruction: str, code_input: str, _) -> tuple(st
     return result
 
 
-def code_error(code_snippet: str, code_input: str, _) -> tuple(str, str):
+def code_error(code_snippet: str, code_input: str, _) -> Tuple[str, str]:
     # Command instruction (if its code) starts in the next line.
     try:
         code_snippet = code_snippet.split("\n", 1)[1]
@@ -326,7 +339,7 @@ def code_error(code_snippet: str, code_input: str, _) -> tuple(str, str):
         return None, code_snippet
 
 
-def code_generate_then_lookup(instruction: str, code_input: str, _) -> tuple(str, str):
+def code_generate_then_lookup(instruction: str, code_input: str, _) -> Tuple[str, str]:
     code_snippet, generate_details = code_generate(instruction=instruction, code_input=code_input)
     time.sleep(2)
     result, execute_snippet = code_execute(code_snippet=code_snippet)
@@ -373,6 +386,7 @@ keyword_map = {
     "[permutation]": "[string permutation]",
     "[permute]": "[string permutation]",
     "[string permute]": "[string permutation]",
+    "[list-keys]": "[list keys]",
 }
 
 
