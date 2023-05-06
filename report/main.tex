@@ -12,6 +12,10 @@
 \usepackage{microtype}
 \usepackage{xcolor}
 
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{subcaption}
+
 
 \title{LOLCATS: Leveraging Obscure Lexical Conventions And Tenuous Synonyms in computer science research}
 
@@ -59,6 +63,25 @@ We used the ART paper~\cite{paranjape2023art}.
 
 
 \section{Experiments}
+
+
+To effectively judge the usefulness of our method, we chose to evaluate on the abstractive summarization task. Unlike extractive summarization, in this task the summary is expected to be a concise representation that effectively communicates the key ideas in the text, rather than a composition of important phrases in the text. This is more like how humans generally summarize texts, and provides a stronger challenge for our method. We evaluated our method on the arXiv abstractive summarization dataset~\cite{cohan-etal-2018-discourse}. Texts in this dataset
+
+\begin{figure}[h]
+  \centering
+  \begin{subfigure}{0.45\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{images/length_hist_train.png}
+    \caption{Distribution of sentence lengths in the train set, by number of tokens. The sentence lengths have mean 8630.2, median 6883.0, minimum 0, and maximum 329071 (not visible).}\label{fig:train-hist}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}{0.45\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{images/length_hist_validation.png}
+    \caption{Distribution of sentence lengths in the validation set, by number of tokens. The sentence lengths have mean 8208.3, median 6871.5, minimum 244, and maximum 109442 (not visible).}\label{fig:val-hist}
+  \end{subfigure}
+  \caption{Distribution of sentence lengths in the train and validation sets.}\label{fig:length-hist}
+\end{figure}
 
 
 \section{Results}
