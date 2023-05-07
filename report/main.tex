@@ -61,10 +61,20 @@
 Recent developments in natural language processing have shown that in-context learning allows large language models (LLMs) to quickly adapt to new tasks by using natural language instructions and a few demostrations as a prompt.
 Specifically, this investigations examines how using the ART framework~\cite{paranjape2023art}, we can create and teach the LLM to use tools for Long Document Summarization.
 
-We used the ART paper~\cite{paranjape2023art}.
+In the ART paper, they generate automatic multi-step decompositions for new tasks by selecting decompositions of related tasks in the task library, and then select and use tools in the tool library alongside LLM generation.
+We simplify the framework and only focus on constructing few-shot prompts for long document summarization that learn information onto external tools. We leverage ART's program grammar, but create new tools specically designed for summarization of large documents splitted into chunks of text.
 
 
 \section{Background}
+Apart from the ART paper, another work that uses tools with an LLM is Toolformer \add{cite}.
+However, different from ART, Toolformer was finetuned to learn how to use tools, as opposed to in-context learning. The advantage of our approach is that you can switch LLM without the need of finetuning.
+
+Other relevant recent work proposes prompting LLMs to mimic a chain of thought (CoT) for multi-step reasoning by stating in the prompt to think Step-by-step \add{cite}.
+
+Finally, state-of-the-art approaches for long document summarization include the following:
+Top Down Transformer (Long Document Summarization with Top-down and Bottom-up Inference)
+LongT5: Efficient Text-to-Text Transformer for Long Sequences
+Pegasus X: Investigating Efficiently Extending Transformers for Long Document Summarization and Document Summarization with Text Segmentation \add{\cite}.
 
 
 \section{Methodology}
