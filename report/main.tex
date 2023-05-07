@@ -76,13 +76,13 @@ With these goals and constraints in mind, we chose a Python dictionary as the un
 A dictionary naturally organizes data into key-value pairs, which would naturally allow for organization and efficient retrieval based on the LLM selecting only relevant keys.
 The LLM would load the information stored at keys it finds relevant to its current task, and organize the information it stores by choosing an appropriate key.
 
-In the context of ART, this translates into the creation of three tools to accomplish our envisioned task. Firstly, we define [list_keys], a tool that takes no inputs and returns a string containing all the keys in the dictionary.
-Next we define [write], this tool requires a key-value pair and writes the pair into the dictionary, updating the value stored under the key if it is already present.
-Finally, we define [read], a tool that takes a key as input and returns the information stored at that key in the dictionary.
+In the context of ART, this translates into the creation of three tools to accomplish our envisioned task. Firstly, we define \texttt{[list-keys]}, a tool that takes no inputs and returns a string containing all the keys in the dictionary.
+Next we define \texttt{[write]}, this tool requires a key-value pair and writes the pair into the dictionary, updating the value stored under the key if it is already present.
+Finally, we define \texttt{[read]}, a tool that takes a key as input and returns the information stored at that key in the dictionary.
 Currently the tools save the dictionary to, and read it from, storage to ensure the long term stability of the data.
 
 We demonstrate our tools by performing a summarization task on journal articles taken from DATASET HERE.
-As is standard with ART prompts, demonstrations of the task are prepended to the prompt to provide the LLM an example of how to handle the task \cite{paranjape2023art}.
+As is standard with ART prompts, demonstrations of the task are prepended to the prompt to provide the LLM an example of how to handle the task~\cite{paranjape2023art}.
 Each article is split into multiple chunks that are fed one at a time into the modified ART framework, with the network choosing how to organize and persist data for later perusal.
 At the end of each article, each entry in the dictionary is then fed back into the LLM and a complete summary is generated. Experiments, results, and their analysis are discussed below.
 
@@ -151,7 +151,7 @@ In this project we have designed and implemented tools to be used by an LLM to o
 We encountered difficulties in providing enough context for the LLM to properly use the tools, but found some success with simplified run strategies.
 Future research avenues could involve using newer, bigger, LLMs that have larger context windows allowing for more varied tool use samples to be passed as part of the prompt.
 Otherwise, it may be desirable to fine tune smaller models specifically to use tools and address long standing issues with LLM capabilities.
-To achieve the goal of an AGI system, it will be necessary for it to diversify its problem-solving across many contexts. 
+To achieve the goal of an AGI system, it will be necessary for it to diversify its problem-solving across many contexts.
 Creating systems capable of learning to use tools may be an invaluable step along this path.
 
 \bibliographystyle{neurips}
