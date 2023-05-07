@@ -69,7 +69,7 @@ We used the ART paper~\cite{paranjape2023art}.
 \section{Methodology}
 
 
-\section{Experiments}
+\section{Experiments}\label{section:experiments}
 
 To effectively judge the usefulness of our method, we chose to evaluate on the abstractive summarization task. Unlike extractive summarization, in this task the summary is expected to be a concise representation that effectively communicates the key ideas in the text, rather than a composition of important phrases in the text. This is more like how humans generally summarize texts, and provides a stronger challenge for our method. We evaluated our method on the arXiv abstractive summarization dataset~\cite{cohan-etal-2018-discourse}. Texts in this dataset can be more than 300k tokens in length (see statistics in Figure~\ref{fig:length-hist}), which provides a good setting to test how well our method allows a model to use information from across long input.
 
@@ -93,7 +93,7 @@ To this end, we designed three tools for the model to use: \texttt{[read]}, \tex
 
 Each article is split into chunks of 15 sentences each. We would have preferred to make sure chunks did not cross section dividers, but this was not possible due to the preprocessing in the dataset.
 
-\subsection{variations}
+\subsection{Prompt Variations}
 
 We experimented with two variations on the original prompt, both of which ended up improving the performance. One we call ``compressed intermediates'', and the other we name ``rolling summary''.
 
@@ -116,10 +116,10 @@ We report metrics from the ROUGE family~\cite{lin-hovy-2003-automatic,ganesan201
     rolling         & 34.2           & 8.8              & 18.7             & 27.3                 \\
   \end{tabular}
   \vspace{0.5cm}
-  \caption{Experimental results on 10 samples from the arXiv summarization dataset, evaluated on several ROUGE-based metrics.}\label{tab:results}
+  \caption{Experimental results for each of the prompts described in Section~\ref{section:experiments} on 10 samples from the arXiv summarization dataset, evaluated on several ROUGE-based metrics.}\label{tab:results}
 \end{table}
 
-TODO talk about the results
+We observe clear improvement over the base prompt for the two modifications. While the sample size for this experiment was small,\footnote{The cost of this experiment with \texttt{n=10} was US\$16, so we would like more funds in order to validate that these changes improve performance.} we think the difference is significant because they make it possible for more stored information to be \texttt{[read]} when generating the final summary.
 
 
 
@@ -134,7 +134,7 @@ TODO talk about the results
 
 \section{Prompts}\label{section:prompts}
 
-Here is the complete base prompt we used for our experiments. Unlike in \cite{paranjape2023art}, we do not experiment with dynamically varying the prompt in any way.
+Here is the complete base prompt we used for our experiments. Unlike Paranjape et al.~\cite{paranjape2023art}, we do not experiment with dynamically varying the prompt in any way.
 
 
 \begin{lstlisting}
