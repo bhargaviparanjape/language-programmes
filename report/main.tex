@@ -16,6 +16,13 @@
 \usepackage{caption}
 \usepackage{subcaption}
 
+\usepackage{listings}
+\lstset{
+    basicstyle=\ttfamily,
+    breaklines=true,
+    breakatwhitespace=true,
+}
+
 
 \title{LOLCATS: Leveraging Obscure Lexical Conventions And Tenuous Synonyms in computer science research}
 
@@ -64,27 +71,56 @@ We used the ART paper~\cite{paranjape2023art}.
 
 \section{Experiments}
 
+To effectively judge the usefulness of our method, we chose to evaluate on the abstractive summarization task. Unlike extractive summarization, in this task the summary is expected to be a concise representation that effectively communicates the key ideas in the text, rather than a composition of important phrases in the text. This is more like how humans generally summarize texts, and provides a stronger challenge for our method. We evaluated our method on the arXiv abstractive summarization dataset~\cite{cohan-etal-2018-discourse}. Texts in this dataset can be more than 300k tokens in length (see statistics in Figure~\ref{fig:length-hist}), which provides a good setting to test how well our method allows a model to use information from across long input.
 
-To effectively judge the usefulness of our method, we chose to evaluate on the abstractive summarization task. Unlike extractive summarization, in this task the summary is expected to be a concise representation that effectively communicates the key ideas in the text, rather than a composition of important phrases in the text. This is more like how humans generally summarize texts, and provides a stronger challenge for our method. We evaluated our method on the arXiv abstractive summarization dataset~\cite{cohan-etal-2018-discourse}. Texts in this dataset
-
-\begin{figure}[h]
+\begin{figure}[!ht]
   \centering
   \begin{subfigure}{0.45\textwidth}
     \centering
     \includegraphics[width=\linewidth]{images/length_hist_train.png}
-    \caption{Distribution of sentence lengths in the train set, by number of tokens. The sentence lengths have mean 8630.2, median 6883.0, minimum 0, and maximum 329071 (not visible).}\label{fig:train-hist}
+    \caption{Sentence lengths in the train set. The sentence lengths have mean 8,630.2, median 6,883.0, minimum 0, and maximum 329,071 (not visible).}\label{fig:train-hist}
   \end{subfigure}
   \hfill
   \begin{subfigure}{0.45\textwidth}
     \centering
     \includegraphics[width=\linewidth]{images/length_hist_validation.png}
-    \caption{Distribution of sentence lengths in the validation set, by number of tokens. The sentence lengths have mean 8208.3, median 6871.5, minimum 244, and maximum 109442 (not visible).}\label{fig:val-hist}
+    \caption{Sentence lengths in the validation set. The sentence lengths have mean 8,208.3, median 6,871.5, minimum 244, and maximum 109,442 (not visible).}\label{fig:val-hist}
   \end{subfigure}
-  \caption{Distribution of sentence lengths in the train and validation sets.}\label{fig:length-hist}
+  \caption{Distribution of sentence lengths (number of tokens) in the train and validation sets. For reference, the maximum context sizes for various GPT models are marked as vertical lines. Our method makes it feasible to summarize long documents without access to GPT-4 or GPT-4-32k.}\label{fig:length-hist}
 \end{figure}
+
+To this end, we designed three tools for the model to use: \texttt{[read]}, \texttt{[write]}, and \texttt{[list-keys]}; along with a prompt that explains the task and demonstrates how to use these tools to accomplish the goal of a good summary. The \texttt{[read]} and \texttt{[write]} tools each accept a short text key, and the text associated with the key is stored in a Python dict. This data is specific to each article, and is built by the model as it receives each chunk. The prompt specifically instructs the model to store information under meaningfully-named keys using \texttt{[write]}, and then to \texttt{[read]} all stored information during the last chunk in order to produce the final output.\footnote{See Appendix~\ref{section:prompts} for the text of the prompts used in this project.}
+
+Each article is split into chunks of 15 sentences each. We would have preferred to make sure chunks did not cross section dividers, but this was not possible due to the preprocessing in the dataset.
+
+\subsection{variations}
+
+We experimented with two variations on the original prompt, both of which ended up improving the performance. One we call ``compressed intermediates'', and the other we name ``rolling summary''.
+
+For ``compressed intermediates'', we modify the examples to show the model storing text that looks more like compressed notes than a complete summary. This reduces the number of tokens in the prompt as well as in model generations, which decreases the chance that the final summarization will be too large for the model to summarize from. In this experiment we also increased the length of the keys used for \texttt{[read]} and \texttt{[write]}; e.g.~``regular-chaotic-motions'' became ``regular-chaotic-motions-smooth-curves''. This seems to reduce the frequency of key collisions when text discussing a single phenomenon is split across multiple chunks.
+
+The prompt for ``rolling summary'' replaces the key names (``regular-chaotic-motions'', etc.) with ``current-summary'', and the stored summaries summarize both the current chunk and all previous chunks. The final example shows the model reading just the single key ``current-summary'' and combining it with the input chunk to produce the answer. Verbiage in the explanations is also slightly adapted to match these differences.
 
 
 \section{Results}
+
+We report metrics from the ROUGE family~\cite{lin-hovy-2003-automatic,ganesan2015rouge} for the three approaches on \texttt{n=10} samples from the validation set.
+
+\begin{table}[!ht]
+  \centering
+  \begin{tabular}{c|c|c|c|c}
+    \textbf{Method} & \textbf{ROUGE} & \textbf{ROUGE-2} & \textbf{ROUGE-L} & \textbf{ROUGE-L-Sum} \\
+    \hline
+    base            & 11.7           & 4.0              & 6.1              & 8.2                  \\
+    compressed      & 29.4           & 9.7              & 15.1             & 23.1                 \\
+    rolling         & 34.2           & 8.8              & 18.7             & 27.3                 \\
+  \end{tabular}
+  \vspace{0.5cm}
+  \caption{Experimental results on 10 samples from the arXiv summarization dataset, evaluated on several ROUGE-based metrics.}\label{tab:results}
+\end{table}
+
+TODO talk about the results
+
 
 
 \section{Conclusion}
@@ -92,6 +128,78 @@ To effectively judge the usefulness of our method, we chose to evaluate on the a
 
 \bibliographystyle{neurips}
 \bibliography{main}
+
+
+\appendix
+
+\section{Prompts}\label{section:prompts}
+
+Here is the complete base prompt we used for our experiments. Unlike in \cite{paranjape2023art}, we do not experiment with dynamically varying the prompt in any way.
+
+
+\begin{lstlisting}
+  You are tasked with summarizing a long document that does not fit in the context window. We will show you chunks of the text to summarize one at a time, resetting your context window each time. Fortunately, you have access to three tools: [read], [write], and [list-keys], which you can use to read and write information to an external location that is accessible as you process later chunks. Here are a few examples of how you might use these tools when dealing with a chunk:
+
+  ----BEGIN EXAMPLE----
+  Input: (1/4) first , the curve is significantly smoother as a function of @xmath0 for larger @xmath44 . even more relevant is the fact that the single trajectory data ( @xmath45 ) may show current reversals that do not exist in the large @xmath44 data <SHORTENED FOR BREVITY> ( , ) for example .   notice also that in fig .   (  ) , at @xmath55 and @xmath56 , the deviations between the different ensembles is particularly pronounced .
+  Q1: [write] (regular-chaotic-motions) The behavior of a system with regular and chaotic motions is a function of the number of trajectories and the location of the initial ensemble. The curves are smoother for larger numbers of trajectories, and single-trajectory data may show current reversals that do not exist in the large data set. The net drift of an ensemble can be closer to the behavior of an individual trajectory, and there is a dependence of the current on the location of the initial ensemble. The width of the ensemble also affects the details of the current and can cause illusory current reversals.
+  #1:
+  Q2: [EOQ]
+  ----END EXAMPLE----
+
+  In the example above, you write a short summary of the chunk to memory using [write]. This information will be accessible later, as you can see when we process the next chunk below:
+
+  ----BEGIN EXAMPLE----
+  Input: (2/4) these points are close to bifurcation points where some sort of symmetry breaking is clearly occuring , which underlines our emphasis on the relevance of specifying ensemble characteristics in the neighborhood of unstable behavior . <SHORTENED FOR BREVITY> however , there is only one instance of current - reversal , at @xmath65 .   note , however , that the current is not without structure  it changes fairly dramatically as a function of parameter .
+  Q1: [read] regular-chaotic-motions
+  #1: The behavior of a system with regular and chaotic motions is a function of the number of trajectories and the location of the initial ensemble. The curves are smoother for larger numbers of trajectories, and single-trajectory data may show current reversals that do not exist in the large data set. The net drift of an ensemble can be closer to the behavior of an individual trajectory, and there is a dependence of the current on the location of the initial ensemble. The width of the ensemble also affects the details of the current and can cause illusory current reversals.
+  Q2: [write] (ensemble-effects) In the classical phase space for Hamiltonian or underdamped motion, dynamics depend on the initial conditions. However, when damping is introduced, the phase space consists of attractors, and the current is less likely to depend significantly on initial conditions. In the chaotic regime of a non-Hamiltonian system, the initial ensemble needs to be larger than a certain threshold for convergence, while in the regular regime, a single trajectory suffices as long as transients are discarded. We propose a modified definition of current that includes an empirically obtained cut-off to ensure convergence. We compare bifurcation diagrams with the current in a series of figures, noting that there is a single current reversal in the examined parameter range despite several bifurcations. The current changes dramatically as a function of the parameter, but only one instance of current reversal occurs.
+  #2:
+  Q3: [EOQ]
+  ----END EXAMPLE----
+
+  See how in the example above you read an existing summary, and used that information to help summarize the current chunk. You don't always have to read from storage; maybe you're summarizing the first chunk (1/n), or you don't need contextual info to summarize this chunk well. Now I’m going to show you how to use the `list-keys` tool:
+
+  ----BEGIN EXAMPLE----
+  Input: (3/4) the ensemble results on the other hand , even when converged , show statistical roughness .   ( b ) the ensemble results are consistent with barbi and salerno in general , although disagreeing in several details . <SHORTENED FOR BREVITY> note in particular in this figure that eyeball tests can be misleading .
+  Q1: [list-keys]
+  #1: regular-chaotic-motions, ensemble-effects
+  Q2: [read] ensemble-effects
+  #2: In the classical phase space for Hamiltonian <SHORTENED FOR BREVITY> current reversal occurs.
+  Q3: [write] (bifurcations-and-reversals) The passage describes a study on the relationship between bifurcations and current reversals in a system. The authors used ensembles of particles to examine how their results converged as a function of various parameters. They found that not all bifurcations led to current reversals, but did not rule out the possibility that all current reversals are associated with bifurcations, which is Mateos' conjecture. The study differed from a previous one by Barbi and Salerno, who used single-trajectory results instead of ensembles of particles. The article concludes that the ensemble current provides significant information that cannot be obtained from a single-trajectory current.
+  Q3: [EOQ]
+  ----END EXAMPLE----
+
+  In this final example, we show how you will output the final summary using [ans]:
+
+  Input: (4/4) we see reversals without bifurcations in ( a ) whereas the zoomed version ( c ) shows that there are windows of periodic and chaotic regimes . <SHORTENED FOR BREVITY> each of the transitions from periodic behavior to chaos and back provides opportunities for the current to spike .
+  Q1: [list-keys]
+  #1: regular-chaotic-motions, ensemble-effects, bifurcations-and-reversals
+  Q2: [read] regular-chaotic-motions
+  #2: The behavior of a system <SHORTENED FOR BREVITY> current reversals.
+  Q3: [read] ensemble-effects
+  #3: In the classical phase space for Hamiltonian <SHORTENED FOR BREVITY> current reversal occurs.
+  Q4: [read] bifurcations-and-reversals
+  #4: The passage describes a study on the relationship between bifurcations <SHORTENED FOR BREVITY> from a single-trajectory current.
+  Q5: [ans] This work delves into the relationship between bifurcations and current reversals in a driven, damped, and chaotic system, emphasizing the significance of considering ensembles of trajectories and their convergence properties when examining the current's behavior. It is discovered that not all bifurcations result in current reversals, and not all current reversals are linked to bifurcations. Nonetheless, a generalization of Mateos' conjecture is proposed, which suggests that bifurcations correspond to sudden current changes (spikes or jumps). This improved understanding aids in characterizing changes in the current's behavior as a function of parameter and is useful in identifying "hidden" bifurcations, providing a more comprehensive perspective on the system's dynamics.
+  ----END EXAMPLE----
+  Remember, you are summarizing a long document that does not fit in the context window, and we will only show you one chunk of the text now. {instructions} Here you go:
+
+  Input: ({i}/{n}) {text}
+  Q1:
+\end{lstlisting}
+
+Here, \texttt{\{text\}} is replaced with the text of the chunk, and \texttt{\{i\}} and \texttt{\{n\}} are replaced with the position of the current text in the chunks from the text. \texttt{\{instructions\}} is set with specific instructions for tool use for the first and last chunks; see the code repository for details.
+
+\subsection{compressed intermediates prompt}
+
+The change to the first example in the prompt is illustrative of the change effected in the intermediate notes produced with this version of the prompt:
+
+\begin{lstlisting}
+  * behavior is a function of the number of trajectories and the location of the initial ensemble * curves are smoother for larger numbers of trajectories * single-trajectory data may show current reversals not in the large data set * net drift of an ensemble can be closer to behavior of individual trajectory * current depends on location of the initial ensemble
+\end{lstlisting}
+
+Again, see the repository for details.
 
 
 \end{document}
