@@ -10,7 +10,7 @@ pip install -r requirements.txt
 
 ## Instructions
 
-Sore OpenAI Api key in home directory as filename `openai_api_key`
+Store OpenAI Api key in home directory as filename `openai_api_key`
 
 Run Few-shot (Direct) prompting:
 
